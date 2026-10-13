@@ -46,6 +46,18 @@
         // and fades its top/bottom 8 % with a mask; the bar is transparent at the top and solid once
         // scrolled (nav.js), so neither is needed - and the Home billboard can sit under the bar (hero.js)
         '.activity .scroll.layer--wheight:not(.scroll--horizontal){overflow:visible!important;-webkit-mask-image:none!important;mask-image:none!important}',
+        // loading: posters fade in once loaded (Lampa adds card--loaded) over a graphite placeholder, rows
+        // rise in as they arrive, and the TV header stays hidden until nav.js has replaced it
+        '.card__view{background:#1c1c1e}',
+        '.card__img{opacity:0;transition:opacity .35s ease}',
+        '.card--loaded .card__img{opacity:1}',
+        '@keyframes rb-rise{from{opacity:0;transform:translateY(.8em)}to{opacity:1;transform:none}}',
+        '.items-line{animation:rb-rise .45s cubic-bezier(.2,.8,.2,1) both}',
+        'body:not(.ruby-nav-ready) .head{opacity:0}',
+        '.head{transition:opacity .3s}',
+        // Lampa's own blurred backdrop (blurred in JS on a canvas on every focus change): the colour light
+        // of glass.js replaces it, so it is switched off on computers (lighten() below)
+        '.background{display:none!important}',
         // menus / settings panels: graphite sheets
         '.menu,.settings__content,.selectbox__content{background:rgba(28,28,30,.92)!important;-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}'
     ].join('\n');
@@ -118,19 +130,28 @@
     function keep() { try { sessionStorage.setItem(DETAILS, JSON.stringify(details)); } catch (e) {} }
 
     // Lampa asks TMDB for w200/w300 posters and w1280 backdrops (Settings "poster quality" tops out at w500).
-    // On computers: every poster/still at w780 (already above 2x the largest card) and every w1280+ image
-    // at the original file (backdrops up to 3840x2160). Lampa.TMDB is the object app.min.js calls itself
-    // (var TMDB$1 = {api, key, image, broken}; exported as TMDB), so wrapping image() covers all of Lampa.
+    // On computers: posters/stills at w500 at least (a card is ~150-230 px wide, so w500 covers 2x Retina;
+    // w780 everywhere was ~4x the pixels to decode for ~200 posters and made scrolling heavy) and every
+    // w1280+ image at the original file (backdrops up to 3840x2160). Lampa.TMDB is the object app.min.js
+    // calls itself (var TMDB$1 = {api, key, image, broken}; exported as TMDB), so wrapping image() covers all.
     function sharpImages() {
         var image = Lampa.TMDB.image;
         Lampa.TMDB.image = function (path) {
             if (factor() && typeof path === 'string') {
                 path = path.replace(/t\/p\/w(\d+)\//, function (m, w) {
-                    return +w >= 1280 ? 't/p/original/' : +w < 780 ? 't/p/w780/' : m;
+                    return +w >= 1280 ? 't/p/original/' : +w < 500 ? 't/p/w500/' : m;
                 });
             }
             return image.apply(this, [path].concat([].slice.call(arguments, 1)));
         };
+    }
+
+    // Lampa's "Background" setting blurs the focused title's image in JavaScript on every focus change;
+    // it is invisible under glass.js's colour light, so turn it off on computers (Settings -> Interface ->
+    // Background shows it). The header is shown after 4 s even if nav.js never takes it over.
+    function lighten() {
+        if (Lampa.Storage.field('background')) Lampa.Storage.set('background', false);
+        setTimeout(function () { document.body.classList.add('ruby-nav-ready'); }, 4000);
     }
 
     function start() {
@@ -211,6 +232,7 @@
         });
         fullRows();
         sharpImages();
+        if (factor()) lighten();
         wheelScrolls();
         apply();
     }

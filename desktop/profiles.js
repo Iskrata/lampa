@@ -1,60 +1,121 @@
-// Netflix-style profiles for Lampa (desktop/README.md). Loaded FIRST by index.html, before Lampa.
-// Lampa keeps everything in this browser's localStorage under fixed keys and has no local profiles (its
-// own "profiles" need a CUB account). So a profile is a set of those keys: the active profile's values
-// are the live keys Lampa and its plugins use, and every other profile's values wait in
-// ruby_profile_data_<id>. Switching marks the target in ruby_profile_switch and reloads; the swap runs
-// here at the start of the next page load, before app.min.js has read anything (and after the old page
-// can no longer write), so nothing leaks between profiles.
+// Netflix-style profiles for Lampa (desktop/README.md). Loaded by index.html after store.js, before Lampa.
+// Lampa keeps everything in localStorage under fixed keys and has no local profiles (its own need a CUB
+// account). So a profile is a set of those keys: the active profile's values are the live keys Lampa and
+// its plugins use; every profile's values are also kept as profile-<id>.json in rubyStore (store.js) -
+// a ./sync/ folder on the server when there is one, so all devices share the profiles, else this browser.
+// Switching uploads the current profile, marks the target in ruby_profile_switch and reloads; the swap
+// runs here at the start of the next page load, before app.min.js has read anything, so nothing leaks.
+// While a profile is in use its data is uploaded every 15 s when it changed and when the tab is hidden;
+// at page start a newer copy from another device replaces the local one (the last write wins).
 // Per profile: bookmarks/My List, watch history and progress, search history, thumbs ratings
 // (ratings.js) and the Trakt login with all Trakt plugin state - so one person's IMDb/Trakt taste
 // never reaches another. Shared: settings, servers, plugins, the Trakt app id.
-// The picker ("Who's watching?") shows on the first visit in a browser; the choice is remembered in
-// localStorage and changed from the top bar's profile menu (rubyProfiles.picker()).
+// Which profile a device is on stays on the device: the picker ("Who's watching?") shows on its first
+// visit, the choice is remembered, and the top bar's profile menu changes it (rubyProfiles.picker()).
 (function () {
-    var ls = window.localStorage, STATE = 'ruby_profiles', DATA = 'ruby_profile_data_', SWITCH = 'ruby_profile_switch';
+    var ls = window.localStorage, STATE = 'ruby_profiles', OLD_DATA = 'ruby_profile_data_', SWITCH = 'ruby_profile_switch';
     var OWN = ['favorite', 'file_view', 'online_view', 'online_watched_last', 'torrents_view', 'timetable', 'search_history',
         'recomends_list', 'recomends_scan', 'mine_reactions', 'user_clarifys', 'person_subscribes_id', 'discuss_voited', 'activity'];
     var OWN_PREFIX = ['file_view_', 'trakt', 'ruby_ratings'];
     var SHARED = ['trakt_client_id', 'trakt_client_secret'];
+    var NOT_SYNCED = /cache|_log$|debug/;   // per profile, but rebuilt on their own: not worth uploading
     var COLORS = ['#2f6fdf', '#e50914', '#1f9d55', '#8b3fd9', '#e8730c', '#0e9aa7'];
+    var UPLOAD_MS = 15000;
 
     function own(key) {
         if (SHARED.indexOf(key) >= 0) return false;
         return OWN.indexOf(key) >= 0 || OWN_PREFIX.some(function (p) { return key.indexOf(p) === 0; });
     }
+    function parse(text) { try { return text ? JSON.parse(text) : null; } catch (e) { return null; } }
     function load() {
-        var s = null;
-        try { s = JSON.parse(ls.getItem(STATE)); } catch (e) {}
+        var s = parse(ls.getItem(STATE));
         if (!s || !s.list || !s.list.length) s = { list: [{ id: 'p1', name: 'Me', color: 0 }], current: 'p1', chosen: false };
         return s;
     }
     function save() { ls.setItem(STATE, JSON.stringify(state)); }
+    function saveList() { save(); rubyStore.put('profiles.json', JSON.stringify({ list: state.list })); }
     function find(id) { return state.list.filter(function (p) { return p.id === id; })[0]; }
 
-    // ---- the swap, at page start
+    function liveKeys() {
+        var keys = [];
+        for (var i = 0; i < ls.length; i++) keys.push(ls.key(i));
+        return keys.filter(own);
+    }
+    // the live profile's data as profile-<id>.json content
+    function snapshot() {
+        var keys = {};
+        liveKeys().filter(function (k) { return !NOT_SYNCED.test(k); }).forEach(function (k) { keys[k] = ls.getItem(k); });
+        return { t: Date.now(), keys: keys };
+    }
+    function apply(blob) {
+        liveKeys().forEach(function (k) { ls.removeItem(k); });
+        var keys = (blob && blob.keys) || {};
+        Object.keys(keys).forEach(function (k) { ls.setItem(k, keys[k]); });
+        state.dataT = (blob && blob.t) || 0;
+    }
+
+    // ---- page start: profile list, then the swap / the newer copy
     var state = load();
     try {
+        // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store
+        state.list.forEach(function (p) {
+            var old = ls.getItem(OLD_DATA + p.id);
+            if (old !== null) { rubyStore.putNow('profile-' + p.id + '.json', JSON.stringify({ t: 1, keys: parse(old) || {} })); ls.removeItem(OLD_DATA + p.id); }
+        });
+        var shared = rubyStore.get('profiles.json');
+        if (shared !== undefined) {
+            var server = parse(shared);
+            if (!state.synced) {
+                // this browser's first contact with the shared list: keep its own profiles too
+                var list = server && server.list ? server.list : [];
+                state.list.forEach(function (p) {
+                    if (list.some(function (q) { return q.id === p.id; })) return;
+                    list.push(p);
+                    if (p.id === state.current) rubyStore.putNow('profile-' + p.id + '.json', JSON.stringify(snapshot()));
+                });
+                state.list = list.slice(0, 5);
+                state.synced = true;
+                rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));
+            } else if (server && server.list && server.list.length) state.list = server.list;
+        }
         var target = ls.getItem(SWITCH);
         ls.removeItem(SWITCH);
-        if (target && target !== state.current && find(target)) {
-            var mine = {}, keys = [];
-            for (var i = 0; i < ls.length; i++) keys.push(ls.key(i));
-            keys.filter(own).forEach(function (k) { mine[k] = ls.getItem(k); ls.removeItem(k); });
-            ls.setItem(DATA + state.current, JSON.stringify(mine));
-            var theirs = {};
-            try { theirs = JSON.parse(ls.getItem(DATA + target) || '{}'); } catch (e) {}
-            Object.keys(theirs).forEach(function (k) { ls.setItem(k, theirs[k]); });
-            ls.removeItem(DATA + target);
+        if (!find(state.current)) { target = state.list[0].id; state.chosen = false; }   // deleted on another device
+        if (target && find(target) && (target !== state.current || !state.dataT)) {
+            if (target !== state.current && find(state.current)) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
+            apply(parse(rubyStore.get('profile-' + target + '.json')));
             state.current = target;
             state.chosen = true;
+        } else if (rubyStore.remote) {
+            var latest = parse(rubyStore.get('profile-' + state.current + '.json'));
+            if (latest && latest.t > (state.dataT || 0)) apply(latest);   // changed on another device since
         }
         save();
     } catch (e) {
-        console.error('lampa-profiles: switch failed', e);
+        console.error('profiles: start failed', e);
     }
+
+    // ---- while in use: upload the profile's data when it changed
+    var lastSent = '';
+    function upload(keepalive) {
+        var snap = snapshot(), text = JSON.stringify(snap.keys);
+        if (text === lastSent) return;
+        lastSent = text;
+        state.dataT = snap.t;
+        save();
+        rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snap), keepalive);
+    }
+    lastSent = JSON.stringify(snapshot().keys);
+    setInterval(function () { upload(false); }, UPLOAD_MS);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) upload(true); });
+    window.addEventListener('pagehide', function () { upload(true); });
 
     function switchTo(id) {
         if (id === state.current) { state.chosen = true; save(); close(); return; }
+        var snap = snapshot();
+        rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snap));
+        state.dataT = snap.t;
+        save();
         ls.setItem(SWITCH, id);
         location.replace(location.pathname);   // start on Home, the old page's activity belongs to the old profile
     }
@@ -184,8 +245,8 @@
             var name = input.value.trim();
             if (!name) return input.focus();
             if (p) { p.name = name; p.color = draft.color; }
-            else state.list.push({ id: 'p' + Date.now().toString(36), name: name, color: draft.color });
-            save();
+            else state.list.push({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, color: draft.color });
+            saveList();
             picker(true);
         }
         input.addEventListener('keydown', function (e) { if (e.key === 'Enter') commit(); if (e.key === 'Escape') picker(true); });
@@ -193,10 +254,10 @@
         r.querySelector('[data-a=cancel]').addEventListener('click', function () { picker(true); });
         var del = r.querySelector('[data-a=delete]');
         if (del) del.addEventListener('click', function () {
-            if (!confirm('Delete the profile "' + p.name + '"? Its list, history, ratings and Trakt login in this browser are removed.')) return;
+            if (!confirm('Delete the profile "' + p.name + '"? Its list, history, ratings and Trakt login are removed on every device.')) return;
             state.list = state.list.filter(function (x) { return x.id !== p.id; });
-            ls.removeItem(DATA + p.id);
-            save();
+            rubyStore.del('profile-' + p.id + '.json');
+            saveList();
             picker(true);
         });
     }

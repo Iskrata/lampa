@@ -20,6 +20,11 @@
         '.ruby-hero__bg.show{opacity:1}',
         '.ruby-hero::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(11,11,14,.95) 0%,rgba(11,11,14,.6) 38%,rgba(11,11,14,0) 70%),linear-gradient(0deg,#0b0b0e 0%,rgba(11,11,14,0) 35%)}',
         '.ruby-hero__body{position:absolute;left:3.5%;bottom:13%;width:min(42%,40em);z-index:2}',
+        // loading: a shimmering placeholder of the same size until the picks are in; each pick's text rises in
+        '.ruby-hero--wait{background:linear-gradient(100deg,#0e0e10 30%,#1c1c1f 50%,#0e0e10 70%);background-size:300% 100%;animation:rb-shimmer 1.4s linear infinite}',
+        '@keyframes rb-shimmer{from{background-position:100% 0}to{background-position:0 0}}',
+        '.ruby-hero__body>*{animation:rb-rise .5s cubic-bezier(.2,.8,.2,1) both}',
+        '.ruby-hero__body>*:nth-child(2){animation-delay:.05s}.ruby-hero__body>*:nth-child(3){animation-delay:.1s}.ruby-hero__body>*:nth-child(4){animation-delay:.15s}',
         '.ruby-hero__logo{max-width:100%;max-height:9em;display:block;margin-bottom:1em;filter:drop-shadow(0 .2em .6em rgba(0,0,0,.6))}',
         '.ruby-hero__title{font-size:3.6em;font-weight:700;line-height:1.05;margin-bottom:.3em}',
         '.ruby-hero__meta{display:flex;gap:.8em;align-items:center;font-size:1.1em;opacity:.85;margin-bottom:.8em}',
@@ -175,6 +180,14 @@
         el.style.height = (el.getBoundingClientRect().height + top) + 'px';
     }
 
+    // Lampa is still laying the page out when the billboard goes in (measured 124 px then, 17 px once
+    // settled), so measure again once it has settled
+    function place(el) {
+        underBar(el);
+        [400, 1500].forEach(function (ms) { setTimeout(function () { underBar(el); }, ms); });
+        window.addEventListener('resize', function () { underBar(el); });
+    }
+
     function mount(object) {
         if (!enabled() || !object || !object.activity) return;
         var root = object.activity.render(true), tries = 0;
@@ -183,15 +196,15 @@
             if (!first && ++tries < 60) return;
             clearInterval(t);
             if (!first || root.querySelector('.ruby-hero')) return;
+            var wait = document.createElement('div');
+            wait.className = 'ruby-hero ruby-hero--wait';
+            first.parentNode.insertBefore(wait, first);
+            place(wait);
             loadPicks(function (list) {
-                if (!list.length || root.querySelector('.ruby-hero')) return;
+                if (!list.length || root.querySelector('.ruby-hero:not(.ruby-hero--wait)')) return wait.remove();
                 var el = build(list);
-                first.parentNode.insertBefore(el, first);
-                // Lampa is still laying the page out when the billboard goes in (measured 124 px then, 17 px
-                // once settled), so measure again once it has settled
-                underBar(el);
-                [400, 1500].forEach(function (ms) { setTimeout(function () { underBar(el); }, ms); });
-                window.addEventListener('resize', function () { underBar(el); });
+                wait.replaceWith(el);
+                place(el);
             });
         }, 150);
     }

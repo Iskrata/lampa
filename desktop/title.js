@@ -15,7 +15,10 @@
         '.ruby-titlehero{position:fixed;left:0;right:0;top:0;height:88vh;z-index:0;pointer-events:none;opacity:0;transition:opacity .4s;will-change:transform,opacity;' +
             '-webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);mask-image:linear-gradient(180deg,#000 62%,transparent 100%)}',
         '.ruby-titlehero.show{opacity:1}',
-        '.ruby-titlehero__bg{position:absolute;inset:0;background:center 20%/cover no-repeat}',
+        '.ruby-titlehero__bg{position:absolute;inset:0;background:center 20%/cover no-repeat;opacity:0;transition:opacity .6s ease}',
+        '.ruby-titlehero__bg.show{opacity:1}',
+        'body.ruby-title .full-start-new__title{transition:opacity .3s}',
+        'body.ruby-title .full-start-new__title.ruby-logo-wait{opacity:0}',
         '.ruby-titlehero::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(0,0,0,.88) 0%,rgba(0,0,0,.55) 32%,rgba(0,0,0,0) 62%),linear-gradient(0deg,rgba(0,0,0,.6) 0%,rgba(0,0,0,0) 40%)}',
         // Lampa's own dim backdrop and TV poster give way to the hero
         'body.ruby-title .activity--active .full-start__background{display:none!important}',
@@ -107,17 +110,33 @@
         trailer = rubyTrailer.attach(host, { visible: trailerVisible, quiet: function () { return !active(); } });
     }
 
+    // the logo replaces the text title; the text stays invisible while the logo is fetched (at most
+    // LOGO_WAIT_MS), so the title doesn't jump from text to logo in front of you
+    var LOGO_WAIT_MS = 1200;
     function setLogo(root, item) {
         var title = root.querySelector('.full-start-new__title');
         if (!title || title.querySelector('.ruby-titlehero__logo')) return;
+        title.classList.add('ruby-logo-wait');
+        var reveal = function () { title.classList.remove('ruby-logo-wait'); };
+        var giveUp = setTimeout(reveal, LOGO_WAIT_MS);
         rubyDesktop.logo(item, function (src) {
-            if (!src || current !== item) return;
+            if (!src || current !== item) { clearTimeout(giveUp); return reveal(); }
             var img = new Image();
             img.className = 'ruby-titlehero__logo';
             img.alt = title.textContent;
-            img.onload = function () { title.textContent = ''; title.appendChild(img); title.classList.add('has-logo'); };
+            img.onload = function () { clearTimeout(giveUp); title.textContent = ''; title.appendChild(img); title.classList.add('has-logo'); reveal(); };
+            img.onerror = function () { clearTimeout(giveUp); reveal(); };
             img.src = src;
         });
+    }
+
+    // the backdrop fades in once downloaded instead of painting in top to bottom
+    function setBackdrop(item) {
+        bg.classList.remove('show');
+        if (!item.backdrop_path) return;
+        var src = Lampa.TMDB.image('t/p/original' + item.backdrop_path), img = new Image();
+        img.onload = function () { if (current === item) { bg.style.backgroundImage = 'url(' + src + ')'; bg.classList.add('show'); } };
+        img.src = src;
     }
 
     function enter(item, root) {
@@ -128,7 +147,7 @@
         clearTimeout(warmTimer);
         if (!current || current.id !== item.id) {
             current = item;
-            bg.style.backgroundImage = item.backdrop_path ? 'url(' + Lampa.TMDB.image('t/p/original' + item.backdrop_path) + ')' : 'none';
+            setBackdrop(item);
         }
         if (playing(item)) trailer.loud(); else trailer.show(item);   // warmed up on hover: keep it
         host.classList.add('show');

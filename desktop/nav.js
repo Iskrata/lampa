@@ -167,6 +167,7 @@
         var tries = 0, t = setInterval(function () {
             if (build() || ++tries > 50) {
                 clearInterval(t);
+                document.body.classList.add('ruby-nav-ready');   // desktop.js keeps the TV header hidden until now
                 markActive();
                 Lampa.Listener.follow('activity', function (e) { if (e.type === 'start') setTimeout(markActive, 50); });
                 watchScroll();
