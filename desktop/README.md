@@ -8,6 +8,7 @@ Desktop look** on, so Lampa on a TV stays as upstream ships it.
 | file | what it does |
 |---|---|
 | `icons.js` | `rubyIcons.svg(name)`: shared SVG icons (no emoji or text glyphs as icons) |
+| `store.js` | where profiles live (`rubyStore`): a WebDAV folder at `./sync/` if the server has one, else this browser |
 | `profiles.js` | profiles and "Who's watching?" (`rubyProfiles`); must load **before** Lampa, see below |
 | `desktop.js` | density, Apple TV dark CSS, full rows, pixel wheel scrolling, sharp images; shared helpers on `rubyDesktop` (`tmdb`, `details`, `logo`, `kind`, `card`, `pageY`, `openFull`) |
 | `trakt.js` | `rubyTrakt`: Trakt API calls, related titles, the "Connect Trakt" device-code sign-in, the Client ID setting |
@@ -32,6 +33,18 @@ Lampa and its plugins read. Every other profile's values wait in `ruby_profile_d
 Switching writes the target to `ruby_profile_switch` and reloads. The swap runs at the very start of the
 next page load, before `app.min.js` has read anything and after the old page can no longer write, so
 nothing leaks between profiles.
+
+**Sharing profiles between devices.** Serve any WebDAV folder at `./sync/` on the same origin, for
+example `rclone serve webdav <dir> --addr 127.0.0.1:8091` behind your web server's `/sync/` route.
+`store.js` detects it with a test write, then keeps `profiles.json` and `profile-<id>.json` (`{t, keys}`)
+there:
+- **Reads** happen synchronously at page start, before Lampa.
+- **Writes** go up every 15 s when something changed, and when the tab hides. The last write wins.
+- **Which profile a device is on** stays on the device.
+- **A browser's first contact** merges in its own profiles. Its untouched default "Me" isn't added. A
+  renamed first profile whose id `p1` is already taken by a differently named one gets a new id.
+
+Without `./sync/`, everything stays in the browser.
 
 Per profile: `favorite`, `file_view*` (progress), `online_view`, `torrents_view`, `timetable`,
 `search_history`, `recomends_*`, `activity` and a few more, every `trakt*` key (the Trakt login and all
