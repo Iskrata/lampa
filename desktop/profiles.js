@@ -57,27 +57,36 @@
     // ---- page start: profile list, then the swap / the newer copy
     var state = load();
     try {
+        var shared = rubyStore.get('profiles.json'), server = parse(shared), rename = {};
+        if (shared !== undefined && !state.synced) {
+            // this browser's first contact with the shared list: keep its own profiles too. Every browser's
+            // first profile is 'p1', so a local profile whose id is taken by a differently named one on the
+            // server gets a new id (and keeps its data) instead of landing on someone else's profile.
+            var list = server && server.list ? server.list : [];
+            var fresh = !state.chosen && state.list.length === 1 && list.length > 0;   // a new browser's default "Me"
+            state.list.forEach(function (p) {
+                if (fresh) return;
+                var same = list.filter(function (q) { return q.id === p.id; })[0];
+                if (same && same.name === p.name) return;
+                if (same) {
+                    var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                    rename[p.id] = id;
+                    if (state.current === p.id) state.current = id;
+                    p = { id: id, name: p.name, color: p.color };
+                }
+                list.push(p);
+            });
+            state.list = list.slice(0, 5);
+            state.synced = true;
+            rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));
+            if (find(state.current)) rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snapshot()));
+        } else if (server && server.list && server.list.length) state.list = server.list;
         // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store
-        state.list.forEach(function (p) {
-            var old = ls.getItem(OLD_DATA + p.id);
-            if (old !== null) { rubyStore.putNow('profile-' + p.id + '.json', JSON.stringify({ t: 1, keys: parse(old) || {} })); ls.removeItem(OLD_DATA + p.id); }
+        Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) {
+            var id = k.slice(OLD_DATA.length);
+            rubyStore.putNow('profile-' + (rename[id] || id) + '.json', JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {} }));
+            ls.removeItem(k);
         });
-        var shared = rubyStore.get('profiles.json');
-        if (shared !== undefined) {
-            var server = parse(shared);
-            if (!state.synced) {
-                // this browser's first contact with the shared list: keep its own profiles too
-                var list = server && server.list ? server.list : [];
-                state.list.forEach(function (p) {
-                    if (list.some(function (q) { return q.id === p.id; })) return;
-                    list.push(p);
-                    if (p.id === state.current) rubyStore.putNow('profile-' + p.id + '.json', JSON.stringify(snapshot()));
-                });
-                state.list = list.slice(0, 5);
-                state.synced = true;
-                rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));
-            } else if (server && server.list && server.list.length) state.list = server.list;
-        }
         var target = ls.getItem(SWITCH);
         ls.removeItem(SWITCH);
         if (!find(state.current)) { target = state.list[0].id; state.chosen = false; }   // deleted on another device

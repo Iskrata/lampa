@@ -170,11 +170,12 @@
 
     // Start the billboard at the very top of the window, under the transparent top bar: the distance
     // from the window top (Lampa's padding for the bar + the rows' own top spacing) depends on the
-    // interface size, so measure it with the page at its top and pull the billboard up by that much.
+    // interface size, so measure it - as if the page were at its top: Lampa keeps Home scrolled by a few
+    // pixels (-9 measured) after focusing the first row - and pull the billboard up by that much.
     function underBar(el) {
-        if (!document.body.contains(el) || rubyDesktop.pageY() < 0) return;
+        if (!document.body.contains(el)) return;
         el.style.marginTop = el.style.height = '';
-        var top = el.getBoundingClientRect().top;
+        var top = el.getBoundingClientRect().top - rubyDesktop.pageY();
         if (top <= 0) return;
         el.style.marginTop = (parseFloat(getComputedStyle(el).marginTop) - top) + 'px';
         el.style.height = (el.getBoundingClientRect().height + top) + 'px';
@@ -184,7 +185,7 @@
     // settled), so measure again once it has settled
     function place(el) {
         underBar(el);
-        [400, 1500].forEach(function (ms) { setTimeout(function () { underBar(el); }, ms); });
+        [400, 1500, 4000].forEach(function (ms) { setTimeout(function () { underBar(el); }, ms); });
         window.addEventListener('resize', function () { underBar(el); });
     }
 
