@@ -120,16 +120,37 @@
                 if (!el.called_visible) { el.called_visible = true; el.visible = true; Lampa.Utils.trigger(el, 'visible'); }
             });
         }, { rootMargin: '200% 100%' });   // like Lampa's own: start ~2 screens ahead so posters are decoded before they show
-        var visible = Lampa.Layer.visible;
-        Lampa.Layer.visible = function (combine) {
-            if (!factor() || !combine) return visible.apply(this, arguments);
-            var root = combine.jquery ? combine[0] : combine;
+        var waiting = [];
+        watchVisible = function (root) {
             if (!root || !root.querySelectorAll) return;
             var list = [].slice.call(root.querySelectorAll('.layer--visible'));
             if (root.classList && root.classList.contains('layer--visible')) list.push(root);
-            list.forEach(function (el) { if (!el.called_visible && !el._rubyIo) { el._rubyIo = true; io.observe(el); } });
+            list.forEach(function (el) { if (!el.called_visible && !el._rubyIo) { el._rubyIo = true; io.observe(el); waiting.push(el); } });
+        };
+        // safety net: once a second, anything watched that is on screen but still waiting gets its event
+        // (only the still-waiting elements are measured, so this stays cheap)
+        setInterval(function () {
+            if (document.hidden || !waiting.length) return;
+            waiting = waiting.filter(function (el) { return !el.called_visible && document.body.contains(el); });
+            waiting.forEach(function (el) {
+                var r = el.getBoundingClientRect();
+                if (r.width && r.bottom > -window.innerHeight && r.top < window.innerHeight * 2 && r.right > 0 && r.left < window.innerWidth) {
+                    io.unobserve(el);
+                    if (el.style.visibility === 'hidden') el.style.visibility = '';
+                    el.called_visible = true; el.visible = true; Lampa.Utils.trigger(el, 'visible');
+                }
+            });
+        }, 1000);
+        var visible = Lampa.Layer.visible;
+        Lampa.Layer.visible = function (combine) {
+            if (!factor() || !combine) return visible.apply(this, arguments);
+            watchVisible(combine.jquery ? combine[0] : combine);
         };
     }
+    // Some rows (the Trakt plugin's, ContentRows like "Picked for you") put their cards in the page after
+    // calling Layer.visible; Lampa's own scan found them on a later whole-page pass, so every element that
+    // arrives is watched as it is added (asyncImages' observer) - without this their posters never loaded
+    var watchVisible = function () {};
 
     // The posters Lampa adds: decoded off the main thread, and unloaded when far away. Every <img> stays
     // decoded while it is in the page, and Lampa never removes rows: a few minutes of scrolling held
@@ -149,17 +170,19 @@
                 }
             });
         }, { rootMargin: '500% 150%' });
+        function added(n) {
+            if (n.tagName === 'IMG') return take(n);
+            if (!n.querySelectorAll) return;
+            [].forEach.call(n.querySelectorAll('img'), take);
+            if (n.classList.contains('layer--visible') || n.querySelector('.layer--visible')) watchVisible(n);
+        }
         function take(img) {
             img.decoding = 'async';
             if (img.classList.contains('card__img') && !img._rubyFar) { img._rubyFar = true; far.observe(img); }
         }
         new MutationObserver(function (ms) {
             ms.forEach(function (m) {
-                [].forEach.call(m.addedNodes, function (n) {
-                    if (n.nodeType !== 1) return;
-                    if (n.tagName === 'IMG') take(n);
-                    else if (n.querySelectorAll) [].forEach.call(n.querySelectorAll('img'), take);
-                });
+                [].forEach.call(m.addedNodes, function (n) { if (n.nodeType === 1) added(n); });
             });
         }).observe(document.body, { childList: true, subtree: true });
     }
