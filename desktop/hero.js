@@ -22,7 +22,6 @@
         '.ruby-hero__body{position:absolute;left:3.5%;bottom:13%;width:min(42%,40em);z-index:2}',
         // loading: a shimmering placeholder of the same size until the picks are in; each pick's text rises in
         '.ruby-hero--wait{background:linear-gradient(100deg,#0e0e10 30%,#1c1c1f 50%,#0e0e10 70%);background-size:300% 100%;animation:rb-shimmer 1.4s linear infinite}',
-        '@keyframes rb-shimmer{from{background-position:100% 0}to{background-position:0 0}}',
         '.ruby-hero__body>*{animation:rb-rise .5s cubic-bezier(.2,.8,.2,1) both}',
         '.ruby-hero__body>*:nth-child(2){animation-delay:.05s}.ruby-hero__body>*:nth-child(3){animation-delay:.1s}.ruby-hero__body>*:nth-child(4){animation-delay:.15s}',
         '.ruby-hero__logo{max-width:100%;max-height:9em;display:block;margin-bottom:1em;filter:drop-shadow(0 .2em .6em rgba(0,0,0,.6))}',
@@ -122,7 +121,7 @@
             info.addEventListener('click', function () { rubyDesktop.openFull(item); });
             info.dataset.rubyItem = '';   // title.js warms the title page's trailer up on hover
             info._rubyItem = item;
-            if (trailer) trailer.show(item);
+            if (trailer) rubyDesktop.settled(function () { if (list[idx] === item) trailer.show(item); });   // not during page load
             rubyDesktop.logo(item, function (src) {
                 if (!src || list[idx] !== item) return;
                 var img = new Image();

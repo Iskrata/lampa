@@ -60,7 +60,7 @@
         return it && it.id ? it : null;
     }
     function warm(item) {
-        if (active() || !rubyDesktop.active() || Date.now() - lastWheel < QUIET_AFTER_WHEEL_MS) return;
+        if (active() || !rubyDesktop.active() || !rubyDesktop.settled() || Date.now() - lastWheel < QUIET_AFTER_WHEEL_MS) return;
         if (!host) build();
         warmItem = item;
         warmUntil = Infinity;

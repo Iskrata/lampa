@@ -54,60 +54,84 @@
         state.dataT = (blob && blob.t) || 0;
     }
 
-    // ---- page start: profile list, then the swap / the newer copy
+    // ---- page start (before Lampa): only a profile switch reads from the store, synchronously, because the
+    // page must start with the target's data. Everything else is checked in the background (syncList).
     var state = load();
     try {
-        var shared = rubyStore.get('profiles.json'), server = parse(shared), rename = {};
-        if (shared !== undefined && !state.synced) {
-            // this browser's first contact with the shared list: keep its own profiles too. Every browser's
-            // first profile is 'p1', so a local profile whose id is taken by a differently named one on the
-            // server gets a new id (and keeps its data) instead of landing on someone else's profile.
-            var list = server && server.list ? server.list : [];
-            var fresh = !state.chosen && state.list.length === 1 && list.length > 0;   // a new browser's default "Me"
-            state.list.forEach(function (p) {
-                if (fresh) return;
-                var same = list.filter(function (q) { return q.id === p.id; })[0];
-                if (same && same.name === p.name) return;
-                if (same) {
-                    var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                    rename[p.id] = id;
-                    if (state.current === p.id) state.current = id;
-                    p = { id: id, name: p.name, color: p.color };
-                }
-                list.push(p);
-            });
-            state.list = list.slice(0, 5);
-            state.synced = true;
-            rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));
-            if (find(state.current)) rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snapshot()));
-        } else if (server && server.list && server.list.length) state.list = server.list;
-        else if (shared === null && state.synced) rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));   // server copy gone: re-seed
         // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store
         Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) {
-            var id = k.slice(OLD_DATA.length);
-            rubyStore.putNow('profile-' + (rename[id] || id) + '.json', JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {} }));
+            rubyStore.put('profile-' + k.slice(OLD_DATA.length) + '.json', JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {} }));
             ls.removeItem(k);
         });
         var target = ls.getItem(SWITCH);
         ls.removeItem(SWITCH);
-        if (!find(state.current)) { target = state.list[0].id; state.chosen = false; }   // deleted on another device
+        // (also "switching" to the same id when this browser has never loaded that profile's data: a new
+        // browser picking the profile it happened to start on)
         if (target && find(target) && (target !== state.current || !state.dataT)) {
-            if (target !== state.current && find(state.current)) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
             apply(parse(rubyStore.get('profile-' + target + '.json')));
             state.current = target;
             state.chosen = true;
-        } else if (rubyStore.remote) {
-            var latest = parse(rubyStore.get('profile-' + state.current + '.json'));
-            if (latest && latest.t > (state.dataT || 0)) apply(latest);   // changed on another device since
         }
         save();
     } catch (e) {
         console.error('profiles: start failed', e);
     }
 
+    // ---- after start: the shared list, and a newer copy of this profile from another device
+    function syncList() {
+        rubyStore.getAsync('profiles.json').then(function (shared) {
+            if (shared === undefined) return;
+            var server = parse(shared);
+            if (!state.synced) {
+                // this browser's first contact with the shared list: keep its own profiles too. Every browser's
+                // first profile is 'p1', so a local profile whose id is taken by a differently named one on the
+                // server gets a new id (and keeps its data) instead of landing on someone else's profile; a new
+                // browser's untouched default "Me" is not added at all.
+                var list = server && server.list ? server.list : [];
+                var fresh = !state.chosen && state.list.length === 1 && list.length > 0;
+                state.list.forEach(function (p) {
+                    if (fresh) return;
+                    var same = list.filter(function (q) { return q.id === p.id; })[0];
+                    if (same && same.name === p.name) return;
+                    if (same) {
+                        var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                        if (state.current === p.id) state.current = id;
+                        p = { id: id, name: p.name, color: p.color };
+                    }
+                    list.push(p);
+                });
+                state.list = list.slice(0, 5);
+                state.synced = true;
+                rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
+                if (!fresh && find(state.current)) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
+            } else if (server && server.list && server.list.length) state.list = server.list;
+            else if (shared === null) rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));   // server copy gone: re-seed
+            save();
+            if (root && !root.classList.contains('manage') && !root.querySelector('.ruby-who__form')) picker(false);   // refresh an open picker
+            if (!find(state.current)) {   // deleted on another device: move to the first profile, then pick again
+                state.chosen = false;
+                ls.setItem(SWITCH, state.list[0].id);
+                save();
+                return location.replace(location.pathname);
+            }
+            if (!rubyStore.remote || !state.chosen) return;   // nothing to refresh before someone has picked
+            rubyStore.getAsync('profile-' + state.current + '.json').then(function (text) {
+                var latest = parse(text);
+                if (!latest || !(latest.t > (state.dataT || 0))) return;
+                // changed on another device since this browser last saw it: take it over (Lampa has read its
+                // storage already, so reload once), unless the content is the same anyway
+                if (JSON.stringify(latest.keys) === JSON.stringify(snapshot().keys)) { state.dataT = latest.t; return save(); }
+                apply(latest);
+                save();
+                location.replace(location.pathname);
+            });
+        });
+    }
+
     // ---- while in use: upload the profile's data when it changed
     var lastSent = '';
     function upload(keepalive) {
+        if (!state.chosen) return;   // a new browser before its first pick holds nobody's data
         var snap = snapshot(), text = JSON.stringify(snap.keys);
         if (text === lastSent) return;
         lastSent = text;
@@ -121,10 +145,12 @@
     window.addEventListener('pagehide', function () { upload(true); });
 
     function switchTo(id) {
-        if (id === state.current) { state.chosen = true; save(); close(); return; }
-        var snap = snapshot();
-        rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snap));
-        state.dataT = snap.t;
+        if (id === state.current && (state.dataT || !rubyStore.remote)) { state.chosen = true; save(); close(); return; }
+        if (state.chosen) {
+            var snap = snapshot();
+            rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snap));
+            state.dataT = snap.t;
+        }
         save();
         ls.setItem(SWITCH, id);
         location.replace(location.pathname);   // start on Home, the old page's activity belongs to the old profile
@@ -284,6 +310,6 @@
     // TVs (Samsung/LG through MSX, Android TV): the picker is built for a mouse, and Lampa's TV look has
     // no top bar to switch from - stay on the remembered profile there
     var TV = /Tizen|Web0S|webOS|SMART-TV|SmartTV|NetCast|Android TV|BRAVIA|AFT[BMST]/i.test(navigator.userAgent);
-    function boot() { css(); if (!state.chosen && !TV) picker(false); }
+    function boot() { css(); if (!state.chosen && !TV) picker(false); syncList(); }
     if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot);
 })();

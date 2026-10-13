@@ -53,6 +53,7 @@
         // rise in as they arrive, and the TV header stays hidden until nav.js has replaced it
         '.card__view{background:#1c1c1e}',
         '@keyframes rb-fade{from{opacity:0}to{opacity:1}}',
+        '@keyframes rb-shimmer{from{background-position:100% 0}to{background-position:0 0}}',   // placeholders (hero.js, rowload.js)
         '.card--loaded .card__img{animation:rb-fade .35s ease}',
         '@keyframes rb-rise{from{opacity:0;transform:translateY(.8em)}to{opacity:1;transform:none}}',
         '.items-line{animation:rb-rise .45s cubic-bezier(.2,.8,.2,1) both}',
@@ -127,6 +128,17 @@
             if (!frame) frame = requestAnimationFrame(flush);
         }, { capture: true, passive: false });
     }
+
+    // "Settled" = the page has loaded and gone quiet (load event + 1.5 s + an idle moment). Heavy extras
+    // wait for it - mainly the YouTube player (1.8 MB of script, ~80 ms of main-thread work to start, and
+    // in Safari it runs on the page's own thread), which otherwise competed with Lampa's own start-up.
+    var settledCbs = [], isSettled = false;
+    function settle() { if (isSettled) return; isSettled = true; settledCbs.splice(0).forEach(function (f) { f(); }); }
+    (function () {
+        var idle = window.requestIdleCallback || function (f) { setTimeout(f, 0); };
+        var go = function () { setTimeout(function () { idle(settle, { timeout: 3000 }); }, 1500); };
+        if (document.readyState === 'complete') go(); else window.addEventListener('load', go);
+    })();
 
     var logos = {}, DETAILS = 'ruby_tmdb_cache_v1', details = {};
     try { details = JSON.parse(sessionStorage.getItem(DETAILS) || '{}'); } catch (e) {}
@@ -219,6 +231,8 @@
                     });
                 });
             },
+            // settled(cb): run cb once the page has settled (now, if it has); settled(): has it?
+            settled: function (cb) { if (!cb) return isSettled; if (isSettled) cb(); else settledCbs.push(cb); },
             openFull: function (item) {
                 Lampa.Activity.push({ url: '', component: 'full', id: item.id, method: rubyDesktop.kind(item), card: rubyDesktop.card(item), source: 'tmdb' });
             }

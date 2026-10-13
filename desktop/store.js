@@ -2,10 +2,11 @@
 // With a WebDAV folder at ./sync/ on the same origin (any server that answers GET and PUT for files),
 // profiles and each profile's data are kept there, so every browser and device sees the same profiles.
 // Without one (a plain static host), they stay in this browser's localStorage, as before.
-// Reads happen at page start, before Lampa reads its own storage, so they are synchronous requests (a
-// few small JSON files from the same server). Writes are asynchronous; the last write wins.
-// rubyStore.get(name) -> string | null (missing) | undefined (server unreachable), .put(name, text),
-// .del(name), .remote (true when the server folder is in use).
+// A normal page load makes no synchronous request: profiles.js reads in the background (getAsync) and
+// only switching profile reads synchronously (get), because the next page must start with the right
+// data. Writes are asynchronous; the last write wins.
+// rubyStore.get(name) / .getAsync(name) -> string | null (missing) | undefined (server unreachable),
+// .put(name, text, keepalive), .putNow(name, text), .del(name), .remote (the server folder is in use).
 (function () {
     var BASE = './sync/', LOCAL = 'ruby_store_', PROBE = 'ruby_store_mode';
     var ls = window.localStorage;
@@ -21,13 +22,16 @@
     }
 
     // Is ./sync/ a writable folder here? A static server answers 404 for a missing file too, so a write is
-    // the real test; the answer is remembered per browser (re-tested when it was "local").
+    // the real test (one synchronous request, on a browser's first visit). "remote" is remembered for good,
+    // "local" for a day, so a host without the folder doesn't pay for the test on every load.
+    var LOCAL_RECHECK_MS = 864e5;
     function probe() {
-        var known = ls.getItem(PROBE);
+        var known = ls.getItem(PROBE) || '';
         if (known === 'remote') return true;
+        if (known.indexOf('local:') === 0 && Date.now() - +known.slice(6) < LOCAL_RECHECK_MS) return false;
         var x = request('PUT', '.probe', '{}', true);
         var ok = !!x && x.status >= 200 && x.status < 300;
-        ls.setItem(PROBE, ok ? 'remote' : 'local');
+        ls.setItem(PROBE, ok ? 'remote' : 'local:' + Date.now());
         return ok;
     }
     var remote = probe();
@@ -39,6 +43,12 @@
             var x = request('GET', name, null, true);
             if (!x || x.status === 0 || x.status >= 500) return undefined;
             return x.status === 200 ? x.responseText : null;
+        },
+        getAsync: function (name) {
+            if (!remote) return Promise.resolve(ls.getItem(LOCAL + name));
+            return fetch(BASE + encodeURIComponent(name) + '?t=' + Date.now(), { cache: 'no-store' })
+                .then(function (r) { return r.status === 200 ? r.text() : r.status === 404 ? null : undefined; })
+                .catch(function () { return undefined; });
         },
         put: function (name, text, keepalive) {
             if (!remote) return ls.setItem(LOCAL + name, text);
