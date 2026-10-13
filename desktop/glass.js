@@ -1,7 +1,7 @@
 // Ambient colour + liquid glass for Lampa on computers (desktop/README.md). Loaded by index.html.
 // A web port of spotifast's album-art background (github.com/Iskrata/spotifast, src/ui/art_background.rs):
 // five soft orbs, one per quarter of the hovered poster plus one for its average, each giving 25 % of its
-// colour up to the average ("harmony"), wandering slowly around fixed homes, capped at 70 % opacity so
+// colour up to the average ("harmony"), resting at fixed homes (no drift, see CSS), capped at 70 % opacity so
 // text reads over them, and fading to new colours in 0.6 s. Panels float over them as frosted glass.
 // Active only where desktop.js is (window.rubyDesktop.active()); never on TVs.
 (function () {
@@ -9,18 +9,17 @@
     // homes as a share of the page, radii as a share of its longer side (same numbers as spotifast)
     var HOMES = [[0.18, 0.2], [0.82, 0.16], [0.28, 0.72], [0.8, 0.68], [0.52, 0.4]];
     var RADII = [0.42, 0.38, 0.4, 0.36, 0.3];
-    var DRIFT_S = [61, 73, 67, 79, 57];   // seconds per wander loop, different per orb so they never sync
 
     var CSS = [
         // @property makes the orb colour a real <color>, so it can transition (Safari 16.4+, Chrome 85+)
         '@property --rb-orb{syntax:"<color>";inherits:false;initial-value:rgba(40,40,48,1)}',
         '.ruby-orbs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:#000}',
-        // no filter:blur / mix-blend-mode: on a full-screen, always-moving layer they made Safari re-blur and
-        // re-blend every frame (and every backdrop-filter above it) - the radial gradient is soft enough alone
+        // no filter:blur / mix-blend-mode, and no drifting (spotifast's orbs wander; here 5 full-screen layers
+        // animating forever kept the GPU busy even with nothing happening): plain gradients that only change
+        // colour, over 0.6 s, when another poster is hovered
         '.ruby-orb{position:absolute;border-radius:50%;opacity:' + MAX_OPACITY + ';' +
             'background:radial-gradient(circle at center,var(--rb-orb) 0%,color-mix(in srgb,var(--rb-orb) 45%,transparent) 38%,transparent 70%);' +
-            'transition:--rb-orb .6s ease;will-change:transform}',
-        '@keyframes ruby-wander{0%{transform:translate(0,0)}25%{transform:translate(16vw,6vh)}50%{transform:translate(4vw,12vh)}75%{transform:translate(-12vw,4vh)}100%{transform:translate(0,0)}}',
+            'transition:--rb-orb .6s ease}',
         // a gentle veil keeps white text readable over bright posters
         '.ruby-orbs::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(0,0,0,.15),rgba(0,0,0,.55) 75%)}',
         // Lampa's own blurred-backdrop canvases would fight the orbs: dim them to a hint
@@ -59,7 +58,6 @@
         HOMES.forEach(function (h, i) {
             var o = document.createElement('div');
             o.className = 'ruby-orb';
-            o.style.animation = 'ruby-wander ' + DRIFT_S[i] + 's ease-in-out ' + (-i * 11) + 's infinite' + (i % 2 ? ' reverse' : '');
             root.appendChild(o);
             orbs.push(o);
         });

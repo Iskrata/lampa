@@ -26,7 +26,9 @@
         '.items-line__more{background:var(--rb-fill)!important;color:var(--rb-text2);border-radius:2em}',
         '.items-line__more:hover,.items-line__more.focus{color:var(--rb-text);background:rgba(118,118,128,.4)!important}',
         // cards: rounded posters that lift with a soft shadow (no thick TV frame)
-        '.card__view{border-radius:.75em;overflow:hidden;transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s;box-shadow:0 .2em .6em rgba(0,0,0,.35)}',
+        // only the transform animates (on the compositor); the deeper shadow switches in one repaint - animating a
+        // 2.4em box-shadow repainted the card every frame of every hover
+        '.card__view{border-radius:.75em;overflow:hidden;transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:0 .2em .6em rgba(0,0,0,.35)}',
         '.card__img{border-radius:.75em}',
         '.card.focus .card__view::after,.card:hover .card__view::after{border:none!important;box-shadow:none!important;opacity:0!important}',
         '.card.focus .card__view,.card:hover .card__view{transform:translateY(-.35em) scale(1.04);box-shadow:0 1.2em 2.4em rgba(0,0,0,.7)}',
@@ -46,11 +48,12 @@
         // and fades its top/bottom 8 % with a mask; the bar is transparent at the top and solid once
         // scrolled (nav.js), so neither is needed - and the Home billboard can sit under the bar (hero.js)
         '.activity .scroll.layer--wheight:not(.scroll--horizontal){overflow:visible!important;-webkit-mask-image:none!important;mask-image:none!important}',
-        // loading: posters fade in once loaded (Lampa adds card--loaded) over a graphite placeholder, rows
+        // loading: posters fade in once loaded (Lampa adds card--loaded) over a graphite placeholder - as an
+        // animation, never by hiding: cards Lampa doesn't mark (the Trakt plugin's episode cards) stay visible; rows
         // rise in as they arrive, and the TV header stays hidden until nav.js has replaced it
         '.card__view{background:#1c1c1e}',
-        '.card__img{opacity:0;transition:opacity .35s ease}',
-        '.card--loaded .card__img{opacity:1}',
+        '@keyframes rb-fade{from{opacity:0}to{opacity:1}}',
+        '.card--loaded .card__img{animation:rb-fade .35s ease}',
         '@keyframes rb-rise{from{opacity:0;transform:translateY(.8em)}to{opacity:1;transform:none}}',
         '.items-line{animation:rb-rise .45s cubic-bezier(.2,.8,.2,1) both}',
         'body:not(.ruby-nav-ready) .head{opacity:0}',

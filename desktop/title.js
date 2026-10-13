@@ -35,9 +35,11 @@
     ].join('\n');
 
     var host, bg, trailer, current = null;
-    // warm-up: a poster hovered for WARM_MS starts its trailer silently in the (hidden) hero, so it is past
-    // YouTube's start-up button when the page opens; dropped COOL_MS after the pointer leaves
-    var WARM_MS = 450, COOL_MS = 1200, warmItem = null, warmUntil = 0, warmTimer = 0;
+    // warm-up: a poster rested on for WARM_MS starts its trailer silently in the (hidden) hero, so it is past
+    // YouTube's start-up button when the page opens; dropped COOL_MS after the pointer leaves. Not while
+    // scrolling, and not on a quick pass: every warm-up loads a whole YouTube player (in Safari on the
+    // page's own thread), which made sweeping across rows stutter at 0.45 s
+    var WARM_MS = 900, COOL_MS = 1200, QUIET_AFTER_WHEEL_MS = 1200, warmItem = null, warmUntil = 0, warmTimer = 0, lastWheel = 0;
 
     function active() {
         var a = Lampa.Activity.active && Lampa.Activity.active();
@@ -58,13 +60,15 @@
         return it && it.id ? it : null;
     }
     function warm(item) {
-        if (active() || !rubyDesktop.active()) return;
+        if (active() || !rubyDesktop.active() || Date.now() - lastWheel < QUIET_AFTER_WHEEL_MS) return;
         if (!host) build();
         warmItem = item;
         warmUntil = Infinity;
         if (!playing(item)) trailer.show(item);
     }
     function watchHover() {
+        // on window: desktop.js stops wheel events at the document (stopImmediatePropagation)
+        window.addEventListener('wheel', function () { lastWheel = Date.now(); clearTimeout(warmTimer); }, { capture: true, passive: true });
         document.addEventListener('mouseover', function (e) {
             var it = itemOf(e.target);
             if (!it) return;
