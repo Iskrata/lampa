@@ -14,6 +14,7 @@
         // @property makes the orb colour a real <color>, so it can transition (Safari 16.4+, Chrome 85+)
         '@property --rb-orb{syntax:"<color>";inherits:false;initial-value:rgba(40,40,48,1)}',
         '.ruby-orbs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:#000}',
+        'body.ruby-noglow{background:#0d0d0f!important}',
         // no filter:blur / mix-blend-mode, and no drifting (spotifast's orbs wander; here 5 full-screen layers
         // animating forever kept the GPU busy even with nothing happening): plain gradients that only change
         // colour, over 0.6 s, when another poster is hovered
@@ -48,11 +49,18 @@
 
     var root, orbs = [], avgCache = {}, current = '', pending = 0;
 
+    // Settings -> Interface -> "Colour light", off by default since 2026-10-13 (testing whether it is what
+    // still makes Safari feel heavy): then the page is a plain Apple TV-style near-black and only the glass
+    // panels remain
+    var GLOW = 'ruby_glow';
+    function glowOn() { return Lampa.Storage.get(GLOW, 'false') + '' === 'true'; }
+
     function build() {
         var style = document.createElement('style');
         style.id = 'ruby-glass';
         style.textContent = CSS;
         document.head.appendChild(style);
+        if (!glowOn()) return document.body.classList.add('ruby-noglow');
         root = document.createElement('div');
         root.className = 'ruby-orbs';
         HOMES.forEach(function (h, i) {
@@ -163,13 +171,20 @@
     function start() {
         if (!window.rubyDesktop || !rubyDesktop.active()) return;
         build();
+        Lampa.SettingsApi.addParam({
+            component: 'interface',
+            param: { name: GLOW, type: 'trigger', default: false },
+            field: { name: 'Colour light', description: 'The background takes the colours of the poster you point at (uses more graphics power)' },
+            onChange: function () { location.reload(); }
+        });
+        if (!glowOn()) return;
         track();
         var first = document.querySelector('.card__img');
         if (first) paint(first.currentSrc || first.src);
     }
 
     var t = setInterval(function () {
-        if (!window.Lampa || !Lampa.Listener || !window.rubyDesktop) return;
+        if (!window.Lampa || !Lampa.Listener || !Lampa.SettingsApi || !Lampa.Storage || !window.rubyDesktop) return;
         clearInterval(t);
         start();
     }, 100);
