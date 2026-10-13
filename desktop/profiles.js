@@ -81,6 +81,7 @@
             rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));
             if (find(state.current)) rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snapshot()));
         } else if (server && server.list && server.list.length) state.list = server.list;
+        else if (shared === null && state.synced) rubyStore.putNow('profiles.json', JSON.stringify({ list: state.list }));   // server copy gone: re-seed
         // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store
         Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) {
             var id = k.slice(OLD_DATA.length);
