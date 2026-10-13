@@ -3,8 +3,8 @@
 //   * the Home billboard (hero.js)
 //   * the hero at the top of an opened movie/series page (title.js)
 // rubyTrailer.attach(host, {visible, onEnded}) -> {show(item), stop(), busy(), muteButton}.
-// A trailer loads as soon as the title is shown and fades in only once YouTube reports "playing" and the
-// sound question is settled, so neither a black frame nor YouTube's own pause/play badge is ever visible.
+// A trailer loads as soon as the title is shown and fades in after a few seconds of playback, once
+// YouTube's own pause button has auto-hidden and the sound question is settled (no black frame, no badge).
 // Sound is on by default (Settings -> Interface -> "Trailer sound", also the speaker button). Browsers only
 // allow audible autoplay after the user has interacted with the page (Safari: per-site "Auto-Play: Allow
 // All Auto-Play"), so a trailer always starts muted; unmute is tried only once the page has had a user
@@ -16,7 +16,10 @@
 // <meta name="referrer" content="never">, so the iframe alone gets strict-origin-when-cross-origin.
 (function () {
     var KEY = 'ruby_hero_trailers', SOUND = 'ruby_trailer_sound', DELAY_MS = 250;
-    var SETTLE_MS = 700, BADGE_FADE_MS = 800;   // wait for unmute to stick / for YouTube's pause badge to fade
+    // YouTube draws its own pause button over the first seconds of every embed (also with controls=0) and
+    // after any pause, then auto-hides it (measured 2026-10-13: still there 2.6 s in, gone by ~4 s), so the
+    // picture fades in only after CONTROLS_S seconds of playback; the backdrop shows until then
+    var CONTROLS_S = 4, SETTLE_MS = 700;
     var videos = {}, blocked = false;
 
     var CSS = [
@@ -60,7 +63,7 @@
         mute.title = 'Sound';
         host.appendChild(layer);
         host.appendChild(mute);
-        var frame = null, timer = 0, settle = 0, playing = false, muted = true, current = null, unmutedAt = 0;
+        var frame = null, timer = 0, playing = false, muted = true, current = null, unmutedAt = 0, revealAt = CONTROLS_S;
 
         function yt(func, args) {
             if (frame && frame.contentWindow) frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*');
@@ -74,8 +77,8 @@
         function reveal() { layer.classList.add('show'); mute.classList.add('on'); }
         function stop() {
             clearTimeout(timer);
-            clearTimeout(settle);
             playing = false;
+            revealAt = CONTROLS_S;
             current = null;
             mute.classList.remove('on');
             layer.classList.remove('show');
@@ -111,22 +114,20 @@
             if (st === 1 && !playing) {
                 playing = true;
                 if (layer.classList.contains('ruby-trailer--cc')) yt('setOption', ['captions', 'track', { languageCode: 'en' }]);
-                if (soundOn() && !blocked && hadGesture()) {
-                    unmutedAt = Date.now();
-                    setMute(false);
-                    settle = setTimeout(reveal, SETTLE_MS);
-                } else settle = setTimeout(reveal, layer.classList.contains('show') ? 0 : 60);
+                // unmute now, while the picture is still hidden: a refusal (and its pause) stays unseen
+                if (soundOn() && !blocked && hadGesture()) { unmutedAt = Date.now(); setMute(false); }
             }
             // the browser refused audible playback (it pauses right after unMute): muted again, play on, and
-            // show the picture only after YouTube's pause badge has faded
+            // wait for YouTube's pause button to auto-hide again
             if (st === 2 && !muted && Date.now() - unmutedAt < 1500) {
                 blocked = true;
-                clearTimeout(settle);
                 setMute(true);
                 yt('playVideo');
                 playing = false;
-                settle = setTimeout(function () { if (frame) reveal(); }, BADGE_FADE_MS + SETTLE_MS);
+                revealAt = (d.info && d.info.currentTime || 0) + CONTROLS_S;
             }
+            var time = d.info && d.info.currentTime;
+            if (playing && time >= revealAt && Date.now() - unmutedAt >= SETTLE_MS && !layer.classList.contains('show')) reveal();
             if (st === 0) { stop(); if (opts.onEnded) opts.onEnded(); }
             if (d.event === 'onError' && current) { videos[rubyDesktop.kind(current) + current.id] = null; stop(); }
         });

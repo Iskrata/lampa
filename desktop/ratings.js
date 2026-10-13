@@ -13,7 +13,9 @@
     var listeners = [], fromTrakt = null;
 
     var CSS = [
+        // every glass button is its own stacking context (backdrop-filter): lift the open one above its neighbours
         '.ruby-rate{position:relative;overflow:visible!important}',
+        '.ruby-rate:hover{z-index:10}',
         '.ruby-rate>.ruby-icon{font-size:1.45em}',
         '.ruby-rate__pop{position:absolute;left:50%;top:50%;z-index:5;display:flex;gap:.15em;padding:.3em;border-radius:3em;background:#2b2b2b;border:1px solid rgba(255,255,255,.18);' +
             'box-shadow:0 .5em 1.6em rgba(0,0,0,.75);opacity:0;pointer-events:none;transform:translate(-50%,-50%) scale(.6);transition:opacity .15s,transform .15s}',

@@ -37,6 +37,11 @@
         '.full-start__button,.full-start-new__buttons .button{border-radius:2em!important;background:var(--rb-fill)!important}',
         '.full-start__button.focus,.full-start__button:hover{background:#fff!important;color:#000!important}',
         '.full-start__rate,.full-start__pg,.full-start__status{border-radius:.4em}',
+        // grid pages (category / New & Popular / My List): Lampa fixes 6 columns in % of the width, which makes
+        // posters huge on a computer screen - follow the rows' density instead (~8 at 1440 px)
+        '@media (min-width: 1000px){.mapping--grid.cols--6>*{width:calc(100% / 7)}}',
+        '@media (min-width: 1300px){.mapping--grid.cols--6>*{width:12.5%}}',
+        '@media (min-width: 1700px){.mapping--grid.cols--6>*{width:10%}}',
         // menus / settings panels: graphite sheets
         '.menu,.settings__content,.selectbox__content{background:rgba(28,28,30,.92)!important;-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}'
     ].join('\n');

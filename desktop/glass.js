@@ -90,9 +90,12 @@
 
     // Quarter colours + average, by drawing the poster into a 2x2 and a 1x1 canvas. TMDB images send
     // Access-Control-Allow-Origin: *, so a crossOrigin load can be read back.
+    // The poster is usually already in the HTTP cache from Lampa's own <img>, fetched without CORS; TMDB
+    // sends ACAO * but no "Vary: Origin", so that cached copy fails a crossOrigin load. A query string
+    // (ignored by TMDB's CDN) gives the CORS copy its own cache entry.
     function colours(src, done) {
         if (avgCache[src]) return done(avgCache[src]);
-        var img = new Image();
+        var img = new Image(), url = src + (src.indexOf('?') < 0 ? '?' : '&') + 'cors=1';
         img.crossOrigin = 'anonymous';
         img.onload = function () {
             try {
@@ -112,7 +115,7 @@
             } catch (e) { done(null); }   // tainted canvas (image proxy without CORS): keep current colours
         };
         img.onerror = function () { done(null); };
-        img.src = src;
+        img.src = url;
     }
 
     function paint(src) {

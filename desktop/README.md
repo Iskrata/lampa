@@ -1,0 +1,88 @@
+# desktop/: how Lampa Desktop works
+
+Plain ES5 scripts, no build step. `index.html` loads them before Lampa's own loader, in this order. Each
+one waits for the parts of `window.Lampa` it needs (Lampa loads `app.min.js` asynchronously) and then runs.
+Everything visual is active only on computers (`!Lampa.Platform.tv()`) with **Settings → Interface →
+Desktop look** on, so Lampa on a TV stays as upstream ships it.
+
+| file | what it does |
+|---|---|
+| `icons.js` | `rubyIcons.svg(name)`: shared SVG icons (no emoji or text glyphs as icons) |
+| `profiles.js` | profiles and "Who's watching?" (`rubyProfiles`); must load **before** Lampa, see below |
+| `desktop.js` | density, Apple TV dark CSS, full rows, pixel wheel scrolling, sharp images; shared helpers on `rubyDesktop` (`tmdb`, `details`, `logo`, `kind`, `card`, `pageY`, `openFull`) |
+| `trakt.js` | `rubyTrakt`: Trakt API calls, related titles, the "Connect Trakt" device-code sign-in, the Client ID setting |
+| `ratings.js` | thumbs down / up / love on title pages (`rubyRatings`), sent to Trakt when connected |
+| `personal.js` | Home rows "Picked for you" and "From your watchlist" (Trakt), and the billboard's picks |
+| `trailer.js` | the trailer player shared by the billboard and title pages (`rubyTrailer.attach`) |
+| `hero.js` | the rotating featured billboard on Home |
+| `title.js` | the full-screen hero at the top of movie/series pages |
+| `glass.js` | colour light from the hovered poster, liquid-glass panels |
+| `more.js` | "More like this" at the end of title pages |
+| `nav.js` | the Netflix-style top bar and profile menu |
+
+The `ruby` prefix on globals (`rubyDesktop`), storage keys (`ruby_*`) and CSS classes (`.ruby-*`) comes
+from the home server this was first built for. It keeps everything clear of Lampa's own names.
+
+## Profiles
+
+Lampa keeps all state in `localStorage` under fixed keys and has no local profiles (its own need a CUB
+account). A profile is therefore a set of those keys. The active profile's values are the live keys that
+Lampa and its plugins read. Every other profile's values wait in `ruby_profile_data_<id>`.
+
+Switching writes the target to `ruby_profile_switch` and reloads. The swap runs at the very start of the
+next page load, before `app.min.js` has read anything and after the old page can no longer write, so
+nothing leaks between profiles.
+
+Per profile: `favorite`, `file_view*` (progress), `online_view`, `torrents_view`, `timetable`,
+`search_history`, `recomends_*`, `activity` and a few more, every `trakt*` key (the Trakt login and all
+Trakt plugin state), and `ruby_ratings`. Shared: settings, servers, plugins, and `trakt_client_id` /
+`trakt_client_secret`. The list is at the top of `profiles.js`.
+
+## Picked for you
+
+Built once per page load, per profile (`personal.js`, `picks()`):
+
+1. Seeds: the 10 most recent thumbs up, with a "love" counting as 60 days more recent. Ratings already on
+   the profile's Trakt account count too: 9–10 is a love, 6–8 a thumbs up, 1–5 a thumbs down.
+2. For each seed, Trakt's related titles (`/search/tmdb/{id}` for the Trakt id, then
+   `/{movies|shows}/{id}/related`). These need only the app's Client ID, no login. They are far better than
+   TMDB's `/recommendations`: for Inception, Trakt gives Minority Report, Looper, Dark City and The Matrix,
+   while TMDB gives Paycheck, The Dark Tower and Push.
+3. Score by position in each list, ×2 for a love. The 4 most recent thumbs down subtract (×0.8).
+   Trakt's own `/recommendations` (when connected) count like a seed, ×1.3.
+4. Genre taste from the profile's thumbs nudges each score by ±6 % per point, capped at ±30 %.
+5. Anything already rated is left out. The top 30 get TMDB details (cached for the session).
+
+## Trailers
+
+- **Choice.** YouTube via TMDB `/videos`, in English, the title's own language, or no language. Ranked
+  official Trailer > Trailer > official Teaser > Teaser, with English preferred.
+- **When it shows.** YouTube draws its own pause button over the first seconds of every embed, even with
+  `controls=0`, and after any pause, then hides it. So the trailer fades in only after 4 s of playback
+  (measured: still there 2.6 s in, gone by about 4 s). The backdrop shows until then.
+- **Sound.** Unmute is tried only after the page has had a user gesture (`navigator.userActivation`),
+  while the picture is still hidden. If the browser refuses, YouTube pauses right after the unmute; the
+  player then goes back to muted, plays on, and doesn't try again until the next click or keypress.
+- **Subtitles.** English subtitles (`cc_load_policy=1&cc_lang_pref=en`) when the chosen trailer isn't in
+  English.
+- **Quality.** Picked by YouTube from the player's size, which is the whole screen. Forcing
+  `highres`/`vq` made it re-buffer with a spinner, so it isn't forced.
+- **Referrer.** Lampa's `index.html` sets `<meta name="referrer" content="never">`, and YouTube refuses
+  embeds that send no referrer (error 153). Only the iframe gets `strict-origin-when-cross-origin`.
+
+## Things Lampa does that these modules work around
+
+- **Interface size.** Lampa sizes everything from one number: `body` font-size = window width / 84.17 ×
+  0.9, 1 or 1.05. Density is a stylesheet override of that number.
+- **Wheel scrolling.** Lampa reads the legacy `wheelDelta`, throttles it to one step per 200 ms and jumps
+  a whole row (`scroll_by_item`). `desktop.js` drives `element.Scroll.wheel(px)` with `scroll_by_item`
+  off, summing the deltas once per animation frame.
+- **Lazy rows.** Rows draw 7 cards and stop scrolling at the last drawn one. On desktop they're built in
+  full.
+- **Image sizes.** `Lampa.TMDB` is the same object `app.min.js` calls internally (`TMDB$1`), so wrapping
+  `image()` upgrades every poster and backdrop Lampa requests.
+- **Poster colours.** TMDB images send `Access-Control-Allow-Origin: *` but no `Vary: Origin`. A poster
+  already cached from Lampa's own `<img>` therefore fails a CORS load, so `glass.js` adds a query string to
+  get its own cache entry.
+- **Back to Home.** When you come back to Home, Lampa re-centres the last focused poster, which scrolls
+  the billboard off screen. `hero.js` scrolls it back if it was in view when you left.
