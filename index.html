@@ -3,11 +3,11 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Lampa - Каталог фильмов и сериалов</title>
+    <title>Lampa</title>
 
     <meta name="description" content="Приложение для просмотра каталога фильмов и сериалов на телевизорах, приставках и смартфонах." />
 
-    <meta property="og:title" content="Lampa - Каталог фильмов и сериалов">
+    <meta property="og:title" content="Lampa">
     <meta property="og:description" content="Приложение для просмотра каталога фильмов и сериалов на телевизорах, приставках и смартфонах.">
     <meta property="og:image:type" content="image/png">
     <meta property="og:image" content="og.png">
@@ -45,6 +45,19 @@
         <div class="no-network__desc">Не удалось загрузить файл: <span class="no-network__file"></span></div>
     </div>
     
+    <!-- Lampa Desktop (desktop/README.md); profiles.js must stay before Lampa loads -->
+    <script src="./desktop/icons.js"></script>
+    <script src="./desktop/profiles.js"></script>
+    <script src="./desktop/desktop.js"></script>
+    <script src="./desktop/trakt.js"></script>
+    <script src="./desktop/ratings.js"></script>
+    <script src="./desktop/personal.js"></script>
+    <script src="./desktop/trailer.js"></script>
+    <script src="./desktop/hero.js"></script>
+    <script src="./desktop/title.js"></script>
+    <script src="./desktop/glass.js"></script>
+    <script src="./desktop/more.js"></script>
+    <script src="./desktop/nav.js"></script>
     <script src="./webos/webOSTV.js"></script>
     <script src="./vender/jquery/jquery.js"></script>
     <script src="./vender/notify/notify.js"></script>

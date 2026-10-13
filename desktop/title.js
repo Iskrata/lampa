@@ -1,0 +1,122 @@
+// Movie/series page hero for Lampa on computers, Netflix/Apple TV style (desktop/README.md). Loaded by
+// index.html. Lampa's title page is a TV layout: a small poster, the title, a dim backdrop behind it.
+// Here the top of the page becomes a full-width hero: the backdrop (then the trailer, trailer.js)
+// fills the screen up to under the top bar, the title's logo replaces the text title, the details and
+// buttons sit bottom-left over a dark gradient, and the rest of the page follows below.
+// The hero is one fixed layer under Lampa's content (the content must stay clickable), moved with the page
+// scroll every frame; its speaker button is moved into the page content so it can be clicked.
+// Lampa's emoji reactions are hidden (thumbs ratings: ratings.js). Active only where
+// desktop.js is; the trailer follows Settings -> Interface -> "Trailers".
+(function () {
+    var STOP_BELOW = -220;   // px of page scroll after which the trailer stops (the hero is mostly gone)
+
+    var CSS = [
+        '.ruby-titlehero{position:fixed;left:0;right:0;top:0;height:88vh;z-index:0;pointer-events:none;opacity:0;transition:opacity .4s;will-change:transform;' +
+            '-webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);mask-image:linear-gradient(180deg,#000 62%,transparent 100%)}',
+        '.ruby-titlehero.show{opacity:1}',
+        '.ruby-titlehero__bg{position:absolute;inset:0;background:center 20%/cover no-repeat}',
+        '.ruby-titlehero::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(90deg,rgba(0,0,0,.88) 0%,rgba(0,0,0,.55) 32%,rgba(0,0,0,0) 62%),linear-gradient(0deg,rgba(0,0,0,.6) 0%,rgba(0,0,0,0) 40%)}',
+        // Lampa's own dim backdrop and TV poster give way to the hero
+        'body.ruby-title .activity--active .full-start__background{display:none!important}',
+        'body.ruby-title .full-start-new__left,body.ruby-title .full-start-new__reactions,body.ruby-title .button--reaction{display:none!important}',
+        'body.ruby-title .full-start-new{position:relative;min-height:calc(88vh - 9em);display:flex;flex-direction:column;justify-content:flex-end;padding:0 3.5% 1.5em;margin-bottom:2.5em}',
+        'body.ruby-title .full-start-new__body{align-items:flex-end}',
+        'body.ruby-title .full-start-new__right{padding-left:0;max-width:44em}',
+        'body.ruby-title .full-start-new__title{font-size:3.4em;font-weight:700;letter-spacing:-.02em;line-height:1.05;text-shadow:0 .1em .5em rgba(0,0,0,.5)}',
+        '.ruby-titlehero__logo{display:block;max-width:min(30em,100%);max-height:9em;object-fit:contain;object-position:left bottom;margin:.2em 0 .5em;filter:drop-shadow(0 .2em .6em rgba(0,0,0,.6))}',
+        'body.ruby-title .full-start-new__title.has-logo{font-size:1em;text-shadow:none}',
+        'body.ruby-title .full-start-new__tagline{font-size:1.15em;opacity:.85}',
+        'body.ruby-title .full-start-new__head,body.ruby-title .full-start-new__details{text-shadow:0 1px 3px rgba(0,0,0,.6)}',
+        'body.ruby-title .full-start-new .ruby-trailer__mute{right:3.5%;bottom:2em}'
+    ].join('\n');
+
+    var host, bg, trailer, current = null, raf = 0;
+
+    function active() {
+        var a = Lampa.Activity.active && Lampa.Activity.active();
+        return a && a.component === 'full' ? a : null;
+    }
+    function trailerVisible() {
+        return !document.hidden && !(Lampa.Player.opened && Lampa.Player.opened()) && !!active() && rubyDesktop.pageY() > STOP_BELOW;
+    }
+
+    // follow the page's scroll offset (Lampa animates it with a CSS transform transition)
+    function follow() {
+        host.style.transform = 'translateY(' + Math.min(0, rubyDesktop.pageY()) + 'px)';
+        raf = active() ? requestAnimationFrame(follow) : 0;
+    }
+
+    function build() {
+        host = document.createElement('div');
+        host.className = 'ruby-titlehero';
+        host.innerHTML = '<div class="ruby-titlehero__bg"></div>';
+        bg = host.firstChild;
+        var orbs = document.querySelector('.ruby-orbs');
+        document.body.insertBefore(host, orbs ? orbs.nextSibling : document.body.firstChild);
+        trailer = rubyTrailer.attach(host, { visible: trailerVisible });
+    }
+
+    function setLogo(root, item) {
+        var title = root.querySelector('.full-start-new__title');
+        if (!title || title.querySelector('.ruby-titlehero__logo')) return;
+        rubyDesktop.logo(item, function (src) {
+            if (!src || current !== item) return;
+            var img = new Image();
+            img.className = 'ruby-titlehero__logo';
+            img.alt = title.textContent;
+            img.onload = function () { title.textContent = ''; title.appendChild(img); title.classList.add('has-logo'); };
+            img.src = src;
+        });
+    }
+
+    function enter(item, root) {
+        if (!rubyDesktop.active()) return;
+        if (!host) build();
+        document.body.classList.add('ruby-title');
+        if (current !== item) {
+            current = item;
+            bg.style.backgroundImage = item.backdrop_path ? 'url(' + Lampa.TMDB.image('t/p/original' + item.backdrop_path) + ')' : 'none';
+            trailer.show(item);
+        } else if (!trailer.busy()) trailer.show(item);
+        host.classList.add('show');
+        if (root) {
+            var block = root.querySelector('.full-start-new');
+            if (block) block.appendChild(trailer.muteButton);
+            setLogo(root, item);
+        }
+        if (!raf) follow();
+    }
+
+    function leave() {
+        document.body.classList.remove('ruby-title');
+        if (!host) return;
+        host.classList.remove('show');
+        trailer.stop();
+    }
+
+    function start() {
+        if (Lampa.Platform.tv()) return;
+        var style = document.createElement('style');
+        style.id = 'ruby-title';
+        style.textContent = CSS;
+        document.head.appendChild(style);
+        Lampa.Listener.follow('full', function (e) {
+            if (e.type === 'complite' && e.data && e.data.movie && e.object && e.object.activity)
+                enter(e.data.movie, e.object.activity.render(true));
+        });
+        // back to an already-built title page, or away from title pages
+        Lampa.Listener.follow('activity', function (e) {
+            if (e.type !== 'start') return;
+            if (e.component !== 'full') return leave();
+            var card = e.object && e.object.card, root = e.object && e.object.activity && e.object.activity.render(true);
+            if (card && root && root.querySelector('.full-start-new')) enter(current && current.id === card.id ? current : card, root);
+        });
+    }
+
+    var t = setInterval(function () {
+        if (!window.Lampa || !Lampa.Listener || !Lampa.Activity || !Lampa.Player || !Lampa.TMDB ||
+            !window.rubyDesktop || !rubyDesktop.logo || !window.rubyTrailer) return;
+        clearInterval(t);
+        start();
+    }, 100);
+})();
