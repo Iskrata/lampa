@@ -4,8 +4,12 @@
 // end. Here onEnd also puts a shimmering placeholder row at the bottom, removed as soon as new content is
 // appended. If nothing arrives within GIVE_UP_MS the page has run out: the placeholder goes and isn't
 // shown again for that page until new content does arrive. Active only where desktop.js is.
+// Also builds ahead: building a row costs Safari 60-90 ms (measured 2026-10-13 in real Safari, the same with
+// plain upstream Lampa), which was felt as a hitch every ~340 px of scrolling. So while the page is still
+// (no wheel for IDLE_MS), the next rows are loaded until AHEAD_SCREENS screens are ready below the view;
+// rows off screen cost nothing to draw (desktop.js content-visibility). Lampa allows one load per second.
 (function () {
-    var GIVE_UP_MS = 4000, CARDS = 9;
+    var GIVE_UP_MS = 4000, CARDS = 9, IDLE_MS = 400, AHEAD_SCREENS = 2.5, lastWheel = 0;
 
     var CSS = [
         '.ruby-rowload{padding:1.6em 0 3em}',
@@ -56,6 +60,7 @@
         var orig = sc.onEnd;
         sc._rubyEnd = true;
         sc.onEnd = function () { show(page); return orig.apply(this, arguments); };
+        sc._rubyLoad = orig;   // without the placeholder: building ahead, out of sight
         // new content after an "exhausted" verdict (e.g. a slow fetch) re-enables the placeholder
         var b = body(page);
         if (b) new MutationObserver(function (ms) {
@@ -63,6 +68,16 @@
                 b._rubyDone = false;
         }).observe(b, { childList: true });
         return true;
+    }
+
+    // while the page is still, load the next rows until AHEAD_SCREENS screens are ready below the view
+    function ahead() {
+        if (document.hidden || Date.now() - lastWheel < IDLE_MS || !rubyDesktop.settled()) return;
+        var page = document.querySelector('.activity--active .scroll:not(.scroll--horizontal)');
+        var sc = page && page.Scroll, b = page && body(page);
+        if (!sc || !sc._rubyLoad || !b || b._rubyDone) return;
+        var below = b.getBoundingClientRect().bottom - window.innerHeight;
+        if (below < window.innerHeight * AHEAD_SCREENS) sc._rubyLoad.call(sc);
     }
 
     function start() {
@@ -76,6 +91,9 @@
         };
         Lampa.Listener.follow('activity', function (e) { if (e.type === 'start') watch(); });
         watch();
+        // on window: desktop.js stops wheel events at the document
+        window.addEventListener('wheel', function () { lastWheel = Date.now(); }, { capture: true, passive: true });
+        setInterval(ahead, 500);
     }
 
     var t = setInterval(function () {

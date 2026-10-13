@@ -4,7 +4,7 @@
 // per row (Line default items.view = 7), and binds the mouse wheel to "step along this row" / "jump a row".
 // On computers (never on TVs, Lampa.Platform.tv()) this adds Settings -> Interface -> "Desktop look":
 //   * density: a smaller factor, applied by stylesheet (beats Lampa's inline style, follows resizes)
-//   * every row built in full, so it fills the screen and a sideways swipe never hits a wall
+//   * rows built as wide as the screen, the rest on the first sideways scroll (no wall, no freezes)
 //   * Apple TV-style dark look: black-to-graphite canvas, system font, frosted header, soft poster lift
 //   * wheel / trackpad scroll in real pixels: vertical moves the page, horizontal moves the row
 (function () {
@@ -83,17 +83,85 @@
         if (!style.parentNode) document.head.appendChild(style);
     }
 
-    // Rows draw `items.view` cards up front and the rest only after moving along the row, and a row's
-    // scroll stops at the last drawn card. A row holds ~20 titles and posters load lazily anyway, so on
-    // desktop build them all (Lampa.Arrays is the same object app.min.js uses).
-    function fullRows() {
+    // Rows draw `items.view` cards up front (Lampa default 7) and the rest the first time the row is scrolled
+    // sideways (Items onScroll: on computers it then builds all remaining ones). 7 leaves the right half of a
+    // wide screen empty, so a row is built as wide as the screen plus two; the rest comes when you start
+    // scrolling that row (wheelScrolls calls the row's onScroll first, so there is no wall at the 11th card).
+    // Building whole rows (20+ cards each) up front froze Safari for 60-95 ms every time Lampa appended a row
+    // while scrolling down - measured in real Safari 2026-10-13 (one freeze per row, ~3 per second).
+    function screenRows() {
         var extend = Lampa.Arrays.extend;
         Lampa.Arrays.extend = function (target) {
             var r = extend.apply(this, arguments);
             var items = target && target.items;
-            if (factor() && items && items.mapping === 'line' && items.view && items.view < 100) items.view = 100;
+            if (factor() && items && items.mapping === 'line' && items.view && items.view < screenful()) items.view = screenful();
             return r;
         };
+    }
+    function screenful() {
+        var em = parseFloat(getComputedStyle(document.body).fontSize) || 12;
+        return Math.ceil(window.innerWidth / (em * 12)) + 2;   // a card is ~12.75 em wide plus its gap
+    }
+    // Lampa's lazy loader, Layer.visible(container), runs synchronously every time a row is added: it
+    // gathers every .layer--visible element under the container, reads each one's getBoundingClientRect
+    // (forcing layout), hides those more than 2 screens away and triggers 'visible' on the rest so they
+    // load their poster. Measured in real Safari 2026-10-13: 93 calls = 1.3 s while scrolling Home for 16 s,
+    // up to 29 ms each, plus 0.7 s in the events it fires - the hitch on every new row. On computers an
+    // IntersectionObserver does the same job off the main path: each element gets Lampa's own 'visible'
+    // event once it comes within about two screens of the view. Far-away content is already skipped by
+    // content-visibility, so nothing is hidden by hand.
+    function lazyVisible() {
+        var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (en) {
+                if (!en.isIntersecting) return;
+                var el = en.target;
+                io.unobserve(el);
+                if (el.style.visibility === 'hidden') el.style.visibility = '';
+                if (!el.called_visible) { el.called_visible = true; el.visible = true; Lampa.Utils.trigger(el, 'visible'); }
+            });
+        }, { rootMargin: '200% 100%' });   // like Lampa's own: start ~2 screens ahead so posters are decoded before they show
+        var visible = Lampa.Layer.visible;
+        Lampa.Layer.visible = function (combine) {
+            if (!factor() || !combine) return visible.apply(this, arguments);
+            var root = combine.jquery ? combine[0] : combine;
+            if (!root || !root.querySelectorAll) return;
+            var list = [].slice.call(root.querySelectorAll('.layer--visible'));
+            if (root.classList && root.classList.contains('layer--visible')) list.push(root);
+            list.forEach(function (el) { if (!el.called_visible && !el._rubyIo) { el._rubyIo = true; io.observe(el); } });
+        };
+    }
+
+    // The posters Lampa adds: decoded off the main thread, and unloaded when far away. Every <img> stays
+    // decoded while it is in the page, and Lampa never removes rows: a few minutes of scrolling held
+    // ~550 MB of decoded posters in Safari and scrolling got slower and slower. A poster more than ~5
+    // screens from the view swaps its image for an empty placeholder; coming back puts it back (from the
+    // HTTP cache, no new download).
+    var BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+    function asyncImages() {
+        var far = new IntersectionObserver(function (entries) {
+            entries.forEach(function (en) {
+                var img = en.target, src = img.getAttribute('src') || '';
+                if (en.isIntersecting) {
+                    if (img._rubySrc) { img.src = img._rubySrc; img._rubySrc = null; }
+                } else if (src && src !== BLANK && src.indexOf('data:') !== 0 && img.complete) {
+                    img._rubySrc = src;
+                    img.src = BLANK;
+                }
+            });
+        }, { rootMargin: '500% 150%' });
+        function take(img) {
+            img.decoding = 'async';
+            if (img.classList.contains('card__img') && !img._rubyFar) { img._rubyFar = true; far.observe(img); }
+        }
+        new MutationObserver(function (ms) {
+            ms.forEach(function (m) {
+                [].forEach.call(m.addedNodes, function (n) {
+                    if (n.nodeType !== 1) return;
+                    if (n.tagName === 'IMG') take(n);
+                    else if (n.querySelectorAll) [].forEach.call(n.querySelectorAll('img'), take);
+                });
+            });
+        }).observe(document.body, { childList: true, subtree: true });
     }
 
     // Lampa's own wheel handler (Scroll in app.min.js) reads the legacy e.wheelDelta, throttles to one step
@@ -132,6 +200,8 @@
             if (!target || !target.Scroll || !target.Scroll.params) return;
             e.stopImmediatePropagation();
             e.preventDefault();
+            // first sideways scroll of a row: let Lampa build its remaining cards (screenRows)
+            if (!vertical && !target._rubyBuilt && typeof target.Scroll.onScroll === 'function') { target._rubyBuilt = true; target.Scroll.onScroll(); }
             pending.set(target, (pending.get(target) || 0) + px(vertical ? e.deltaY : e.deltaX));
             if (!frame) frame = requestAnimationFrame(flush);
         }, { capture: true, passive: false });
@@ -157,8 +227,9 @@
     function keep() { try { sessionStorage.setItem(DETAILS, JSON.stringify(details)); } catch (e) {} }
 
     // Lampa asks TMDB for w200/w300 posters and w1280 backdrops (Settings "poster quality" tops out at w500).
-    // On computers: posters/stills at w500 at least (a card is ~150-230 px wide, so w500 covers 2x Retina;
-    // w780 everywhere was ~4x the pixels to decode for ~200 posters and made scrolling heavy) and every
+    // On computers: posters/stills at w342 at least (a card is ~150 px wide = ~300 device px on Retina;
+    // w500 doubled the decoded memory - measured ~550 MB of posters after a few minutes of scrolling in
+    // Safari, with freezes growing to 150+ ms - and w780 was ~4x the pixels) and every
     // w1280+ image at the original file (backdrops up to 3840x2160). Lampa.TMDB is the object app.min.js
     // calls itself (var TMDB$1 = {api, key, image, broken}; exported as TMDB), so wrapping image() covers all.
     function sharpImages() {
@@ -166,7 +237,7 @@
         Lampa.TMDB.image = function (path) {
             if (factor() && typeof path === 'string') {
                 path = path.replace(/t\/p\/w(\d+)\//, function (m, w) {
-                    return +w >= 1280 ? 't/p/original/' : +w < 500 ? 't/p/w500/' : m;
+                    return +w >= 1280 ? 't/p/original/' : +w < 342 ? 't/p/w342/' : m;
                 });
             }
             return image.apply(this, [path].concat([].slice.call(arguments, 1)));
@@ -259,7 +330,9 @@
             field: { name: 'Desktop look', description: 'Smaller, Apple TV-style interface on computers' },
             onChange: apply
         });
-        fullRows();
+        screenRows();
+        lazyVisible();
+        asyncImages();
         sharpImages();
         if (factor()) lighten();
         wheelScrolls();
@@ -268,7 +341,7 @@
 
     // app.min.js is loaded asynchronously by Lampa's own loader; patch Arrays before the first rows exist.
     var t = setInterval(function () {
-        if (!window.Lampa || !Lampa.Platform || !Lampa.SettingsApi || !Lampa.Storage || !Lampa.Arrays || !Lampa.TMDB) return;
+        if (!window.Lampa || !Lampa.Platform || !Lampa.SettingsApi || !Lampa.Storage || !Lampa.Arrays || !Lampa.TMDB || !Lampa.Layer || !Lampa.Utils) return;
         clearInterval(t);
         start();
     }, 50);

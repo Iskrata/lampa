@@ -128,6 +128,25 @@ navigation and scroll state rely on them:
 - **Side effect:** Home now takes a moment to come back, and Lampa re-centres the last poster later than
   before, so `hero.js` keeps correcting for the whole 2.5 s back-navigation window.
 
+**Measured in real Safari** (2026-10-13, driven with safaridriver; scripted trackpad-like scrolling;
+every frame interval and every main-thread freeze recorded). Results:
+- **Freezes were per row:** each new row froze Safari for 60–90 ms. Plain upstream Lampa freezes the
+  same way.
+- **Biggest single cost:** Lampa's lazy loader `Layer.visible`, which reads the position of every poster
+  on the page each time a row is added: 1.3 s per 16 s of scrolling. `desktop.js` replaces it on computers
+  with an IntersectionObserver that fires the same `visible` event about 2 screens ahead. Total JavaScript
+  time while scrolling went from ~2.3 s to ~0.25 s.
+- **Rows are built as wide as the screen plus two cards;** the rest are built on the first sideways
+  scroll of that row.
+- **Decoded images were the slow build-up:** after a few minutes, ~550 MB of decoded posters, with
+  freezes growing to 150+ ms. Posters more than ~5 screens away now swap their image for an empty
+  placeholder and get it back from the cache when you return: 15–50 MB. Posters load at w342 (a card is
+  ~300 device pixels wide).
+- **What didn't matter:** the frosted glass, poster shadows and the fade-in animations (each tested
+  switched off).
+- **The automation session itself slowed down over many runs,** so before/after comparisons were made in
+  a fresh session.
+
 ## Under the top bar
 
 The pages scroll under the top bar, as on Netflix:
