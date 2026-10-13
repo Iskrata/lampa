@@ -135,23 +135,30 @@
         // Back on Home from a title page, Lampa re-focuses the last used poster and scrolls it into place,
         // which leaves ~46 of 535 px of the billboard on screen (measured 2026-10-13). If the billboard was
         // in view when Home was left, put it back in view, then pick the trailer up again straight away.
-        var leftInView = true;
+        // (not re-evaluated while Home is being restored: the left-behind page is not rendered -
+        // desktop.js content-visibility - so it takes a moment to come back, and the tracker must not
+        // read "scrolled away" before the correction below has run)
+        var leftInView = true, restoring = 0;
         var track = setInterval(function () {
             if (!document.body.contains(el)) return clearInterval(track);
+            if (Date.now() - restoring < 2500) return;
             if (el.closest('.activity--active')) leftInView = heroVisible(el) || leftInView && document.hidden;
         }, 300);
         Lampa.Listener.follow('activity', function (e) {
             if (e.type !== 'start' || e.component !== 'main' || idx < 0 || !document.body.contains(el)) return;
+            restoring = Date.now();
             // Lampa's re-centring animates for ~600 ms and can be re-triggered, so keep correcting until the
             // billboard is really in view (max ~2 s), then resume the trailer
+            // Lampa's re-centring can come late (Home has to be rendered again first), so keep correcting for
+            // the whole window rather than stopping at the first frame where the billboard looks visible
             var tries = 0, back = setInterval(function () {
                 var page = el.closest('.scroll:not(.scroll--horizontal)');
-                if (leftInView && !heroVisible(el) && page && page.Scroll && tries < 8) {
+                if (leftInView && !heroVisible(el) && page && page.Scroll) {
                     var p = page.Scroll.params(), was = p.scroll_by_item;
                     p.scroll_by_item = false;
                     try { page.Scroll.wheel(-100000); } finally { p.scroll_by_item = was; }
                 }
-                if (heroVisible(el) || ++tries >= 8) {
+                if (++tries >= 10) {
                     clearInterval(back);
                     if (trailer && heroVisible(el) && !trailer.busy()) trailer.show(list[idx]);
                 }

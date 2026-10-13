@@ -119,6 +119,15 @@ Page load measured on 2026-10-13 (headless Chrome, warm cache, ruby LAN):
   cached), fetches each a second time to keep a copy in IndexedDB, and starts them only after a chain of
   requests to cub.best.
 
+**Not rendering what isn't on screen** (`desktop.js`); the elements stay in place, because Lampa's
+navigation and scroll state rely on them:
+- **Pages you've left:** Lampa only fades them to `opacity: 0`, so Home (~700 elements) was still styled,
+  laid out and painted under every title page. They get `content-visibility: hidden`.
+- **Rows:** `content-visibility: auto` with a remembered height. Not cards: paint containment would clip
+  their hover lift.
+- **Side effect:** Home now takes a moment to come back, and Lampa re-centres the last poster later than
+  before, so `hero.js` keeps correcting for the whole 2.5 s back-navigation window.
+
 ## Under the top bar
 
 The pages scroll under the top bar, as on Netflix:

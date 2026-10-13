@@ -62,6 +62,14 @@
         // Lampa's own blurred backdrop (blurred in JS on a canvas on every focus change): the colour light
         // of glass.js replaces it, so it is switched off on computers (lighten() below)
         '.background{display:none!important}',
+        // skip rendering what isn't on screen (the DOM stays: Lampa's navigation and scroll state rely on it):
+        //  * pages left behind - Lampa only fades them to opacity 0, so Home (~700 nodes) kept being styled,
+        //    laid out and painted under every title page
+        //  * rows far above/below the view (content-visibility:auto; 'auto' remembers each row's real height
+        //    once drawn, so scroll offsets don't jump). Not on cards: its paint containment would clip the
+        //    hover lift and shadow.
+        '.activity:not(.activity--active){content-visibility:hidden}',
+        '.items-line{content-visibility:auto;contain-intrinsic-size:auto 22em}',
         // menus / settings panels: graphite sheets
         '.menu,.settings__content,.selectbox__content{background:rgba(28,28,30,.92)!important;-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}'
     ].join('\n');
