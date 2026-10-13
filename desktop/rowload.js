@@ -5,7 +5,7 @@
 // appended. If nothing arrives within GIVE_UP_MS the page has run out: the placeholder goes and isn't
 // shown again for that page until new content does arrive. Active only where desktop.js is.
 (function () {
-    var GIVE_UP_MS = 6000, CARDS = 9;
+    var GIVE_UP_MS = 4000, CARDS = 9;
 
     var CSS = [
         '.ruby-rowload{padding:1.6em 0 3em}',

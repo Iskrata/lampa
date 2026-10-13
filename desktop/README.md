@@ -19,6 +19,7 @@ Desktop look** on, so Lampa on a TV stays as upstream ships it.
 | `title.js` | the full-screen hero at the top of movie/series pages |
 | `glass.js` | colour light from the hovered poster, liquid-glass panels |
 | `more.js` | "More like this" at the end of title pages |
+| `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu |
 
 The `ruby` prefix on globals (`rubyDesktop`), storage keys (`ruby_*`) and CSS classes (`.ruby-*`) comes
@@ -103,6 +104,20 @@ What made scrolling laggy in Safari, and what replaced it:
   chips, torrent rows. The top bar is nearly opaque once scrolled, so it has no blur either.
 - **Title hero.** It follows the page scroll by copying Lampa's own transform and CSS transition, so
   there's no `requestAnimationFrame` loop reading styles every frame.
+
+## Loading
+
+Page load measured on 2026-10-13 (headless Chrome, warm cache, ruby LAN):
+- **Before:** first posters at 4.6 s.
+- **After:** first posters at 2.7 s.
+- **Trailer start:** the billboard trailer starts only once the page has *settled*: first rows drawn,
+  then 1.5 s, then an idle moment (`rubyDesktop.settled`). The YouTube player is 1.8 MB of script with
+  ~80 ms of start-up work, and in Safari it runs on the page's own thread.
+- **Profile sync:** a normal load makes no blocking request; only a profile switch does.
+- **Plugins:** when you host plugins yourself, load them as ordinary cached scripts once `Lampa.Listener`
+  exists instead of through Lampa's plugin list. Lampa adds a random `?reset=` to plugin URLs (never
+  cached), fetches each a second time to keep a copy in IndexedDB, and starts them only after a chain of
+  requests to cub.best.
 
 ## Under the top bar
 
