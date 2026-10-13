@@ -49,6 +49,8 @@
         results.forEach(function (r) {
             var it = document.createElement('div'), year = (r.release_date || r.first_air_date || '').slice(0, 4);
             it.className = 'ruby-more__item';
+            it.dataset.rubyItem = '';   // title.js warms its trailer up on hover
+            it._rubyItem = r;
             it.innerHTML = '<div class="ruby-more__poster"></div><div class="ruby-more__name"></div><div class="ruby-more__meta"></div>';
             it.querySelector('.ruby-more__poster').style.backgroundImage = 'url(' + Lampa.TMDB.image('t/p/w780' + r.poster_path) + ')';
             it.querySelector('.ruby-more__name').textContent = r.title || r.name;

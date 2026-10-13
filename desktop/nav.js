@@ -21,9 +21,10 @@
     var HISTORY = { action: 'history' };
 
     // no bottom border: a gradient background repeats into a transparent border (background-origin is the
-    // padding box), which drew a dark 1 px line under the bar
+    // padding box), which drew a dark 1 px line under the bar. No backdrop blur either: the bar is nearly
+    // opaque once scrolled, and a blur over the always-moving colour orbs costs a re-render every frame
     var CSS = [
-        '.head{transition:background .35s,backdrop-filter .35s,border-color .35s;background:rgba(20,20,20,.94)!important;border-bottom:0!important;box-shadow:none!important}',
+        '.head{transition:background .35s;background:rgba(20,20,20,.94)!important;border-bottom:0!important;box-shadow:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}',
         'body.ruby-nav-top .head{background:linear-gradient(180deg,rgba(0,0,0,.75) 10%,rgba(0,0,0,0))!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}',
         // TV-only header parts; Lampa's own action icons are replaced by ours (they are still clicked through)
         '.head__title,.head__logo-icon,.head__menu-icon,.head__actions>.head__action{display:none!important}',

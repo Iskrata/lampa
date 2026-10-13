@@ -32,7 +32,7 @@
         '.card.focus .card__view,.card:hover .card__view{transform:translateY(-.35em) scale(1.04);box-shadow:0 1.2em 2.4em rgba(0,0,0,.7)}',
         '.card__title{font-size:.95em;font-weight:500;color:var(--rb-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
         '.card__age{color:var(--rb-text3)}',
-        '.card__vote{font-size:.8em;font-weight:600;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-radius:.5em;padding:.15em .5em}',
+        '.card__vote{font-size:.8em;font-weight:600;background:rgba(0,0,0,.6);border-radius:.5em;padding:.15em .5em}',
         // title page buttons and chips: Apple pill buttons
         '.full-start__button,.full-start-new__buttons .button{border-radius:2em!important;background:var(--rb-fill)!important}',
         '.full-start__button.focus,.full-start__button:hover{background:#fff!important;color:#000!important}',
@@ -42,6 +42,10 @@
         '@media (min-width: 1000px){.mapping--grid.cols--6>*{width:calc(100% / 7)}}',
         '@media (min-width: 1300px){.mapping--grid.cols--6>*{width:12.5%}}',
         '@media (min-width: 1700px){.mapping--grid.cols--6>*{width:10%}}',
+        // the page scrolls under the top bar (Netflix): Lampa's page scroller clips at the bar's bottom edge
+        // and fades its top/bottom 8 % with a mask; the bar is transparent at the top and solid once
+        // scrolled (nav.js), so neither is needed - and the Home billboard can sit under the bar (hero.js)
+        '.activity .scroll.layer--wheight:not(.scroll--horizontal){overflow:visible!important;-webkit-mask-image:none!important;mask-image:none!important}',
         // menus / settings panels: graphite sheets
         '.menu,.settings__content,.selectbox__content{background:rgba(28,28,30,.92)!important;-webkit-backdrop-filter:blur(30px);backdrop-filter:blur(30px)}'
     ].join('\n');

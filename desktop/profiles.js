@@ -210,6 +210,9 @@
         manage: function () { picker(true); }
     };
 
-    function boot() { css(); if (!state.chosen) picker(false); }
+    // TVs (Samsung/LG through MSX, Android TV): the picker is built for a mouse, and Lampa's TV look has
+    // no top bar to switch from - stay on the remembered profile there
+    var TV = /Tizen|Web0S|webOS|SMART-TV|SmartTV|NetCast|Android TV|BRAVIA|AFT[BMST]/i.test(navigator.userAgent);
+    function boot() { css(); if (!state.chosen && !TV) picker(false); }
     if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot);
 })();

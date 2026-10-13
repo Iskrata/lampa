@@ -15,9 +15,11 @@
         // @property makes the orb colour a real <color>, so it can transition (Safari 16.4+, Chrome 85+)
         '@property --rb-orb{syntax:"<color>";inherits:false;initial-value:rgba(40,40,48,1)}',
         '.ruby-orbs{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:#000}',
-        '.ruby-orb{position:absolute;border-radius:50%;opacity:' + MAX_OPACITY + ';mix-blend-mode:screen;' +
+        // no filter:blur / mix-blend-mode: on a full-screen, always-moving layer they made Safari re-blur and
+        // re-blend every frame (and every backdrop-filter above it) - the radial gradient is soft enough alone
+        '.ruby-orb{position:absolute;border-radius:50%;opacity:' + MAX_OPACITY + ';' +
             'background:radial-gradient(circle at center,var(--rb-orb) 0%,color-mix(in srgb,var(--rb-orb) 45%,transparent) 38%,transparent 70%);' +
-            'transition:--rb-orb .6s ease;filter:blur(2em);will-change:transform}',
+            'transition:--rb-orb .6s ease;will-change:transform}',
         '@keyframes ruby-wander{0%{transform:translate(0,0)}25%{transform:translate(16vw,6vh)}50%{transform:translate(4vw,12vh)}75%{transform:translate(-12vw,4vh)}100%{transform:translate(0,0)}}',
         // a gentle veil keeps white text readable over bright posters
         '.ruby-orbs::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse at 30% 20%,rgba(0,0,0,.15),rgba(0,0,0,.55) 75%)}',
@@ -25,15 +27,20 @@
         '.background{opacity:.18!important}',
         '.wrap{position:relative;z-index:1}',
         // liquid glass: translucent fill, strong blur + saturation, hairline border, top highlight
-        ':root{--rb-glass:rgba(38,38,44,.42);--rb-glass-strong:rgba(28,28,32,.72);--rb-glass-edge:rgba(255,255,255,.14);' +
+        ':root{--rb-glass:rgba(38,38,44,.42);--rb-fill-solid:rgba(30,30,36,.72);--rb-glass-strong:rgba(28,28,32,.72);--rb-glass-edge:rgba(255,255,255,.14);' +
             '--rb-glass-shine:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(255,255,255,.04)}',
         '.head{background:var(--rb-glass)!important;-webkit-backdrop-filter:blur(28px) saturate(190%);backdrop-filter:blur(28px) saturate(190%);' +
             'border-bottom:1px solid var(--rb-glass-edge);box-shadow:var(--rb-glass-shine)}',
-        '.items-line__more,.full-start__button,.ruby-hero__btn--info,.card__vote,.full-start__rate,.full-start__pg,.full-start__status,.simple-button,.torrent-filter .simple-button{' +
+        // real blur (backdrop-filter) only on the few big surfaces; things that come by the dozen (rating
+        // badges on every poster, chips, torrent rows) get a tinted fill - each backdrop-filter is re-rendered
+        // whenever anything behind it moves, and with ~100 of them scrolling was laggy in Safari
+        '.full-start__button,.ruby-hero__btn--info{' +
             'background:var(--rb-glass)!important;-webkit-backdrop-filter:blur(20px) saturate(180%);backdrop-filter:blur(20px) saturate(180%);' +
             'border:1px solid var(--rb-glass-edge)!important;box-shadow:var(--rb-glass-shine)}',
+        '.items-line__more,.card__vote,.full-start__rate,.full-start__pg,.full-start__status,.simple-button,.torrent-filter .simple-button{' +
+            'background:var(--rb-fill-solid)!important;border:1px solid var(--rb-glass-edge)!important;box-shadow:var(--rb-glass-shine)}',
         '.full-start__button.focus,.full-start__button:hover,.simple-button.focus,.simple-button:hover{background:rgba(255,255,255,.92)!important;color:#000!important}',
-        '.torrent-item,.online,.files__item{background:var(--rb-glass)!important;-webkit-backdrop-filter:blur(20px) saturate(170%);backdrop-filter:blur(20px) saturate(170%);' +
+        '.torrent-item,.online,.files__item{background:var(--rb-fill-solid)!important;' +
             'border:1px solid var(--rb-glass-edge);box-shadow:var(--rb-glass-shine);border-radius:1em}',
         '.torrent-item.focus,.torrent-item:hover{background:rgba(255,255,255,.14)!important}',
         '.menu,.settings__content,.selectbox__content,.modal__content{background:var(--rb-glass-strong)!important;' +

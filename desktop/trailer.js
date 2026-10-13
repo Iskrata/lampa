@@ -2,7 +2,7 @@
 // One player, used in two places (Settings -> Interface -> "Trailers"):
 //   * the Home billboard (hero.js)
 //   * the hero at the top of an opened movie/series page (title.js)
-// rubyTrailer.attach(host, {visible, onEnded}) -> {show(item), stop(), busy(), muteButton}.
+// rubyTrailer.attach(host, {visible, onEnded, quiet}) -> {show(item), stop(), busy(), current(), loud(), muteButton}.
 // A trailer loads as soon as the title is shown and fades in after a few seconds of playback, once
 // YouTube's own pause button has auto-hidden and the sound question is settled (no black frame, no badge).
 // Sound is on by default (Settings -> Interface -> "Trailer sound", also the speaker button). Browsers only
@@ -15,15 +15,17 @@
 // YouTube refuses embeds that send no referrer (onError 153) and Lampa's index.html sets
 // <meta name="referrer" content="never">, so the iframe alone gets strict-origin-when-cross-origin.
 (function () {
-    var KEY = 'ruby_hero_trailers', SOUND = 'ruby_trailer_sound', DELAY_MS = 250;
+    var KEY = 'ruby_hero_trailers', SOUND = 'ruby_trailer_sound', DELAY_MS = 100, VOLUME = 70;
     // YouTube draws its own pause button over the first seconds of every embed (also with controls=0) and
-    // after any pause, then auto-hides it (measured 2026-10-13: still there 2.6 s in, gone by ~4 s), so the
-    // picture fades in only after CONTROLS_S seconds of playback; the backdrop shows until then
+    // after any pause, then auto-hides it - also when the player was loaded paused first (measured
+    // 2026-10-13: there at 2.8 s, fading at 3.9 s; 3.6 s still showed it faintly), so the picture fades in (0.8 s) from
+    // CONTROLS_S seconds of playback; the backdrop shows until then. title.js hides this wait by starting
+    // a title's trailer silently while its poster is hovered (attach opts.quiet).
     var CONTROLS_S = 4, SETTLE_MS = 700;
     var videos = {}, blocked = false;
 
     var CSS = [
-        '.ruby-trailer{position:absolute;inset:0;opacity:0;transition:opacity 1s ease;pointer-events:none;overflow:hidden;z-index:1}',
+        '.ruby-trailer{position:absolute;inset:0;opacity:0;transition:opacity .8s ease;pointer-events:none;overflow:hidden;z-index:1}',
         '.ruby-trailer.show{opacity:1}',
         '.ruby-trailer iframe{position:absolute;top:50%;left:50%;width:max(100%,177.78vh);height:max(100%,56.25vw);transform:translate(-50%,-50%) scale(1.18);border:0}',
         // with subtitles: no extra zoom and the video's bottom edge kept in the frame, so captions stay visible
@@ -71,7 +73,8 @@
         function setMute(m) {
             muted = m;
             yt(m ? 'mute' : 'unMute');
-            if (!m) yt('setVolume', [70]);
+            // quiet = playing ahead of time, unseen (title.js): unmuted, so sound is ready, but at volume 0
+            if (!m) yt('setVolume', [opts.quiet && opts.quiet() ? 0 : VOLUME]);
             mute.innerHTML = rubyIcons.svg(m ? 'soundOff' : 'soundOn');
         }
         function reveal() { layer.classList.add('show'); mute.classList.add('on'); }
@@ -143,7 +146,11 @@
             if ((frame || timer) && !opts.visible()) stop();
         }, 400);
         // the speaker button may be moved elsewhere (title.js puts it above the page content)
-        return { show: show, stop: stop, busy: function () { return !!frame; }, muteButton: mute };
+        return {
+            show: show, stop: stop, busy: function () { return !!frame; }, muteButton: mute,
+            current: function () { return current; },
+            loud: function () { if (!muted) yt('setVolume', [VOLUME]); }   // leave quiet mode
+        };
     }
 
     function start() {
@@ -153,6 +160,12 @@
         document.head.appendChild(style);
         window.rubyTrailer = { attach: attach, video: video };
         if (Lampa.Platform.tv()) return;
+        // open the connections a trailer needs before the first one is asked for (~0.3-0.5 s per host)
+        ['https://www.youtube-nocookie.com', 'https://www.youtube.com', 'https://i.ytimg.com', 'https://www.google.com'].forEach(function (h) {
+            var l = document.createElement('link');
+            l.rel = 'preconnect'; l.href = h; l.crossOrigin = '';
+            document.head.appendChild(l);
+        });
         // a new user gesture may lift the browser's audible-autoplay block
         ['pointerdown', 'keydown'].forEach(function (ev) { document.addEventListener(ev, function () { blocked = false; }, true); });
         Lampa.SettingsApi.addParam({

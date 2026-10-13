@@ -14,7 +14,8 @@
     }
 
     var CSS = [
-        '.ruby-hero{position:relative;height:min(68vh,46em);margin:-1em 0 1.5em;border-radius:0 0 1em 1em;overflow:hidden;background:#000;cursor:default}',
+        // pulled up under the top bar like Netflix (underBar() measures how far)
+        '.ruby-hero{position:relative;height:min(68vh,46em);margin:0 0 1.5em;overflow:hidden;background:#000;cursor:default}',
         '.ruby-hero__bg{position:absolute;inset:0;background-size:cover;background-position:center 20%;transition:opacity .8s ease;opacity:0}',
         '.ruby-hero__bg.show{opacity:1}',
         '.ruby-hero::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(11,11,14,.95) 0%,rgba(11,11,14,.6) 38%,rgba(11,11,14,0) 70%),linear-gradient(0deg,#0b0b0e 0%,rgba(11,11,14,0) 35%)}',
@@ -112,7 +113,10 @@
             body.querySelector('.ruby-hero__title').textContent = item.title || item.name;
             body.querySelector('.ruby-hero__text').textContent = item.overview;
             body.querySelector('.ruby-hero__btn--play').addEventListener('click', function () { openTorrents(item); });
-            body.querySelector('.ruby-hero__btn--info').addEventListener('click', function () { rubyDesktop.openFull(item); });
+            var info = body.querySelector('.ruby-hero__btn--info');
+            info.addEventListener('click', function () { rubyDesktop.openFull(item); });
+            info.dataset.rubyItem = '';   // title.js warms the title page's trailer up on hover
+            info._rubyItem = item;
             if (trailer) trailer.show(item);
             rubyDesktop.logo(item, function (src) {
                 if (!src || list[idx] !== item) return;
@@ -159,6 +163,18 @@
         return el;
     }
 
+    // Start the billboard at the very top of the window, under the transparent top bar: the distance
+    // from the window top (Lampa's padding for the bar + the rows' own top spacing) depends on the
+    // interface size, so measure it with the page at its top and pull the billboard up by that much.
+    function underBar(el) {
+        if (!document.body.contains(el) || rubyDesktop.pageY() < 0) return;
+        el.style.marginTop = el.style.height = '';
+        var top = el.getBoundingClientRect().top;
+        if (top <= 0) return;
+        el.style.marginTop = (parseFloat(getComputedStyle(el).marginTop) - top) + 'px';
+        el.style.height = (el.getBoundingClientRect().height + top) + 'px';
+    }
+
     function mount(object) {
         if (!enabled() || !object || !object.activity) return;
         var root = object.activity.render(true), tries = 0;
@@ -168,7 +184,14 @@
             clearInterval(t);
             if (!first || root.querySelector('.ruby-hero')) return;
             loadPicks(function (list) {
-                if (list.length && !root.querySelector('.ruby-hero')) first.parentNode.insertBefore(build(list), first);
+                if (!list.length || root.querySelector('.ruby-hero')) return;
+                var el = build(list);
+                first.parentNode.insertBefore(el, first);
+                // Lampa is still laying the page out when the billboard goes in (measured 124 px then, 17 px
+                // once settled), so measure again once it has settled
+                underBar(el);
+                [400, 1500].forEach(function (ms) { setTimeout(function () { underBar(el); }, ms); });
+                window.addEventListener('resize', function () { underBar(el); });
             });
         }, 150);
     }

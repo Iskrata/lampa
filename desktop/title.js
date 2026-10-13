@@ -4,14 +4,15 @@
 // fills the screen up to under the top bar, the title's logo replaces the text title, the details and
 // buttons sit bottom-left over a dark gradient, and the rest of the page follows below.
 // The hero is one fixed layer under Lampa's content (the content must stay clickable), moved with the page
-// scroll every frame; its speaker button is moved into the page content so it can be clicked.
+// scroll (by copying Lampa's own transform transition); its speaker button is moved into the page content
+// so it can be clicked. Hovering a poster for a moment starts that title's trailer here, unseen and silent.
 // Lampa's emoji reactions are hidden (thumbs ratings: ratings.js). Active only where
 // desktop.js is; the trailer follows Settings -> Interface -> "Trailers".
 (function () {
     var STOP_BELOW = -220;   // px of page scroll after which the trailer stops (the hero is mostly gone)
 
     var CSS = [
-        '.ruby-titlehero{position:fixed;left:0;right:0;top:0;height:88vh;z-index:0;pointer-events:none;opacity:0;transition:opacity .4s;will-change:transform;' +
+        '.ruby-titlehero{position:fixed;left:0;right:0;top:0;height:88vh;z-index:0;pointer-events:none;opacity:0;transition:opacity .4s;will-change:transform,opacity;' +
             '-webkit-mask-image:linear-gradient(180deg,#000 62%,transparent 100%);mask-image:linear-gradient(180deg,#000 62%,transparent 100%)}',
         '.ruby-titlehero.show{opacity:1}',
         '.ruby-titlehero__bg{position:absolute;inset:0;background:center 20%/cover no-repeat}',
@@ -30,20 +31,70 @@
         'body.ruby-title .full-start-new .ruby-trailer__mute{right:3.5%;bottom:2em}'
     ].join('\n');
 
-    var host, bg, trailer, current = null, raf = 0;
+    var host, bg, trailer, current = null;
+    // warm-up: a poster hovered for WARM_MS starts its trailer silently in the (hidden) hero, so it is past
+    // YouTube's start-up button when the page opens; dropped COOL_MS after the pointer leaves
+    var WARM_MS = 450, COOL_MS = 1200, warmItem = null, warmUntil = 0, warmTimer = 0;
 
     function active() {
         var a = Lampa.Activity.active && Lampa.Activity.active();
         return a && a.component === 'full' ? a : null;
     }
     function trailerVisible() {
-        return !document.hidden && !(Lampa.Player.opened && Lampa.Player.opened()) && !!active() && rubyDesktop.pageY() > STOP_BELOW;
+        if (document.hidden || (Lampa.Player.opened && Lampa.Player.opened())) return false;
+        if (active()) return rubyDesktop.pageY() > STOP_BELOW;
+        return !!warmItem && Date.now() < warmUntil;
+    }
+    function playing(item) { var c = trailer.current(); return trailer.busy() && c && c.id === item.id; }
+
+    // the title behind a hovered poster: Lampa cards carry it as card_data, ours (billboard, More like
+    // this) as _rubyItem on an element marked data-ruby-item
+    function itemOf(el) {
+        var c = el && el.closest && el.closest('.card, [data-ruby-item]');
+        var it = c && (c.card_data || c._rubyItem);
+        return it && it.id ? it : null;
+    }
+    function warm(item) {
+        if (active() || !rubyDesktop.active()) return;
+        if (!host) build();
+        warmItem = item;
+        warmUntil = Infinity;
+        if (!playing(item)) trailer.show(item);
+    }
+    function watchHover() {
+        document.addEventListener('mouseover', function (e) {
+            var it = itemOf(e.target);
+            if (!it) return;
+            if (warmItem && warmItem.id === it.id) { warmUntil = Infinity; return; }
+            clearTimeout(warmTimer);
+            warmTimer = setTimeout(function () { warm(it); }, WARM_MS);
+        }, true);
+        document.addEventListener('mouseout', function (e) {
+            var it = itemOf(e.target), to = itemOf(e.relatedTarget);
+            if (!it || (to && to.id === it.id)) return;
+            clearTimeout(warmTimer);
+            if (warmItem && warmItem.id === it.id) warmUntil = Date.now() + COOL_MS;
+        }, true);
     }
 
-    // follow the page's scroll offset (Lampa animates it with a CSS transform transition)
-    function follow() {
-        host.style.transform = 'translateY(' + Math.min(0, rubyDesktop.pageY()) + 'px)';
-        raf = active() ? requestAnimationFrame(follow) : 0;
+    // Follow the page's scroll offset without a per-frame loop: Lampa scrolls by setting the scroll body's
+    // inline transform (translate3d(0, Ypx, 0)) and lets a CSS transition animate it, so copy the target
+    // and the same transition onto the hero whenever that style changes - the compositor animates both.
+    var watched = null, observer = null;
+    function sync() {
+        if (!watched) return;
+        var m = (watched.style.transform || '').match(/translate3d\(\s*[-\d.]+px,\s*([-\d.]+)px/);
+        var cs = getComputedStyle(watched);
+        host.style.transition = 'transform ' + cs.transitionDuration.split(',')[0] + ' ' + cs.transitionTimingFunction.split(',')[0] + ', opacity .4s';
+        host.style.transform = 'translateY(' + (m ? Math.min(0, parseFloat(m[1])) : 0) + 'px)';
+    }
+    function follow(root) {
+        var body = root && root.querySelector('.scroll:not(.scroll--horizontal) > .scroll__content > .scroll__body');
+        if (body === watched) return;
+        if (!observer) observer = new MutationObserver(sync);
+        observer.disconnect();
+        watched = body;
+        if (body) { observer.observe(body, { attributes: true, attributeFilter: ['style'] }); sync(); }
     }
 
     function build() {
@@ -53,7 +104,7 @@
         bg = host.firstChild;
         var orbs = document.querySelector('.ruby-orbs');
         document.body.insertBefore(host, orbs ? orbs.nextSibling : document.body.firstChild);
-        trailer = rubyTrailer.attach(host, { visible: trailerVisible });
+        trailer = rubyTrailer.attach(host, { visible: trailerVisible, quiet: function () { return !active(); } });
     }
 
     function setLogo(root, item) {
@@ -73,18 +124,20 @@
         if (!rubyDesktop.active()) return;
         if (!host) build();
         document.body.classList.add('ruby-title');
-        if (current !== item) {
+        warmItem = null;
+        clearTimeout(warmTimer);
+        if (!current || current.id !== item.id) {
             current = item;
             bg.style.backgroundImage = item.backdrop_path ? 'url(' + Lampa.TMDB.image('t/p/original' + item.backdrop_path) + ')' : 'none';
-            trailer.show(item);
-        } else if (!trailer.busy()) trailer.show(item);
+        }
+        if (playing(item)) trailer.loud(); else trailer.show(item);   // warmed up on hover: keep it
         host.classList.add('show');
         if (root) {
             var block = root.querySelector('.full-start-new');
             if (block) block.appendChild(trailer.muteButton);
             setLogo(root, item);
+            follow(root);
         }
-        if (!raf) follow();
     }
 
     function leave() {
@@ -100,6 +153,7 @@
         style.id = 'ruby-title';
         style.textContent = CSS;
         document.head.appendChild(style);
+        watchHover();
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite' && e.data && e.data.movie && e.object && e.object.activity)
                 enter(e.data.movie, e.object.activity.render(true));

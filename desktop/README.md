@@ -58,8 +58,15 @@ Built once per page load, per profile (`personal.js`, `picks()`):
 - **Choice.** YouTube via TMDB `/videos`, in English, the title's own language, or no language. Ranked
   official Trailer > Trailer > official Teaser > Teaser, with English preferred.
 - **When it shows.** YouTube draws its own pause button over the first seconds of every embed, even with
-  `controls=0`, and after any pause, then hides it. So the trailer fades in only after 4 s of playback
-  (measured: still there 2.6 s in, gone by about 4 s). The backdrop shows until then.
+  `controls=0`, after any pause, and also when a player that was loaded paused starts playing. It then
+  hides it (measured: there at 2.8 s, fading at 3.9 s; 3.6 s still showed it faintly). So the trailer
+  fades in after 4 s of playback, and the backdrop shows until then.
+- **Warm-up.** To hide that wait on title pages, hovering a poster for 0.45 s starts its trailer in the
+  title hero, hidden and at volume 0 (`attach` option `quiet`). If you open the title, the trailer is
+  already past the button and shows at once (measured: visible 0 ms after opening). If you don't, it's
+  dropped 1.2 s after the pointer leaves. Lampa cards carry their title as `card_data`; the billboard's
+  *More info* and the *More like this* posters set `_rubyItem` on an element marked `data-ruby-item`.
+- **Preconnect.** The YouTube hosts are preconnected at startup.
 - **Sound.** Unmute is tried only after the page has had a user gesture (`navigator.userActivation`),
   while the picture is still hidden. If the browser refuses, YouTube pauses right after the unmute; the
   player then goes back to muted, plays on, and doesn't try again until the next click or keypress.
@@ -69,6 +76,30 @@ Built once per page load, per profile (`personal.js`, `picks()`):
   `highres`/`vq` made it re-buffer with a spinner, so it isn't forced.
 - **Referrer.** Lampa's `index.html` sets `<meta name="referrer" content="never">`, and YouTube refuses
   embeds that send no referrer (error 153). Only the iframe gets `strict-origin-when-cross-origin`.
+
+## Performance
+
+What made scrolling laggy in Safari, and what replaced it:
+
+- **Colour orbs.** The orbs were full-screen, always drifting, `filter: blur()` and
+  `mix-blend-mode: screen`. Every frame the browser re-blurred and re-blended them, and re-rendered every
+  `backdrop-filter` element above them. The orbs are now plain radial gradients, which are soft enough
+  without the blur.
+- **Glass blur.** `backdrop-filter` is kept only on a few large surfaces: title-page buttons, menus,
+  settings. Things that come by the dozen get a tinted fill instead: the rating badge on every poster,
+  chips, torrent rows. The top bar is nearly opaque once scrolled, so it has no blur either.
+- **Title hero.** It follows the page scroll by copying Lampa's own transform and CSS transition, so
+  there's no `requestAnimationFrame` loop reading styles every frame.
+
+## Under the top bar
+
+The pages scroll under the top bar, as on Netflix:
+
+- **Scroller.** Lampa's page scroller clips at the bar's bottom edge and fades its top and bottom 8 % with
+  a mask. On desktop it does neither.
+- **Billboard.** It is pulled up to the window top. The distance depends on the interface size and Lampa
+  is still laying the page out when the billboard goes in (124 px measured then, 17 px once settled), so
+  `hero.js` measures it again at 0.4 s and 1.5 s and on resize.
 
 ## Things Lampa does that these modules work around
 
