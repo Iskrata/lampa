@@ -129,15 +129,19 @@
         }, { capture: true, passive: false });
     }
 
-    // "Settled" = the page has loaded and gone quiet (load event + 1.5 s + an idle moment). Heavy extras
-    // wait for it - mainly the YouTube player (1.8 MB of script, ~80 ms of main-thread work to start, and
-    // in Safari it runs on the page's own thread), which otherwise competed with Lampa's own start-up.
+    // "Settled" = Lampa has drawn its first rows and the page has gone quiet (rows + 1.5 s + an idle
+    // moment; the load event alone comes ~3 s before Lampa's first rows). Heavy extras wait for it - mainly
+    // the YouTube player (1.8 MB of script, ~80 ms of main-thread work to start, and in Safari it runs on
+    // the page's own thread), which otherwise competed with Lampa's own start-up.
     var settledCbs = [], isSettled = false;
     function settle() { if (isSettled) return; isSettled = true; settledCbs.splice(0).forEach(function (f) { f(); }); }
     (function () {
         var idle = window.requestIdleCallback || function (f) { setTimeout(f, 0); };
-        var go = function () { setTimeout(function () { idle(settle, { timeout: 3000 }); }, 1500); };
-        if (document.readyState === 'complete') go(); else window.addEventListener('load', go);
+        var tries = 0, t = setInterval(function () {
+            if (!document.querySelector('.activity--active .items-line, .activity--active .full-start-new') && ++tries < 100) return;
+            clearInterval(t);
+            setTimeout(function () { idle(settle, { timeout: 3000 }); }, 1500);
+        }, 150);
     })();
 
     var logos = {}, DETAILS = 'ruby_tmdb_cache_v1', details = {};
