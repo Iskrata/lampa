@@ -19,6 +19,8 @@
         gear: '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
         history: '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.6h3.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 8v4.3l2.8 1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
         link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+        cc: '<rect x="2.8" y="5" width="18.4" height="14" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.6 10.2a2.4 2.4 0 1 0 0 3.6M17.2 10.2a2.4 2.4 0 1 0 0 3.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+        airplay: '<path d="M6.5 17H5a2.2 2.2 0 0 1-2.2-2.2V6.2A2.2 2.2 0 0 1 5 4h14a2.2 2.2 0 0 1 2.2 2.2v8.6A2.2 2.2 0 0 1 19 17h-1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 13.5l5 6.5H7z" fill="currentColor"/>',
         // Netflix-style profile face, drawn on the avatar's colour
         face: '<circle cx="8.2" cy="9.4" r="1.5" fill="currentColor"/><circle cx="15.8" cy="9.4" r="1.5" fill="currentColor"/><path d="M6.5 14.2c3.2 3 7.8 3 11 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'
     };

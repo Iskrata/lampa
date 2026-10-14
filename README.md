@@ -40,6 +40,18 @@ The bar is transparent over the top of the page and turns solid once you scroll.
 
 ![New & Popular and the profile menu](desktop/screenshots/browse.jpg)
 
+**Play without choosing a torrent.** Press Play and pick only the resolution: 4K, 1080p or 720p, each
+showing its best release's seeders and size. The fork searches, keeps English releases of this title that
+will stream, ranks them (seeders, source, a sensible bitrate) and starts the right file. Click an episode
+and it plays that episode; Play on a series continues where you left off. "All torrents" is still there.
+
+**Any file plays in the browser.** With the small server in [`server/remux`](server/remux/README.md) next
+to TorrServer, every torrent plays as HLS: 4K HEVC MKVs with Atmos audio play in Safari and Chrome,
+with seeking, English subtitles (a labelled Subtitles button) and AirPlay to an Apple TV. The video isn't
+re-encoded, so it's light on the server.
+
+**See who's watching.** The top bar shows other profiles that are watching right now, and what.
+
 **And:**
 - A featured billboard on Home that rotates through your picks, or what's trending, with its trailer.
 - Apple TV-style dark look, liquid-glass panels, and soft colour light taken from the poster you hover,
@@ -49,8 +61,9 @@ The bar is transparent over the top of the page and turns solid once you scroll.
 - Sharper artwork: posters at w780, backdrops and logos at the original size (up to 4K).
 - "Connect Trakt" with a device code, from the profile menu.
 
-Everything is switched on only on computers. On TVs (`Lampa.Platform.tv()`) Lampa stays exactly as
-upstream ships it, and each part can be turned off in **Settings → Interface**.
+The look is switched on only on computers. On TVs (`Lampa.Platform.tv()`) Lampa looks exactly as upstream
+ships it; only Play's resolution picker works there too. Each part can be turned off in **Settings →
+Interface**.
 
 ## Use it
 
@@ -63,6 +76,9 @@ below).
   `urn:ietf:wg:oauth:2.0:oob`), paste its Client ID into **Settings → Interface → Trakt Client ID**, then
   use **Connect Trakt** in the profile menu. Without it, the thumbs and profiles still work. "Picked for
   you" then has no source of related titles, and "More like this" uses TMDB's list instead.
+- **Playing any file (optional).** Run [`server/remux`](server/remux/README.md) (Node + ffmpeg) next to
+  TorrServer, publish it at `<TorrServer URL>/gst/` on your web server, and turn on **Settings →
+  TorrServer → transcoding**. Without it, the browser plays only what it can play directly (MP4/H.264).
 - **Language.** Lampa starts in Russian. Switch it under Settings → Interface → Language. The desktop
   modules themselves are in English.
 - **Sound.** Browsers allow trailers with sound only after you've clicked something on the page. In Safari,

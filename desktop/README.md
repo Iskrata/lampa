@@ -21,6 +21,13 @@ Desktop look** on, so Lampa on a TV stays as upstream ships it.
 | `more.js` | "More like this" at the end of title pages |
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu |
+| `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
+| `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
+| `player.js` | the player's labelled Subtitles button and an AirPlay button |
+| `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
+
+Torrents play in the browser through `server/remux` (its README): any file becomes HLS on the server, so an
+MKV with HEVC and E-AC3 plays in Safari and Chrome, with subtitles, and AirPlays.
 
 The `ruby` prefix on globals (`rubyDesktop`), storage keys (`ruby_*`) and CSS classes (`.ruby-*`) comes
 from the home server this was first built for. It keeps everything clear of Lampa's own names.
@@ -51,6 +58,58 @@ Per profile: `favorite`, `file_view*` (progress), `online_view`, `torrents_view`
 `search_history`, `recomends_*`, `activity` and a few more, every `trakt*` key (the Trakt login and all
 Trakt plugin state), and `ruby_ratings`. Shared: settings, servers, plugins, and `trakt_client_id` /
 `trakt_client_secret`. The list is at the top of `profiles.js`.
+
+**Who's watching now.** With `./sync/`, each profile writes `presence-<id>.json` when playback starts,
+every minute while it goes on, and `{at: 0}` when it stops. The top bar shows the other profiles that wrote
+one in the last 3 minutes: an avatar with a green dot, "Vik is watching Breaking Bad · S5 E14" on hover,
+the title page on click. A TV writes too; only the top bar reads.
+
+## Play
+
+Anything that would open a title's torrent list runs `play.js` instead: the title page's Play (the Trailers
+source is removed, so Play no longer offers a choice of sources), the billboard's Play, and a click on an
+episode.
+
+1. **Search** the way Lampa's Torrents button does (`parse_lang`), through Lampa's parsers.
+2. **Keep** (`pick.js`) releases that:
+   - name a resolution (4K, 1080p, 720p) and have enough seeders (15 / 5 / 3);
+   - aren't CAM/TS/screener/3D;
+   - are English: no other language in the name, unless it's a MULTi/dual-audio release that says ENG;
+     Cyrillic titles never pass;
+   - are this title (its name in the release name, the year within one for a film, no series packs for a
+     film);
+   - hold the episode wanted: a pack whose season range covers it, or that exact episode.
+3. **Rank** each resolution's releases:
+   - log of seeders;
+   - source (WEB-DL/Blu-ray over WEBRip over HDTV);
+   - a bitrate band per resolution, from size and runtime (too small is over-compressed, too big is a
+     remux that won't stream from a 110 Mbit/s uplink);
+   - penalties for Dolby Vision without HDR10 and for AV1;
+   - a small bonus for season packs.
+4. **Ask** "Play in": one line per resolution with its best release's seeders and size, plus "All torrents"
+   for Lampa's list. The last resolution chosen is preselected.
+5. **Open** the release with Lampa's own flow (`Lampa.Torrent.start`) and, when Lampa's file list comes up
+   (`torrent_file` events), start the right file: the episode by season/episode, or a film's largest video
+   file. The list is hidden meanwhile. Resume, the episode playlist and "next episode" stay Lampa's.
+
+A series' Play continues where you are: the last episode with progress, or the next one once that's
+past 90 %. A fresh show starts at S1 E1. Measured on Breaking Bad: S1 E1 → S2 E3 at 40 % → S2 E4 at 95 %.
+
+Episode cards are built without a reference to their data, so a click reads the card: the episode number
+and name, in the season the page shows (the all-episodes page's season, else the latest aired). The name
+is checked against TMDB's season, and all seasons are searched if it isn't there. The click is caught in
+the capture phase, before the card's own handler, which upstream only toggled "watched". Episodes not
+aired yet keep upstream behaviour.
+
+Settings → Interface → "Pick torrents for me" turns all of this off.
+
+## Player
+
+- **Subtitles.** Lampa shows its subtitles button only once the stream reports subtitle tracks, as a small
+  speech-bubble icon. It's now a CC icon labelled "Subtitles".
+- **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
+  button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
+  needs a URL that works without the browser: on the home server the stream path has no password.
 
 ## Picked for you
 
