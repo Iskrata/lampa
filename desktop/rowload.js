@@ -1,15 +1,18 @@
-// "More is loading" placeholder at the bottom of a page (desktop/README.md). Loaded by index.html.
-// Lampa loads a page's next rows (Home) or next page of posters (grids) when its scroller reaches the end:
-// Scroll.onEnd -> 'loadNext' -> fetch -> append. Nothing shows while it fetches, so the page just seemed to
-// end. Here onEnd also puts a shimmering placeholder row at the bottom, removed as soon as new content is
-// appended. If nothing arrives within GIVE_UP_MS the page has run out: the placeholder goes and isn't
-// shown again for that page until new content does arrive. Active only where desktop.js is.
+// "More is loading" placeholder at the bottom of a page, and building rows ahead (desktop/README.md).
+// Lampa loads a page's next rows (Home) or next page of posters (grids) only when its scroller reaches the
+// end: Scroll.onEnd -> 'loadNext' -> fetch -> append, with nothing shown meanwhile, so new rows appeared
+// out of nowhere. Here the page always ends in a shimmering placeholder row:
+//   * when it comes into view, the next rows are asked for right away; new rows go in above it
+//   * if nothing arrives for GIVE_UP_MS while it is in view, the page has run out and it is removed (it
+//     comes back if new content still arrives)
 // Also builds ahead: building a row costs Safari 60-90 ms (measured 2026-10-13 in real Safari, the same with
-// plain upstream Lampa), which was felt as a hitch every ~340 px of scrolling. So while the page is still
-// (no wheel for IDLE_MS), the next rows are loaded until AHEAD_SCREENS screens are ready below the view;
-// rows off screen cost nothing to draw (desktop.js content-visibility). Lampa allows one load per second.
+// plain upstream Lampa), felt as a hitch every ~340 px of scrolling. So while the page is still (no wheel
+// for IDLE_MS) the next rows are loaded until AHEAD_SCREENS screens are ready below the view; rows off
+// screen cost nothing to draw (desktop.js content-visibility). Lampa allows one load per second.
+// Home and grid pages only. Active only where desktop.js is.
 (function () {
-    var GIVE_UP_MS = 4000, CARDS = 9, IDLE_MS = 400, AHEAD_SCREENS = 2.5, lastWheel = 0;
+    var GIVE_UP_MS = 8000, CARDS = 9, IDLE_MS = 400, AHEAD_SCREENS = 2.5, PAGES = ['main', 'category_full', 'category'];
+    var lastWheel = 0;
 
     var CSS = [
         '.ruby-rowload{padding:1.6em 0 3em}',
@@ -20,6 +23,11 @@
     ].join('\n');
 
     function body(page) { return page.querySelector(':scope > .scroll__content > .scroll__body'); }
+    function activePage() {
+        var a = Lampa.Activity.active && Lampa.Activity.active();
+        if (!a || PAGES.indexOf(a.component) < 0) return null;
+        return document.querySelector('.activity--active .scroll:not(.scroll--horizontal)');
+    }
 
     function placeholder(b) {
         var el = document.createElement('div');
@@ -33,51 +41,51 @@
         return el;
     }
 
-    function show(page) {
-        var b = body(page);
-        if (!b || b._rubyDone || b.querySelector(':scope > .ruby-rowload')) return;
-        var el = placeholder(b);
-        b.appendChild(el);
-        var observer = new MutationObserver(function (ms) {
-            var arrived = ms.some(function (m) { return [].some.call(m.addedNodes, function (n) { return n !== el && n.nodeType === 1; }); });
-            if (arrived) finish(false);
-        });
-        var timer = setTimeout(function () { finish(true); }, GIVE_UP_MS);
-        function finish(exhausted) {
-            clearTimeout(timer);
-            observer.disconnect();
-            el.remove();
-            b._rubyDone = exhausted;
+    // one placeholder per page, kept as the last child of its scroll body
+    function attach(page) {
+        var b = body(page), sc = page.Scroll;
+        if (!b || !sc || typeof sc.onEnd !== 'function' || b._rubyRowload) return !!(b && b._rubyRowload);
+        var load = sc.onEnd, el = null, lastArrival = Date.now(), check = 0;
+        b._rubyRowload = true;
+        page._rubyLoad = function () { load.call(sc); };
+        function place() {
+            if (b._rubyDone) return;
+            if (!el) { el = placeholder(b); io.observe(el); }
+            if (b.lastElementChild !== el) b.appendChild(el);
         }
-        observer.observe(b, { childList: true });
-    }
-
-    // wrap the active page's Scroll.onEnd once it exists (Lampa sets it when the page is built)
-    function hook() {
-        var page = document.querySelector('.activity--active .scroll:not(.scroll--horizontal)');
-        var sc = page && page.Scroll;
-        if (!sc || sc._rubyEnd || typeof sc.onEnd !== 'function') return !!(sc && sc._rubyEnd);
-        var orig = sc.onEnd;
-        sc._rubyEnd = true;
-        sc.onEnd = function () { show(page); return orig.apply(this, arguments); };
-        sc._rubyLoad = orig;   // without the placeholder: building ahead, out of sight
-        // new content after an "exhausted" verdict (e.g. a slow fetch) re-enables the placeholder
-        var b = body(page);
-        if (b) new MutationObserver(function (ms) {
-            if (ms.some(function (m) { return [].some.call(m.addedNodes, function (n) { return n.nodeType === 1 && !n.classList.contains('ruby-rowload'); }); }))
-                b._rubyDone = false;
+        var io = new IntersectionObserver(function (entries) {
+            var inView = entries[entries.length - 1].isIntersecting;
+            clearInterval(check);
+            if (!inView) return;
+            page._rubyLoad();
+            var since = Date.now();
+            check = setInterval(function () {
+                if (!document.body.contains(b)) return clearInterval(check);
+                if (Date.now() - Math.max(since, lastArrival) < GIVE_UP_MS) return page._rubyLoad();
+                clearInterval(check);   // nothing more is coming: the page has ended
+                b._rubyDone = true;
+                io.unobserve(el);
+                el.remove();
+                el = null;
+            }, 1000);
+        });
+        new MutationObserver(function (ms) {
+            var arrived = ms.some(function (m) { return [].some.call(m.addedNodes, function (n) { return n.nodeType === 1 && n !== el; }); });
+            if (!arrived) return;
+            lastArrival = Date.now();
+            b._rubyDone = false;
+            place();
         }).observe(b, { childList: true });
+        place();
         return true;
     }
 
     // while the page is still, load the next rows until AHEAD_SCREENS screens are ready below the view
     function ahead() {
         if (document.hidden || Date.now() - lastWheel < IDLE_MS || !rubyDesktop.settled()) return;
-        var page = document.querySelector('.activity--active .scroll:not(.scroll--horizontal)');
-        var sc = page && page.Scroll, b = page && body(page);
-        if (!sc || !sc._rubyLoad || !b || b._rubyDone) return;
-        var below = b.getBoundingClientRect().bottom - window.innerHeight;
-        if (below < window.innerHeight * AHEAD_SCREENS) sc._rubyLoad.call(sc);
+        var page = activePage(), b = page && body(page);
+        if (!page || !page._rubyLoad || !b || b._rubyDone) return;
+        if (b.getBoundingClientRect().bottom - window.innerHeight < window.innerHeight * AHEAD_SCREENS) page._rubyLoad();
     }
 
     function start() {
@@ -87,7 +95,10 @@
         style.textContent = CSS;
         document.head.appendChild(style);
         var watch = function () {
-            var tries = 0, t = setInterval(function () { if (hook() || ++tries > 30) clearInterval(t); }, 500);
+            var tries = 0, t = setInterval(function () {
+                var page = activePage();
+                if ((page && attach(page)) || ++tries > 30) clearInterval(t);
+            }, 500);
         };
         Lampa.Listener.follow('activity', function (e) { if (e.type === 'start') watch(); });
         watch();
@@ -97,7 +108,7 @@
     }
 
     var t = setInterval(function () {
-        if (!window.Lampa || !Lampa.Listener || !window.rubyDesktop || !rubyDesktop.active) return;
+        if (!window.Lampa || !Lampa.Listener || !Lampa.Activity || !window.rubyDesktop || !rubyDesktop.active || !rubyDesktop.settled) return;
         clearInterval(t);
         start();
     }, 100);

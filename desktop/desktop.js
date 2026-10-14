@@ -52,6 +52,10 @@
         // animation, never by hiding: cards Lampa doesn't mark (the Trakt plugin's episode cards) stay visible; rows
         // rise in as they arrive, and the TV header stays hidden until nav.js has replaced it
         '.card__view{background:#1c1c1e}',
+        // a card still waiting for its poster (Lampa shows img/img_load.svg until then): a shimmering
+        // skeleton instead of Lampa's grey logo. Only waiting cards animate, so it costs nothing at rest.
+        '.card__img[src*="img_load"]{opacity:0}',
+        '.card__view:has(.card__img[src*="img_load"]){background:linear-gradient(100deg,#161618 30%,#25252a 50%,#161618 70%);background-size:300% 100%;animation:rb-shimmer 1.4s linear infinite}',
         '@keyframes rb-fade{from{opacity:0}to{opacity:1}}',
         '@keyframes rb-shimmer{from{background-position:100% 0}to{background-position:0 0}}',   // placeholders (hero.js, rowload.js)
         '.card--loaded .card__img{animation:rb-fade .35s ease}',
