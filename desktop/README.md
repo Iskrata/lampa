@@ -21,6 +21,9 @@ Desktop look** on, so Lampa on a TV stays as upstream ships it.
 | `more.js` | "More like this" at the end of title pages |
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu |
+| `avatars.js` | `rubyAvatars`: profile pictures, characters from popular titles (TMDB portraits) |
+| `facts-data.js` / `facts.js` | `rubyFacts`: "Did you know?" while a title loads |
+| `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
@@ -64,6 +67,19 @@ every minute while it goes on, and `{at: 0}` when it stops. The top bar shows th
 one in the last 3 minutes: an avatar with a green dot, "Vik is watching Breaking Bad · S5 E14" on hover,
 the title page on click. A TV writes too; only the top bar reads.
 
+**Pictures.** Edit Profile offers rows of characters from popular series and films (Stranger Things,
+Breaking Bad, Game of Thrones, The Office…): TMDB cast portraits, labelled with the character, the first 8 of
+each title's cast. The choice is the portrait's TMDB path (`img` in the profile), shared with the rest of
+`profiles.json`; without one, the face on the profile's colour.
+
+## My List
+
+A round + on every poster while it's pointed at, and "My List" on the billboard, toggle the title in Lampa's
+Bookmarks (`Lampa.Favorite` `book`): the same list as the title page's bookmark button, per profile. A tick
+when it's in. The top bar's My List opens just that list (`component: 'favorite', type: 'book'`), not
+Lampa's all-favourites overview. The button stops its clicks from reaching the card, which would open
+the title.
+
 ## Play
 
 Anything that would open a title's torrent list runs `play.js` instead: the title page's Play (the Trailers
@@ -76,8 +92,11 @@ episode.
    - aren't CAM/TS/screener/3D;
    - are English: no other language in the name, unless it's a MULTi/dual-audio release that says ENG;
      Cyrillic titles never pass;
-   - are this title (its name in the release name, the year within one for a film, no series packs for a
-     film);
+   - are this title: the release name **starts** with the title (after tags like `[LAMPA]`), followed by a
+     year, season, resolution or edition word, not by more words. "Avatar" doesn't match "Avatar Aang The
+     Last Airbender", and "Avatar The Last Airbender" doesn't match "Avatar The Legend of Aang". A film:
+     the year within one, no series packs. A series: a year in the name must be within its years on air,
+     which tells the 2005 animated "Avatar: The Last Airbender" from the 2024 live-action one;
    - hold the episode wanted: a pack whose season range covers it, or that exact episode.
 3. **Rank** each resolution's releases:
    - log of seeders;
@@ -86,8 +105,14 @@ episode.
      remux that won't stream from a 110 Mbit/s uplink);
    - penalties for Dolby Vision without HDR10 and for AV1;
    - a small bonus for season packs.
-4. **Ask** "Play in": one line per resolution with its best release's seeders and size, plus "All torrents"
-   for Lampa's list. The last resolution chosen is preselected.
+4. **Ask** "Play in": one line per resolution with its best release's seeders and size, then "Pick a torrent
+   manually" (Lampa's list). Only resolutions up to the screen's are offered:
+   - **Screen:** physical width of 2560 px or more → up to 4K; otherwise 1080p; 720p under 1280. Phones
+     stop at 1080p.
+   - **Connection:** a release whose bitrate × 1.3 is more than this connection carries says "Your
+     connection (N Mbit/s) is too slow for this". The speed is timed once per session, while the search
+     runs, by downloading 4 MB of random bytes from the remux service (`/gst/speedtest`).
+   - **Preselected:** the last resolution chosen, unless it's too slow.
 5. **Open** the release with Lampa's own flow (`Lampa.Torrent.start`) and, when Lampa's file list comes up
    (`torrent_file` events), start the right file: the episode by season/episode, or a film's largest video
    file. The list is hidden meanwhile. Resume, the episode playlist and "next episode" stay Lampa's.
@@ -96,12 +121,32 @@ A series' Play continues where you are: the last episode with progress, or the n
 past 90 %. A fresh show starts at S1 E1. Measured on Breaking Bad: S1 E1 → S2 E3 at 40 % → S2 E4 at 95 %.
 
 Episode cards are built without a reference to their data, so a click reads the card: the episode number
-and name, in the season the page shows (the all-episodes page's season, else the latest aired). The name
-is checked against TMDB's season, and all seasons are searched if it isn't there. The click is caught in
+and name. The episode is looked up by name in TMDB's own seasons, starting with the season the page shows
+(the all-episodes page's season, else the latest aired). It doesn't use `Lampa.Api.seasons`: when asked
+for season 1, that splits a show at any gap of more than 90 days between air dates into made-up seasons and
+renumbers the episodes (`splitEpisodesIntoSeasons`). Torrent files, and the progress Lampa saves for them,
+use the real numbers. The click is caught in
 the capture phase, before the card's own handler, which upstream only toggled "watched". Episodes not
 aired yet keep upstream behaviour.
 
+**While it loads** (`facts.js`): from Play until the picture moves, except while the "Play in" question is
+open, a card at the bottom shows a fact every 7 s. This title's facts come first, from TMDB: cast and
+characters, director, budget and box office, seasons, network, collection, "based on a book". Then general
+film and TV trivia from `facts-data.js` (110+ facts), each browser seeing all of them before any repeats
+(`ruby_facts_seen`).
+
 Settings → Interface → "Pick torrents for me" turns all of this off.
+
+## Changes to Lampa itself (`app.min.js`)
+
+Three small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+- **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
+  episode to air last. Upstream shows the newest first.
+- **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
+  keystroke dropped its results, but the same text was then never searched again. Typing "akame",
+  deleting a letter and retyping it left the results empty.
+- **Search, `Results.search`:** results 350 ms after you stop typing (upstream: 2.5 s, which looked as if
+  Enter were needed).
 
 ## Player
 
@@ -113,7 +158,9 @@ Settings → Interface → "Pick torrents for me" turns all of this off.
 
 ## Picked for you
 
-Built once per page load, per profile (`personal.js`, `picks()`):
+Built once per page load, per profile (`personal.js`, `picks()`). Besides thumbs, what the profile watched
+counts: the 6 most recent titles in Lampa's history (`Favorite` `history`, added each time a torrent plays)
+that aren't rated each count as half a thumbs up, and anything watched is left out of the picks.
 
 1. Seeds: the 10 most recent thumbs up, with a "love" counting as 60 days more recent. Ratings already on
    the profile's Trakt account count too: 9–10 is a love, 6–8 a thumbs up, 1–5 a thumbs down.
@@ -140,7 +187,10 @@ Built once per page load, per profile (`personal.js`, `picks()`):
   dropped 1.2 s after the pointer leaves. Lampa cards carry their title as `card_data`; the billboard's
   *More info* and the *More like this* posters set `_rubyItem` on an element marked `data-ruby-item`.
 - **Preconnect.** The YouTube hosts are preconnected at startup.
-- **Sound.** Unmute is tried only after the page has had a user gesture (`navigator.userActivation`),
+- **Sound.** Off by default. The speaker button (or Settings → Interface → Trailer sound) turns it on, and
+  the choice is remembered. Everyone started muted once when this became the default
+  (`ruby_sound_default_off`).
+- **Unmuting.** It's tried only after the page has had a user gesture (`navigator.userActivation`),
   while the picture is still hidden. If the browser refuses, YouTube pauses right after the unmute; the
   player then goes back to muted, plays on, and doesn't try again until the next click or keypress.
 - **Subtitles.** English subtitles (`cc_load_policy=1&cc_lang_pref=en`) when the chosen trailer isn't in

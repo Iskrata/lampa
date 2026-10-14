@@ -121,6 +121,7 @@
             info.addEventListener('click', function () { rubyDesktop.openFull(item); });
             info.dataset.rubyItem = '';   // title.js warms the title page's trailer up on hover
             info._rubyItem = item;
+            if (window.rubyMyList) body.querySelector('.ruby-hero__btns').appendChild(rubyMyList.button(item));
             if (trailer) rubyDesktop.settled(function () { if (list[idx] === item) trailer.show(item); });   // not during page load
             rubyDesktop.logo(item, function (src) {
                 if (!src || list[idx] !== item) return;

@@ -7,7 +7,7 @@
 // and gives the billboard (hero.js) the same picks through rubyDesktop.personalPicks().
 // Trakt returns ids only; TMDB details come from rubyDesktop.details (desktop.js), cached per session.
 (function () {
-    var SEEDS = 10, DISLIKE_SEEDS = 4, LOVE_BOOST_MS = 60 * 864e5, MAX = 30;
+    var SEEDS = 10, DISLIKE_SEEDS = 4, LOVE_BOOST_MS = 60 * 864e5, MAX = 30, WATCHED_SEEDS = 6, WATCHED_WEIGHT = 0.5;
 
     function trakt() { return window.rubyTrakt && rubyTrakt.connected(); }
     function rated() { var r = Lampa.Storage.get('ruby_ratings', '{}'); return r && typeof r === 'object' && Object.keys(r).length > 0; }
@@ -35,7 +35,9 @@
     //   * the 4 most recent thumbs down push their related titles down
     //   * Trakt's own recommendations (Trakt-connected profiles) score like a seed and a bit
     //   * genre taste from the profile's own thumbs nudges the score (+-6 % per point, capped)
-    //   * anything already rated is left out (rated = watched or judged); only the top 30 get TMDB details
+    //   * what the profile watched (Lampa's history, most recent first): the 6 latest not rated count as half a
+    //     thumbs up each; a rating of the same title wins
+    //   * anything already rated or watched is left out; only the top 30 get TMDB details
     var picked = null, waiting = [];
     function picks(done) {
         if (picked) return done(picked);
@@ -49,16 +51,19 @@
             var dislikes = list.filter(function (r) { return r.r < 0; }).sort(function (a, b) { return b.t - a.t; }).slice(0, DISLIKE_SEEDS);
             var taste = {};
             list.forEach(function (r) { (r.g || []).forEach(function (g) { taste[g] = (taste[g] || 0) + r.r; }); });
-            var score = {}, refs = {};
+            var score = {}, refs = {}, seen = {};
+            var watched = history().filter(function (h) { seen[h.kind + ':' + h.id] = true; return !ratings[h.kind + ':' + h.id]; }).slice(0, WATCHED_SEEDS);
             function add(found, w) {
                 found.forEach(function (x, i) {
                     var k = x.kind + ':' + x.id;
-                    if (ratings[k]) return;
+                    if (ratings[k] || seen[k]) return;
                     refs[k] = refs[k] || x;
                     score[k] = (score[k] || 0) + w * (1 - i / (found.length + 5));
                 });
             }
-            var jobs = likes.map(function (s) { return { s: s, w: s.r }; }).concat(dislikes.map(function (s) { return { s: s, w: -0.8 }; }));
+            var jobs = likes.map(function (s) { return { s: s, w: s.r }; })
+                .concat(watched.map(function (s) { return { s: s, w: WATCHED_WEIGHT }; }))
+                .concat(dislikes.map(function (s) { return { s: s, w: -0.8 }; }));
             var left = jobs.length + 1;
             function finish() {
                 if (--left > 0) return;
@@ -76,6 +81,12 @@
             jobs.forEach(function (j) { rubyTrakt.related(j.s.kind, j.s.id, function (r) { add(r, j.w); finish(); }); });
             traktRecs(function (r) { add(r, 1.3); finish(); });
         });
+    }
+
+    // titles this profile played, most recent first ({kind, id}); Lampa adds one each time a torrent plays
+    function history() {
+        return (Lampa.Favorite.get({ type: 'history' }) || []).filter(function (c) { return c && c.id; })
+            .map(function (c) { return { kind: rubyDesktop.kind(c), id: c.id }; });
     }
 
     function watchlist(done) {
@@ -97,14 +108,14 @@
     }
 
     function start() {
-        row('ruby_picked', 'Picked for you', 0, function () { return trakt() || rated(); }, picks);
+        row('ruby_picked', 'Picked for you', 0, function () { return trakt() || rated() || history().length > 0; }, picks);
         row('ruby_watchlist', 'From your watchlist', 1, trakt, watchlist);
         // for hero.js: personal billboard picks, or null without enough of them
         var expose = function () {
             if (!window.rubyDesktop || !window.rubyRatings) return setTimeout(expose, 100);
             rubyRatings.onChange(function () { picked = null; });
             rubyDesktop.personalPicks = function (done) {
-                if (!trakt() && !rated()) return done(null);
+                if (!trakt() && !rated() && !history().length) return done(null);
                 picks(function (items) {
                     var withArt = items.filter(function (i) { return i.backdrop_path && i.overview; });
                     done(withArt.length >= 3 ? withArt : null);

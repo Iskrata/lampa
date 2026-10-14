@@ -42,7 +42,7 @@
         '.ruby-live__p{position:relative;width:1.9em;cursor:pointer}',
         '.ruby-live__p .ruby-avatar{font-size:1em}',
         '.ruby-live__p::after{content:"";position:absolute;right:-.15em;bottom:-.15em;width:.6em;height:.6em;border-radius:50%;background:#46d369;box-shadow:0 0 0 .15em #141414}',
-        '.ruby-live__tip{position:absolute;top:calc(100% + .7em);right:0;white-space:nowrap;padding:.5em .8em;border-radius:.4em;background:rgba(20,20,20,.95);border:1px solid rgba(255,255,255,.15);font-size:.8em;color:#e5e5e5;opacity:0;pointer-events:none;transition:opacity .15s}',
+        '.ruby-live__tip{position:absolute;top:calc(100% + .7em);right:0;white-space:nowrap;padding:.6em .9em;border-radius:.45em;background:rgba(20,20,20,.95);border:1px solid rgba(255,255,255,.15);font-size:1.05em;color:#e5e5e5;opacity:0;pointer-events:none;transition:opacity .15s}',
         '.ruby-live__p:hover .ruby-live__tip{opacity:1}',
         '.ruby-live__tip b{color:#fff;font-weight:600}'
     ].join('\n');
@@ -74,7 +74,7 @@
             return rubyStore.getAsync(file(p.id)).then(function (text) {
                 try { var w = JSON.parse(text || 'null'); } catch (e) { w = null; }
                 // the profile's current name and colour, in case they changed since
-                return w && w.at && Date.now() - w.at < FRESH_MS ? Object.assign(w, { name: p.name, color: p.color }) : null;
+                return w && w.at && Date.now() - w.at < FRESH_MS ? Object.assign(w, { name: p.name, color: p.color, img: p.img }) : null;
             });
         })).then(function (list) { render(box, list.filter(Boolean)); });
     }

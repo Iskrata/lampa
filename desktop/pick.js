@@ -40,13 +40,28 @@
         return MULTI_WITH_ENGLISH.test(w) && !/[Ѐ-ӿ]/.test(w) && !/\b(hardsub|hc|korsub|subita)\b/i.test(w);
     }
 
-    // the title, as words, appears in the release name (title or original title)
+    // What may follow the title in a release name: a year, a season or episode, a resolution or an edition.
+    // Anything else means a different title that starts the same ("Avatar" vs "Avatar Aang The Last
+    // Airbender", "Avatar The Last Airbender" vs "Avatar The Legend of Aang").
+    var AFTER = /^((19|20)\d\d|s\d{1,2}(e\d{1,3})?|e\d{1,3}|season|seasons|series|complete|\d{3,4}p|4k|uhd|hdr|extended|remastered|unrated|imax|directors|theatrical|repack|proper|web|webrip|bluray|hdtv|multi|dual|aka|\d{1,2}x\d{2})$/;
+
+    // the release name starts with the title (or its original title), followed by one of AFTER or nothing.
+    // Leading tags such as [LAMPA] or "www.site.org -" are skipped.
     function sameTitle(t, movie) {
-        var name = ' ' + words(t) + ' ';
+        var name = words(t.replace(/^\s*(\[[^\]]*\]|\([^)]*\)|www\.\S+\s*-?)\s*/gi, ''));
         return [movie.title, movie.name, movie.original_title, movie.original_name].some(function (x) {
             var w = words(x);
-            return w && name.indexOf(' ' + w + ' ') >= 0;
+            if (!w || name.indexOf(w) !== 0) return false;
+            var next = name.slice(w.length).trim().split(' ')[0];
+            return next === '' || AFTER.test(next);
         });
+    }
+
+    // a series' years on air, from TMDB (a release naming a year outside them is another show of that name)
+    function aired(movie) {
+        var from = +((movie.first_air_date || '') + '').slice(0, 4);
+        var to = +((movie.last_air_date || '') + '').slice(0, 4) || new Date().getFullYear();
+        return from ? [from - 1, to + 1] : null;
     }
 
     function year(t) { var m = t.match(/\b(19[2-9]\d|20\d\d)\b/g); return m ? +m[m.length - 1] : 0; }
@@ -72,6 +87,8 @@
             var y = year(t), want = +((movie.release_date || '') + '').slice(0, 4);
             return !y || !want || Math.abs(y - want) <= 1;
         }
+        var span = aired(movie), y = year(t);
+        if (span && y && (y < span[0] || y > span[1])) return false;
         var s = seasons(t);
         if (!s) return /\bcomplete\b/i.test(t) || /\bseries\b/i.test(t);
         if (target.season < s[0] || target.season > s[1]) return false;
@@ -100,7 +117,7 @@
     }
 
     function score(r, res, movie, target) {
-        var t = r.Title, rate = (r.Size || 0) * 8 / 1e6 / seconds(t, movie, target), band = RATE[res];
+        var t = r.Title, rate = bitrate(r, movie, target), band = RATE[res];
         var s = Math.log(1 + (r.Seeders || 0)) / Math.LN10 * 3 + source(t);
         if (rate < band.low) s -= (band.low - rate) / band.low * 3;
         if (rate > band.high) s -= Math.min(6, (rate - band.high) / band.high * 6);
@@ -126,5 +143,8 @@
         });
     }
 
-    window.rubyPick = { choices: choices, english: english, seasons: seasons, episode: episode };
+    // a release's average bitrate in Mbit/s
+    function bitrate(r, movie, target) { return (r.Size || 0) * 8 / 1e6 / seconds(r.Title || '', movie, target); }
+
+    window.rubyPick = { choices: choices, bitrate: bitrate, english: english, seasons: seasons, episode: episode };
 })();

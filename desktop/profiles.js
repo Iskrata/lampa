@@ -96,7 +96,7 @@
                     if (same) {
                         var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
                         if (state.current === p.id) state.current = id;
-                        p = { id: id, name: p.name, color: p.color };
+                        p = { id: id, name: p.name, color: p.color, img: p.img };
                     }
                     list.push(p);
                 });
@@ -193,7 +193,10 @@
         '.ruby-who__actions .ruby-who__btn{margin-top:2em}'
     ].join('\n');
 
+    // the chosen picture (avatars.js, a TMDB portrait path), else the face on the profile's colour
     function avatar(p) {
+        if (p.img && window.rubyAvatars) return '<div class="ruby-avatar" style="background:' + COLORS[p.color % COLORS.length] +
+            ' url(' + rubyAvatars.url(p.img) + ') center/cover"></div>';
         return '<div class="ruby-avatar" style="background:' + COLORS[p.color % COLORS.length] + '">' + rubyIcons.svg('face') + '</div>';
     }
     function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -255,7 +258,7 @@
 
     // add (p = null) or edit a profile: name + colour; delete for any profile but the one in use
     function edit(p) {
-        var r = mount(), draft = p ? { name: p.name, color: p.color } : { name: '', color: state.list.length % COLORS.length };
+        var r = mount(), draft = p ? { name: p.name, color: p.color, img: p.img || null } : { name: '', color: state.list.length % COLORS.length, img: null };
         r.classList.remove('manage');
         r.innerHTML = '<div class="ruby-who__form"><h1>' + (p ? 'Edit Profile' : 'Add Profile') + '</h1>' +
             (p ? '' : '<div style="color:#999;margin-bottom:1.2em">Add a profile for another person watching. It starts with its own empty list, history and taste.</div>') +
@@ -276,12 +279,17 @@
             colors.appendChild(sw);
         });
         paint();
+        if (window.rubyAvatars) {
+            var form = r.querySelector('.ruby-who__form');
+            rubyAvatars.gallery(form, draft.img, function (path) { draft.img = path; paint(); });
+            form.appendChild(form.querySelector('.ruby-who__actions'));   // Save / Cancel under the pictures
+        }
         setTimeout(function () { input.focus(); }, 50);
         function commit() {
             var name = input.value.trim();
             if (!name) return input.focus();
-            if (p) { p.name = name; p.color = draft.color; }
-            else state.list.push({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, color: draft.color });
+            if (p) { p.name = name; p.color = draft.color; p.img = draft.img || undefined; }
+            else state.list.push({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, color: draft.color, img: draft.img || undefined });
             saveList();
             picker(true);
         }

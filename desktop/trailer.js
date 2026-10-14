@@ -5,7 +5,8 @@
 // rubyTrailer.attach(host, {visible, onEnded, quiet}) -> {show(item), stop(), busy(), current(), loud(), muteButton}.
 // A trailer loads as soon as the title is shown and fades in after a few seconds of playback, once
 // YouTube's own pause button has auto-hidden and the sound question is settled (no black frame, no badge).
-// Sound is on by default (Settings -> Interface -> "Trailer sound", also the speaker button). Browsers only
+// Sound is off by default; the speaker button (or Settings -> Interface -> "Trailer sound") turns it on and
+// that choice is remembered (user's call 2026-10-14: trailers kept starting loud). Browsers only
 // allow audible autoplay after the user has interacted with the page (Safari: per-site "Auto-Play: Allow
 // All Auto-Play"), so a trailer always starts muted; unmute is tried only once the page has had a user
 // gesture (navigator.userActivation). If the browser still refuses (YouTube pauses right after unMute) the
@@ -38,7 +39,7 @@
     ].join('\n');
 
     function on() { return rubyDesktop.active() && Lampa.Storage.get(KEY, 'true') + '' !== 'false'; }
-    function soundOn() { return Lampa.Storage.get(SOUND, 'true') + '' !== 'false'; }
+    function soundOn() { return Lampa.Storage.get(SOUND, 'false') + '' === 'true'; }
     function hadGesture() { return !navigator.userActivation || navigator.userActivation.hasBeenActive; }
 
     // best YouTube trailer: official Trailer > Trailer > official Teaser > Teaser, preferring English, from
@@ -167,6 +168,8 @@
             document.head.appendChild(l);
         });
         // a new user gesture may lift the browser's audible-autoplay block
+        // once: everyone starts muted under the new default; the speaker button's choice sticks from then on
+        if (!Lampa.Storage.get('ruby_sound_default_off')) { Lampa.Storage.set(SOUND, false); Lampa.Storage.set('ruby_sound_default_off', true); }
         ['pointerdown', 'keydown'].forEach(function (ev) { document.addEventListener(ev, function () { blocked = false; }, true); });
         Lampa.SettingsApi.addParam({
             component: 'interface',
@@ -175,7 +178,7 @@
         });
         Lampa.SettingsApi.addParam({
             component: 'interface',
-            param: { name: SOUND, type: 'trigger', default: true },
+            param: { name: SOUND, type: 'trigger', default: false },
             field: { name: 'Trailer sound', description: 'Trailers play with sound when the browser allows it' }
         });
     }

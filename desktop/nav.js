@@ -7,6 +7,7 @@
 // Lampa's own back arrow is kept (there is no other way back for a mouse) but hidden on Home.
 // Active only where desktop.js is (rubyDesktop.active()); never on TVs.
 (function () {
+    var MY_LIST = { url: '', title: 'My List', component: 'favorite', type: 'book', page: 1 };
     var NEW_POPULAR = { url: 'trending/all/week', title: 'New & Popular', component: 'category_full', source: 'tmdb', card_type: true, page: 1 };
     // label -> how to open it, and which activity counts as "on this page"
     var LINKS = [
@@ -15,7 +16,8 @@
         { label: 'Movies',        action: 'movie',    is: function (a) { return a.url === 'movie' && a.component !== 'main'; } },
         { label: 'Animation',     action: 'cartoon',  is: function (a) { return a.url === 'cartoon' || (a.genres + '') === '16'; } },
         { label: 'New & Popular', open: NEW_POPULAR,  is: function (a) { return a.url === NEW_POPULAR.url; } },
-        { label: 'My List',       action: 'favorite', is: function (a) { return a.component === 'favorite' || a.component === 'bookmarks'; } },
+        // only the Bookmarks list (what the + buttons add to), not Lampa's all-favourites overview
+        { label: 'My List',       open: MY_LIST,      is: function (a) { return a.component === 'favorite' || a.component === 'bookmarks'; } },
         { label: 'Trakt',         trakt: true,        is: function (a) { return /trakt/i.test(a.component || '') || /trakt/i.test(a.source || ''); } }
     ];
     var HISTORY = { action: 'history' };
@@ -165,7 +167,8 @@
     function start() {
         if (!rubyDesktop.active()) return;
         var tries = 0, t = setInterval(function () {
-            if (build() || ++tries > 50) {
+            // Lampa's header can take a while (a slow plugin or server): keep trying for a minute, not 5 s
+            if (build() || ++tries > 600) {
                 clearInterval(t);
                 document.body.classList.add('ruby-nav-ready');   // desktop.js keeps the TV header hidden until now
                 markActive();

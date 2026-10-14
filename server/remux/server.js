@@ -6,6 +6,7 @@
 //   GET /gst/<hash>/<file>/video.m3u8, init.mp4, seg<n>.m4s, sub<k>.m3u8, sub<k>-<n>.vtt
 //   GET /gst/<hash>/heartbeat                      -> TorrServer's stats for the player's info panel
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
+//   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
 'use strict';
 const http = require('http');
 const fs = require('fs');
@@ -67,6 +68,16 @@ function playlist(s, item, map) {
     return lines.join('\n') + '\n';
 }
 
+// random bytes (can't be compressed or cached) for the browser to time its connection to this server
+const NOISE = require('crypto').randomBytes(1 << 20);
+function speedtest(res, mb) {
+    const n = Math.min(Math.max(parseInt(mb, 10) || 4, 1), 16);
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': n * NOISE.length, 'Cache-Control': 'no-store' });
+    let i = 0;
+    const more = () => { while (i < n) { i++; if (!res.write(NOISE)) return res.once('drain', more); } res.end(); };
+    more();
+}
+
 const TYPES = { m3u8: 'application/vnd.apple.mpegurl', mp4: 'video/mp4', m4s: 'video/iso.segment', vtt: 'text/vtt; charset=utf-8' };
 
 function send(res, status, body, type) {
@@ -87,6 +98,7 @@ async function handle(req, res) {
     const parts = url.pathname.replace(/^.*?\/gst\//, '').split('/').map(decodeURIComponent);
     const [hash, a, b] = parts;
 
+    if (hash === 'speedtest') return speedtest(res, url.searchParams.get('mb'));
     if (hash === 'echo') return send(res, 200, '{"remux":true}', 'application/json');   // Lampa parses it as JSON
     if (hash === 'remove') {
         const h = url.searchParams.get('hash') || '';
