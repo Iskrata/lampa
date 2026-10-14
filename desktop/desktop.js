@@ -163,8 +163,11 @@
             entries.forEach(function (en) {
                 var img = en.target, src = img.getAttribute('src') || '';
                 if (en.isIntersecting) {
-                    if (img._rubySrc) { img.src = img._rubySrc; img._rubySrc = null; }
-                } else if (src && src !== BLANK && src.indexOf('data:') !== 0 && img.complete) {
+                    // put it back only if the slot is still empty: Lampa may have set a newer image since
+                    // (its loading logo first, the real poster on 'visible') - restoring then showed the logo
+                    if (img._rubySrc && src === BLANK) img.src = img._rubySrc;
+                    img._rubySrc = null;
+                } else if (/^https?:\/\//.test(src) && src.indexOf('/t/p/') > 0 && img.complete) {   // TMDB posters only
                     img._rubySrc = src;
                     img.src = BLANK;
                 }
