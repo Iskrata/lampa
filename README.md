@@ -62,8 +62,10 @@ re-encoded, so it's light on the server.
 - Sharper artwork: posters at w780, backdrops and logos at the original size (up to 4K).
 - "Connect Trakt" with a device code, from the profile menu.
 
-The look is switched on only on computers. On TVs (`Lampa.Platform.tv()`) Lampa looks exactly as upstream
-ships it; only Play's resolution picker works there too. Each part can be turned off in **Settings →
+The look is switched on on computers, phones and tablets. On a phone the top bar's links scroll sideways,
+the profile menu opens with a tap, posters sit three across, and title pages put Play on a line of its own
+with the thumbs always showing. On TVs (`Lampa.Platform.tv()`) Lampa looks exactly as upstream ships it;
+only Play's resolution picker works there too. Each part can be turned off in **Settings →
 Interface**.
 
 ## Use it

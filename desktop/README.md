@@ -2,8 +2,9 @@
 
 Plain ES5 scripts, no build step. `index.html` loads them before Lampa's own loader, in this order. Each
 one waits for the parts of `window.Lampa` it needs (Lampa loads `app.min.js` asynchronously) and then runs.
-Everything visual is active only on computers (`!Lampa.Platform.tv()`) with **Settings → Interface →
-Desktop look** on, so Lampa on a TV stays as upstream ships it.
+Everything visual is active only off TVs (`!Lampa.Platform.tv()`: computers, phones, tablets) with
+**Settings → Interface → Desktop look** on, so Lampa on a TV stays as upstream ships it. Phones and tablets:
+see "Touch devices and phones".
 
 | file | what it does |
 |---|---|
@@ -25,6 +26,7 @@ Desktop look** on, so Lampa on a TV stays as upstream ships it.
 | `facts-data.js` / `facts.js` | `rubyFacts`: "Did you know?" while a title loads |
 | `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
+| `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
@@ -135,8 +137,7 @@ episode.
    (`torrent_file` events), start the right file: the episode by season/episode, or a film's largest video
    file. The list is hidden meanwhile. Resume, the episode playlist and "next episode" stay Lampa's.
 
-A series' Play continues where you are: the last episode with progress, or the next one once that's
-past 90 %. A fresh show starts at S1 E1. Measured on Breaking Bad: S1 E1 → S2 E3 at 40 % → S2 E4 at 95 %.
+A series' Play continues where you are (`resume.js`, "Where you are in a series" below).
 
 Episode cards are built without a reference to their data, so a click reads the card: the episode number
 and name. The episode is looked up by name in TMDB's own seasons, starting with the season the page shows
@@ -153,6 +154,46 @@ facts). Each browser sees all of them before any repeats (`ruby_facts_seen`). Fa
 (cast, budget) were tried and dropped: the user wanted fun facts.
 
 Settings → Interface → "Pick torrents for me" turns all of this off.
+
+## Where you are in a series
+
+`resume.js` (`rubyResume.where`) works out where the current profile is in a show. There's no store of its
+own: it reads the progress Lampa already saves per episode (`Lampa.Timeline.view(hash)`, `file_view`, kept
+per profile by `profiles.js`). The hash is Lampa's own `Utils.hash(season + episode + original name)`.
+
+- **Episodes:** every aired one, from the show's TMDB details (each season's `episode_count`, up to
+  `last_episode_to_air`; specials left out). No per-season requests. A card from a list (the billboard) has
+  no seasons, so the details are fetched once per session.
+- **Last watched:** the episode with the newest saved progress (Lampa stamps each save with `updated`). Older
+  saves have no stamp; for those, the latest episode in the show with progress counts.
+- **What plays:**
+  - under 90 %: that episode, "Continue S2 E5"; Lampa's player resumes it too, and only below 90 %;
+  - 90 % or more: the next aired one, "Play S2 E6";
+  - the last aired one finished: "Play S1 E1";
+  - no progress: S1 E1.
+- **Trakt:** with no progress here and Trakt connected, `/shows/:id/progress/watched` stands in: its
+  `next_episode`, and its `last_episode` for the line. Asked at most once a minute per show.
+
+The series page shows it:
+- **Play button:** "Continue S2 E5", "Play S2 E6" or "Play S1 E1".
+- **Line under the ratings:** "S2 E5 · 26 min left" and a progress bar, "Last watched S1 E3", or "Watched
+  all 62 episodes". Time left is the saved duration minus the saved time, else TMDB's runtime.
+- **Trakt plugin's watched status ("Unwatched"):** the line goes inside it, and the plugin's own text is
+  hidden, so the two can't disagree. A click still opens the plugin's Trakt menu. A mutation observer puts
+  the line back each time the plugin rebuilds its status. With nothing watched, the plugin's text stays.
+- **Updates:** live, on Lampa's `state:changed` timeline events (progress saved while playing, the player
+  closing, a sync).
+
+Play (`play.js`) asks `rubyResume.where` too, so the button starts the episode it names. With "Pick torrents
+for me" off, Play opens Lampa's own list, so the button keeps its label.
+
+Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`):
+- Desperate Housewives, S2 E4 100 % then S2 E5 40 % of 43 min: "Continue S2 E5", "S2 E5 · 26 min left".
+- Breaking Bad, S1 E3 at 95 %: "Play S1 E4", "Last watched S1 E3". Play's picker got `{season: 1,
+  episode: 4}`. S1 E4 saved at 12 % with the page open turned it into "Continue S1 E4" / "43 min left".
+- Breaking Bad, S5 E16 finished: "Play S1 E1", "Watched all 62 episodes".
+- Game of Thrones, nothing watched: "Play S1 E1", no line. Films keep "Watch".
+- The Trakt status line, rebuilt twice the way the plugin does it: the line stayed inside it, never doubled.
 
 ## Changes to Lampa itself (`app.min.js`)
 
@@ -289,6 +330,36 @@ The pages scroll under the top bar, as on Netflix:
 - **Billboard.** It is pulled up to the window top. The distance depends on the interface size and Lampa
   is still laying the page out when the billboard goes in (124 px measured then, 17 px once settled), so
   `hero.js` measures it again at 0.4 s and 1.5 s and on resize.
+
+## Touch devices and phones
+
+Lampa marks phones and tablets with `body.touch-device` / `body.true--mobile` (iPads too: a touch screen
+without "Windows NT"). Two things differ there, and `rubyDesktop.touch()` tells the modules:
+- **Scrolling is native.** Lampa scrolls pages with `scrollTop` instead of a transform. The desktop rule
+  that lets pages run under the top bar (`overflow: visible` on the page scroller) therefore made every page
+  unscrollable on phones and iPads; it now applies off touch devices only. `rubyDesktop.pageY()` reads
+  `scrollTop` there, and the title hero follows the scroller's `scroll` events instead of copying the
+  transform (`title.js`).
+- **No hover.** The profile menu opens and closes on tap (a tap elsewhere closes it), and the thumbs show
+  all three choices inside the button, without the hover labels.
+
+Sizes: Desktop look shrinks Lampa's base font to `100vw / 84.17 × density` with an 8 px floor. A 375 px
+phone hit the floor, so card titles were 7.6 px and Lampa's own player, settings and keyboard were cramped.
+Touch devices keep Lampa's own floor, 10.6 px (`size()` in `app.min.js`). At most 600 px wide (phones):
+- **Posters:** 10 em wide in rows, three across on grid pages (~3⅓ visible per row at 375 px; 12.75 em fit
+  2.7).
+- **Top bar:** the links scroll sideways, faded at the right edge. Lampa's page counter ("4 / 500") is
+  hidden.
+- **Billboard:** details span the width at the bottom, the three buttons share one line, the dots sit
+  under them, the speaker is at the top right.
+- **Title page:** Lampa's own phone layout (≤ 480 px) pulls the details into a rounded sheet with negative
+  margins, which cut them off at the left edge under the hero; that is undone. The hero fades from the
+  bottom, and Watch gets a whole line as a white labelled button.
+
+Checked on 2026-10-15 in the built-in browser at 375×812 (mobile emulation, Android Chrome UA) and again at
+1440×900 to confirm the desktop look is unchanged. In emulation Lampa ignores clicks until a `touchstart`
+has been seen (`DeviceInput.canClick`), which a real phone always sends first; tests dispatch one. Not yet
+checked on a real iPhone or in iPad Safari.
 
 ## Things Lampa does that these modules work around
 

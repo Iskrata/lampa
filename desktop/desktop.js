@@ -49,10 +49,15 @@
         '@media (min-width: 1000px){.mapping--grid.cols--6>*{width:calc(100% / 7)}}',
         '@media (min-width: 1300px){.mapping--grid.cols--6>*{width:12.5%}}',
         '@media (min-width: 1700px){.mapping--grid.cols--6>*{width:10%}}',
+        // phones: ~3 posters across, in rows and on grid pages (a 12.75 em card at the 10.6 px floor fit 2.7)
+        '@media (max-width: 600px){.items-line .card{width:10em}.mapping--grid.cols--6>*{width:calc(100% / 3)}.card__title{font-size:1.05em}}',
         // the page scrolls under the top bar (Netflix): Lampa's page scroller clips at the bar's bottom edge
         // and fades its top/bottom 8 % with a mask; the bar is transparent at the top and solid once
         // scrolled (nav.js), so neither is needed - and the Home billboard can sit under the bar (hero.js)
-        '.activity .scroll.layer--wheight:not(.scroll--horizontal){overflow:visible!important;-webkit-mask-image:none!important;mask-image:none!important}',
+        // On touch devices (phones, iPads: Lampa's body.touch-device) Lampa scrolls pages natively (scrollTop), not
+        // by transform, so the scroller must keep its overflow there - visible made pages unscrollable
+        '.activity .scroll.layer--wheight:not(.scroll--horizontal){-webkit-mask-image:none!important;mask-image:none!important}',
+        'body:not(.touch-device) .activity .scroll.layer--wheight:not(.scroll--horizontal){overflow:visible!important}',
         // loading: posters fade in once loaded (Lampa adds card--loaded) over a graphite placeholder - as an
         // animation, never by hiding: cards Lampa doesn't mark (the Trakt plugin's episode cards) stay visible; rows
         // rise in as they arrive, and the TV header stays hidden until nav.js has replaced it
@@ -88,7 +93,11 @@
 
     function apply() {
         var f = factor();
-        style.textContent = f ? CSS + '\nbody{font-size:max(calc(100vw / 84.17 * ' + f + '), 8px)!important}' : '';
+        // touch devices (Lampa's body.true--mobile: phones, iPads) keep Lampa's own floor of 10.6 px (app.min.js
+        // size()): its player, settings and keyboard are laid out for it, and at 8 px a phone showed 7.6 px titles
+        var size = 'calc(100vw / 84.17 * ' + f + ')';
+        style.textContent = f ? CSS + '\nbody{font-size:max(' + size + ', 8px)!important}' +
+            '\nbody.true--mobile{font-size:max(' + size + ', 10.6px)!important}' : '';
         if (!style.parentNode) document.head.appendChild(style);
     }
 
@@ -307,10 +316,17 @@
                 if (rubyDesktop.kind(item) === 'tv') { c.title = c.title || item.name; c.original_title = c.original_title || item.original_name; c.release_date = c.release_date || item.first_air_date; }
                 return c;
             },
-            // vertical offset (px, <= 0) of the active page's own scroller; parsed by hand because Lampa
-            // scrolls with a CSS transform and DOMMatrix('none') is not accepted everywhere
+            // the active page's own (vertical) scroller, its .scroll element
+            page: function () { return document.querySelector('.activity--active .scroll:not(.scroll--horizontal)'); },
+            // a touch device (Lampa's body.touch-device: phones, iPads): no hover, and Lampa scrolls pages natively
+            // (scrollTop) there; elsewhere it moves the scroll body with a transform
+            touch: function () { return document.body.classList.contains('touch-device'); },
+            // vertical offset (px, <= 0) of the active page's own scroller; the transform is parsed by hand
+            // because DOMMatrix('none') is not accepted everywhere
             pageY: function () {
-                var b = document.querySelector('.activity--active .scroll:not(.scroll--horizontal) > .scroll__content > .scroll__body');
+                var page = rubyDesktop.page();
+                if (rubyDesktop.touch()) return page ? -page.scrollTop : 0;
+                var b = page && page.querySelector(':scope > .scroll__content > .scroll__body');
                 var t = b ? getComputedStyle(b).transform : 'none', m = t && t.match(/^matrix(3d)?\((.+)\)$/);
                 if (!m) return 0;
                 var v = m[2].split(',').map(parseFloat);

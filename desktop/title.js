@@ -31,7 +31,19 @@
         'body.ruby-title .full-start-new__title.has-logo{font-size:1em;text-shadow:none}',
         'body.ruby-title .full-start-new__tagline{font-size:1.15em;opacity:.85}',
         'body.ruby-title .full-start-new__head,body.ruby-title .full-start-new__details{text-shadow:0 1px 3px rgba(0,0,0,.6)}',
-        'body.ruby-title .full-start-new .ruby-trailer__mute{right:3.5%;bottom:2em}'
+        'body.ruby-title .full-start-new .ruby-trailer__mute{right:3.5%;bottom:2em}',
+        // phones: Lampa's own phone layout (max-width 480px) pulls the details up into a rounded sheet with
+        // negative margins, which here cut them off at the left edge; the hero fades from the bottom instead
+        // of the left, and Play gets a whole line (a white button with its label, the rest stay icons)
+        '@media (max-width: 600px){.ruby-titlehero{height:72vh}' +
+            '.ruby-titlehero::after{background:linear-gradient(0deg,#000 0%,rgba(0,0,0,.7) 35%,rgba(0,0,0,0) 65%)}' +
+            'body.ruby-title .full-start-new{min-height:calc(72vh - 4em);padding:0 4% 1em;margin-bottom:1em}' +
+            'body.ruby-title .full-start-new__right{margin:0!important;padding:0!important;background:none!important;border-radius:0!important;overflow:visible;max-width:none;width:100%}' +
+            'body.ruby-title .full-start-new__title{font-size:2.4em}.ruby-titlehero__logo{max-width:80%;max-height:6.5em}' +
+            'body.ruby-title .full-start-new__buttons{flex-wrap:wrap;overflow:visible;gap:.7em 0}' +
+            'body.ruby-title .full-start-new__buttons .button--play{flex:1 1 100%;justify-content:center;margin-right:0;padding:.75em;border-radius:.4em!important;background:#fff!important;color:#000!important}' +
+            'body.ruby-title .full-start-new__buttons .button--play span{display:inline!important;font-weight:600}' +
+            'body.ruby-title .full-start-new .ruby-trailer__mute{right:4%;bottom:auto;top:4.5em}}'
     ].join('\n');
 
     var host, bg, trailer, current = null;
@@ -87,7 +99,8 @@
     // Follow the page's scroll offset without a per-frame loop: Lampa scrolls by setting the scroll body's
     // inline transform (translate3d(0, Ypx, 0)) and lets a CSS transition animate it, so copy the target
     // and the same transition onto the hero whenever that style changes - the compositor animates both.
-    var watched = null, observer = null;
+    // On touch devices Lampa scrolls the page natively (rubyDesktop.touch): follow its scroll events.
+    var watched = null, observer = null, scroller = null;
     function sync() {
         if (!watched) return;
         var m = (watched.style.transform || '').match(/translate3d\(\s*[-\d.]+px,\s*([-\d.]+)px/);
@@ -95,8 +108,20 @@
         host.style.transition = 'transform ' + cs.transitionDuration.split(',')[0] + ' ' + cs.transitionTimingFunction.split(',')[0] + ', opacity .4s';
         host.style.transform = 'translateY(' + (m ? Math.min(0, parseFloat(m[1])) : 0) + 'px)';
     }
+    function syncNative() {
+        host.style.transition = 'opacity .4s';
+        host.style.transform = 'translateY(' + -scroller.scrollTop + 'px)';
+    }
     function follow(root) {
-        var body = root && root.querySelector('.scroll:not(.scroll--horizontal) > .scroll__content > .scroll__body');
+        var page = root && root.querySelector('.scroll:not(.scroll--horizontal)');
+        if (rubyDesktop.touch()) {
+            if (page === scroller) return;
+            if (scroller) scroller.removeEventListener('scroll', syncNative);
+            scroller = page;
+            if (page) { page.addEventListener('scroll', syncNative, { passive: true }); syncNative(); }
+            return;
+        }
+        var body = page && page.querySelector(':scope > .scroll__content > .scroll__body');
         if (body === watched) return;
         if (!observer) observer = new MutationObserver(sync);
         observer.disconnect();

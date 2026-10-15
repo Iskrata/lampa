@@ -40,7 +40,17 @@
         '.ruby-hero__dot.active{background:#fff}',
         // shared trailer player (trailer.js): under the gradient, speaker button above the dots
         '.ruby-hero .ruby-trailer{z-index:auto}',
-        '.ruby-hero .ruby-trailer__mute{right:3.5%;bottom:calc(13% + 2em)}'
+        '.ruby-hero .ruby-trailer__mute{right:3.5%;bottom:calc(13% + 2em)}',
+        // phones: the details span the width at the bottom, buttons share one line, dots centred under them,
+        // the speaker top right under the bar
+        '@media (max-width: 600px){.ruby-hero{height:min(70vh,36em);margin-bottom:.5em}' +
+            '.ruby-hero::after{background:linear-gradient(0deg,#0b0b0e 0%,rgba(11,11,14,.75) 30%,rgba(11,11,14,0) 60%)}' +
+            '.ruby-hero__body{left:4%;right:4%;width:auto;bottom:2.6em}' +
+            '.ruby-hero__logo{max-width:75%;max-height:6.5em;margin-bottom:.7em}.ruby-hero__title{font-size:2.6em}' +
+            '.ruby-hero__text{-webkit-line-clamp:2;margin-bottom:1em}' +
+            '.ruby-hero__btn{flex:1;justify-content:center;white-space:nowrap;padding:.6em .5em;font-size:1.1em}' +
+            '.ruby-hero__dots{right:auto;left:50%;bottom:.9em;transform:translateX(-50%)}' +
+            '.ruby-hero .ruby-trailer__mute{right:4%;bottom:auto;top:4.5em}}'
     ].join('\n');
 
     // "visible" = Home is the active page (Lampa keeps Home's DOM alive, hidden, under an opened title

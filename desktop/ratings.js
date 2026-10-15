@@ -26,7 +26,12 @@
         '.ruby-rate__opt.on{background:#fff;color:#000}',
         '.ruby-rate__opt::after{content:attr(data-label);position:absolute;bottom:calc(100% + .7em);left:50%;transform:translateX(-50%);white-space:nowrap;' +
             'background:#e5e5e5;color:#141414;font-size:.8em;font-weight:600;padding:.25em .6em;border-radius:.25em;opacity:0;pointer-events:none;transition:opacity .12s}',
-        '.ruby-rate__opt:hover::after{opacity:1}'
+        '.ruby-rate__opt:hover::after{opacity:1}',
+        // touch: nothing to hover, so the three choices sit in the button itself, without labels
+        'body.touch-device .ruby-rate>.ruby-icon,body.touch-device .ruby-rate__opt::after{display:none}',
+        'body.touch-device .ruby-rate{padding-left:.2em!important;padding-right:.2em!important}',
+        'body.touch-device .ruby-rate__pop{position:static;opacity:1;pointer-events:auto;transform:none;background:none;border:0;box-shadow:none;padding:0}',
+        'body.touch-device .ruby-rate__opt{width:2.2em;height:2.2em}'
     ].join('\n');
 
     function keyOf(kind, id) { return kind + ':' + id; }

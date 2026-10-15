@@ -33,6 +33,7 @@
         'body.ruby-at-home .head__backward{display:none!important}',
         '.head__backward{opacity:.8}.head__backward:hover{opacity:1}',
         '.ruby-nav{display:flex;align-items:center;gap:1.7em;margin-left:2.5%;flex:1;min-width:0}',
+        '.ruby-nav__links{display:flex;align-items:center;gap:1.7em;min-width:0}',
         '.ruby-nav__brand{font-weight:900;font-size:2em;letter-spacing:-.02em;color:#e50914;text-transform:uppercase;margin-right:1em;cursor:pointer;white-space:nowrap;transform:scaleY(1.12)}',
         '.ruby-nav__link{font-size:1.2em;color:#e5e5e5;cursor:pointer;white-space:nowrap;transition:color .3s}',
         '.ruby-nav__link:hover{color:#b3b3b3}',
@@ -45,7 +46,7 @@
         '.ruby-nav__me:hover .ruby-nav__caret{transform:rotate(180deg)}',
         // the menu: Netflix's black dropdown, kept open while the pointer travels into it
         '.ruby-nav__menu{position:absolute;right:0;top:100%;padding-top:1.4em;display:none;z-index:50}',
-        '.ruby-nav__me:hover .ruby-nav__menu{display:block}',
+        'body:not(.touch-device) .ruby-nav__me:hover .ruby-nav__menu,.ruby-nav__me.open .ruby-nav__menu{display:block}',
         '.ruby-nav__panel{min-width:17em;background:rgba(0,0,0,.92);border:1px solid rgba(255,255,255,.15);font-size:1.1em;position:relative}',
         '.ruby-nav__panel::before{content:"";position:absolute;right:1.6em;top:-.9em;border:.45em solid transparent;border-bottom-color:#e5e5e5}',
         '.ruby-nav__item{display:flex;align-items:center;gap:.8em;padding:.55em 1em;color:#e5e5e5;white-space:nowrap}',
@@ -55,7 +56,14 @@
         '.ruby-nav__sep{border-top:1px solid rgba(255,255,255,.25);margin:.4em 0}',
         '.ruby-nav__foot{padding:.8em 1em;text-align:center;font-size:.95em;color:#e5e5e5;border-top:1px solid rgba(255,255,255,.25)}',
         '.ruby-nav__foot:hover{text-decoration:underline}',
-        '@media (max-width: 1000px){.ruby-nav__link:nth-of-type(n+6){display:none}}'
+        '@media (max-width: 1000px){body:not(.touch-device) .ruby-nav__link:nth-of-type(n+5){display:none}}',
+        // touch: the links scroll sideways instead of being cut (all seven fit nowhere on a phone), faded at the
+        // right edge; the profile menu opens on tap (no hover), and taps on the page close it
+        'body.touch-device .ruby-nav__links{flex:1;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent);padding-right:2em}',
+        'body.touch-device .ruby-nav__links::-webkit-scrollbar{display:none}',
+        'body.touch-device .ruby-nav__caret{display:none}',
+        // phones: a tighter bar, and no room for Lampa's page counter ("4 / 500" on grid pages)
+        '@media (max-width: 600px){.head__navigator{display:none!important}.ruby-nav{gap:1em;margin-left:0}.ruby-nav__brand{font-size:1.6em;margin-right:0}.ruby-nav__links{gap:1.3em}.ruby-nav__link{font-size:1.15em}.ruby-nav__right{gap:1.1em;padding-right:0}.ruby-nav__icon{font-size:1.6em}.ruby-nav__me>.ruby-avatar{width:2.2em;height:2.2em}}'
     ].join('\n');
 
     var nav, menu;
@@ -94,9 +102,10 @@
         var el = document.createElement('div');
         el.className = 'ruby-nav__item';
         el.innerHTML = html;
-        el.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+        el.addEventListener('click', function (e) { e.stopPropagation(); close(); onClick(); });
         return el;
     }
+    function close() { var m = document.querySelector('.ruby-nav__me.open'); if (m) m.classList.remove('open'); }
     function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
     // rebuilt on every open: profiles and the Trakt state can change
@@ -118,7 +127,7 @@
         var foot = document.createElement('div');
         foot.className = 'ruby-nav__foot';
         foot.textContent = 'Switch profile';
-        foot.addEventListener('click', function (e) { e.stopPropagation(); rubyProfiles.picker(); });
+        foot.addEventListener('click', function (e) { e.stopPropagation(); close(); rubyProfiles.picker(); });
         panel.appendChild(foot);
     }
 
@@ -137,13 +146,16 @@
         brand.addEventListener('click', function () { go(LINKS[0]); });
         if (window.lampa_brand) document.title = window.lampa_brand;
         nav.appendChild(brand);
+        var links = document.createElement('div');
+        links.className = 'ruby-nav__links';
         LINKS.forEach(function (l) {
             var a = document.createElement('div');
             a.className = 'ruby-nav__link';
             a.textContent = l.label;
             a.addEventListener('click', function () { go(l); });
-            nav.appendChild(a);
+            links.appendChild(a);
         });
+        nav.appendChild(links);
         var right = document.createElement('div'), me = rubyProfiles.current();
         right.className = 'ruby-nav__right';
         right.innerHTML = '<div class="ruby-nav__icon" title="Search">' + rubyIcons.svg('search') + '</div>' +
@@ -152,7 +164,13 @@
         right.firstChild.addEventListener('click', function () { action('open--search'); });
         menu = right.querySelector('.ruby-nav__menu');
         right.querySelector('.ruby-nav__me').addEventListener('mouseenter', fillMenu);
-        right.querySelector('.ruby-nav__me').addEventListener('click', function () { fillMenu(); });
+        var meEl = right.querySelector('.ruby-nav__me');
+        meEl.addEventListener('click', function (e) {
+            if (e.target.closest('.ruby-nav__menu')) return;
+            fillMenu();
+            if (rubyDesktop.touch()) meEl.classList.toggle('open');
+        });
+        document.addEventListener('click', function (e) { if (!meEl.contains(e.target)) meEl.classList.remove('open'); }, true);
         nav.appendChild(right);
         body.insertBefore(nav, actions);
         return true;
