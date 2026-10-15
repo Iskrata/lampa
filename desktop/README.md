@@ -145,10 +145,9 @@ the capture phase, before the card's own handler, which upstream only toggled "w
 aired yet keep upstream behaviour.
 
 **While it loads** (`facts.js`): from Play until the picture moves, except while the "Play in" question is
-open, a card at the bottom shows a fact every 7 s. This title's facts come first, from TMDB: cast and
-characters, director, budget and box office, seasons, network, collection, "based on a book". Then general
-film and TV trivia from `facts-data.js` (110+ facts), each browser seeing all of them before any repeats
-(`ruby_facts_seen`).
+open, a card at the bottom shows a fun fact about films and TV every 12 s, from `facts-data.js` (110+
+facts). Each browser sees all of them before any repeats (`ruby_facts_seen`). Facts about the title itself
+(cast, budget) were tried and dropped: the user wanted fun facts.
 
 Settings → Interface → "Pick torrents for me" turns all of this off.
 
@@ -172,6 +171,7 @@ Four small edits, each marked `Lampa Desktop:`; re-apply them when updating from
 
 - **Subtitles.** Lampa shows its subtitles button only once the stream reports subtitle tracks, as a small
   speech-bubble icon. It's now a CC icon labelled "Subtitles".
+- **F** toggles fullscreen, as in other web players.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
   needs a URL that works without the browser: on the home server the stream path has no password.

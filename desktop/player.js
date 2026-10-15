@@ -1,6 +1,7 @@
 // The player's control bar (desktop/README.md, "Player"):
 //   * Subtitles: Lampa's button is a speech-bubble icon that only appears once a stream reports subtitle
 //     tracks (with server/remux: the file's English subtitles). It becomes a labelled "CC" button.
+//   * F toggles fullscreen.
 //   * AirPlay: a button next to picture-in-picture, in Safari when an AirPlay screen is around
 //     (WebKitPlaybackTargetAvailabilityEvent). It hands the stream to an Apple TV: torrents play as HLS
 //     from the server (server/remux), which the Apple TV fetches itself.
@@ -54,6 +55,16 @@
         style.id = 'ruby-player';
         style.textContent = CSS;
         document.head.appendChild(style);
+        // F = fullscreen, as in every web player (Lampa, built for remotes, has no such key). Same as its own button.
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'f' && e.key !== 'F' || e.metaKey || e.ctrlKey || e.altKey || !Lampa.Player.opened()) return;
+            if (e.target && /^(input|textarea)$/i.test(e.target.tagName)) return;
+            var doc = document, full = doc.fullscreenElement || doc.webkitFullscreenElement, el = doc.documentElement;
+            e.preventDefault();
+            e.stopPropagation();
+            if (full) (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
+            else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+        }, true);
         Lampa.Player.listener.follow('ready', function () {
             var panel = document.querySelector('.player-panel');
             if (!panel) return;

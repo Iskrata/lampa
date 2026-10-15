@@ -89,7 +89,7 @@
         var series = !!(movie.original_name || movie.name && !movie.title);
         var back = Lampa.Controller.enabled().name, stopped = false;
         params = params || searchParams(movie);
-        rubyFacts.start(movie);
+        rubyFacts.start();
         Lampa.Loading.start(function () { stopped = true; rubyFacts.stop(); Lampa.Loading.stop(); Lampa.Controller.toggle(back); });
         Lampa.Loading.setText('Finding the best release…');
 
@@ -195,7 +195,7 @@
 
     function play(movie, target, release) {
         pending = { target: target, files: [], at: Date.now() };
-        rubyFacts.start(movie);
+        rubyFacts.start();
         // backed out of Lampa's torrent dialog before anything played: take the facts away
         var idle = 0, check = setInterval(function () {
             if (Lampa.Player.opened()) return clearInterval(check);
