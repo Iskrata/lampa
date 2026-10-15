@@ -34,9 +34,11 @@
         return 0;
     }
 
-    // "English" means: no other language named, or a multi-audio release that says it has English
-    function english(t) {
+    // "English" means: no other language named, or a multi-audio release that says it has English.
+    // For anime watched in Japanese (audio 'ja'), Japanese releases count too.
+    function english(t, audio) {
         var w = t.replace(/[._]/g, ' ');
+        if (audio === 'ja') w = w.replace(/\b(japanese|jpn|jap)\b/ig, '');
         if (!NOT_ENGLISH.test(w)) return true;
         // a named other language next to MULTi/ENG still carries an English track; hard-coded subs never pass
         return MULTI_WITH_ENGLISH.test(w) && !/[Ѐ-ӿ]/.test(w) && !/\b(hardsub|hc|korsub|subita)\b/i.test(w);
@@ -100,8 +102,8 @@
 
     function source(t) {
         if (/\bremux\b/i.test(t)) return 0.5;
+        if (/\bblu[ .-]?ray\b|\bbdrip\b|\bbrrip\b|\bbd\b/i.test(t)) return 2;
         if (/\bweb[ .-]?dl\b|\b(amzn|nf|atvp?|dsnp|hmax|max|hulu|pcok)\b/i.test(t)) return 1.5;
-        if (/\bblu[ .-]?ray\b|\bbdrip\b|\bbrrip\b/i.test(t)) return 1.5;
         if (/\bwebrip\b|\bweb\b/i.test(t)) return 1;
         if (/\bhdtv\b/i.test(t)) return 0.3;
         if (/\bdvdrip\b|\bdvd\b|\bxvid\b/i.test(t)) return -1;
@@ -111,33 +113,64 @@
     // seconds of video in the release (a film's runtime, or the episodes it holds), for its bitrate
     function seconds(t, movie, target) {
         if (!target) return (movie.runtime || 110) * 60;
-        var per = ((movie.episode_run_time && movie.episode_run_time[0]) || 42) * 60;
+        // TMDB often leaves episode_run_time empty for newer shows: then the last aired episode's runtime
+        var per = ((movie.episode_run_time && movie.episode_run_time[0]) ||
+            (movie.last_episode_to_air && movie.last_episode_to_air.runtime) || 42) * 60;
         if (episode(t)) return per;
-        var s = seasons(t), n = s ? s[1] - s[0] + 1 : movie.number_of_seasons || 1;
-        var eps = movie.number_of_episodes && movie.number_of_seasons ? movie.number_of_episodes / movie.number_of_seasons : 10;
-        return per * eps * n;
+        var s = seasons(t), from = s ? s[0] : 1, to = s ? s[1] : movie.number_of_seasons || 1, eps = 0;
+        // episodes in the seasons the release covers (the show's season list), else an even share
+        for (var n = from; n <= to; n++) {
+            var info = (movie.seasons || []).filter(function (x) { return x.season_number === n; })[0];
+            eps += info && info.episode_count ? info.episode_count :
+                movie.number_of_episodes && movie.number_of_seasons ? movie.number_of_episodes / movie.number_of_seasons : 10;
+        }
+        return per * eps;
     }
 
-    function score(r, res, movie, target) {
-        var t = r.Title, rate = bitrate(r, movie, target), band = RATE[res];
-        var s = Math.log(1 + (r.Seeders || 0)) / Math.LN10 * 3 + source(t);
+    // how much better a codec looks than H.264 at the same size
+    function efficiency(t) { return /\bav1\b/i.test(t) ? 2 : /\b(x265|h[ .]?265|hevc)\b/i.test(t) ? 1.5 : 1; }
+
+    // Picture quality first, then how well it will stream:
+    //   * quality: source (Blu-ray > WEB-DL > WEBRip...) and the bitrate adjusted for the codec (an x265 file
+    //     looks as good as an H.264 one 1.5x its size), up to 70 % of the band's top; 10-bit a little more
+    //   * streaming: the real bitrate above the band's top is too heavy; seeders count, half as much as quality
+    // anime: favour releases with the audio wanted (untagged anime releases are usually Japanese with subtitles)
+    function audioFit(t, audio) {
+        var dub = /\b(dubbed|dub|english audio|eng audio)\b/i.test(t), dual = /\b(dual|multi)[ .-]?(audio)?\b/i.test(t);
+        if (audio === 'ja') return dual || /\b(japanese|jpn)\b/i.test(t) ? 1 : dub ? -2 : 0.5;
+        return dub || dual ? 1 : -0.5;
+    }
+
+    function score(r, res, movie, target, audio) {
+        var t = r.Title, rate = bitrate(r, movie, target), band = RATE[res], ideal = band.high * 0.7;
+        var s = Math.log(1 + (r.Seeders || 0)) / Math.LN10 * 1.5 + source(t);
+        s += 2 * Math.min(rate * efficiency(t), ideal) / ideal;
+        if (/\b10[ .-]?bits?\b|\bhdr/i.test(t)) s += 0.3;
         if (rate < band.low) s -= (band.low - rate) / band.low * 3;
         if (rate > band.high) s -= Math.min(6, (rate - band.high) / band.high * 6);
         // Dolby Vision without an HDR10 base layer shows wrong colours on everything but a DV screen
         if (/\b(dv|dovi|dolby[ .]?vision)\b/i.test(t) && !/\bhdr/i.test(t)) s -= 5;
         if (/\bav1\b/i.test(t)) s -= 2;                         // no hardware decoding on older Macs/PCs
         if (target && !episode(t)) s += 0.5;                   // a season pack also has the next episodes
+        if (audio) s += audioFit(t, audio);
         return s;
     }
 
-    function choices(results, movie, target) {
+    // a Japanese animated title (where dubbed vs. Japanese audio is a choice)
+    function anime(movie) {
+        var g = (movie.genre_ids || []).concat((movie.genres || []).map(function (x) { return x.id; }));
+        return movie.original_language === 'ja' && g.indexOf(16) >= 0;
+    }
+
+    // audio: for anime, 'en' (dubbed) or 'ja' (Japanese, English subtitles); else leave out
+    function choices(results, movie, target, audio) {
         var groups = {};
         (results || []).forEach(function (r) {
             var t = r.Title || '', res = resolution(t);
             if (!res || !r.Size || (r.Seeders || 0) < MIN_SEEDERS[res]) return;
-            if (JUNK.test(t.replace(/[._]/g, ' ')) || !english(t) || !sameTitle(t, movie) || !fits(t, movie, target)) return;
+            if (JUNK.test(t.replace(/[._]/g, ' ')) || !english(t, audio) || !sameTitle(t, movie) || !fits(t, movie, target)) return;
             var g = groups[res] = groups[res] || [];
-            g.push({ r: r, score: score(r, res, movie, target) });
+            g.push({ r: r, score: score(r, res, movie, target, audio) });
         });
         return [2160, 1080, 720].filter(function (res) { return groups[res]; }).map(function (res) {
             var g = groups[res].sort(function (a, b) { return b.score - a.score; });
@@ -145,8 +178,18 @@
         });
     }
 
+    // what a release is, in a few words: "Blu-ray · HEVC 10-bit"
+    function describe(t) {
+        var src = /\bremux\b/i.test(t) ? 'Blu-ray remux' : /\bblu[ .-]?ray\b|\bbdrip\b|\bbrrip\b|\bbd\b/i.test(t) ? 'Blu-ray' :
+            /\bweb[ .-]?dl\b|\b(amzn|nf|atvp?|dsnp|hmax|max|hulu|pcok)\b/i.test(t) ? 'WEB-DL' : /\bwebrip\b|\bweb\b/i.test(t) ? 'WEB' :
+            /\bhdtv\b/i.test(t) ? 'TV' : '';
+        var codec = /\bav1\b/i.test(t) ? 'AV1' : /\b(x265|h[ .]?265|hevc)\b/i.test(t) ? 'HEVC' : /\b(x264|h[ .]?264|avc)\b/i.test(t) ? 'H.264' : '';
+        if (codec && /\b10[ .-]?bits?\b/i.test(t)) codec += ' 10-bit';
+        return [src, codec].filter(Boolean).join(' · ');
+    }
+
     // a release's average bitrate in Mbit/s
     function bitrate(r, movie, target) { return (r.Size || 0) * 8 / 1e6 / seconds(r.Title || '', movie, target); }
 
-    window.rubyPick = { choices: choices, bitrate: bitrate, english: english, seasons: seasons, episode: episode };
+    window.rubyPick = { choices: choices, anime: anime, bitrate: bitrate, describe: describe, english: english, seasons: seasons, episode: episode };
 })();

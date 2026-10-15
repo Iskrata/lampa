@@ -99,13 +99,26 @@ episode.
      the year within one, no series packs. A series: a year in the name must be within its years on air,
      which tells the 2005 animated "Avatar: The Last Airbender" from the 2024 live-action one;
    - hold the episode wanted: a pack whose season range covers it, or that exact episode.
-3. **Rank** each resolution's releases:
-   - log of seeders;
-   - source (WEB-DL/Blu-ray over WEBRip over HDTV);
-   - a bitrate band per resolution, from size and runtime (too small is over-compressed, too big is a
-     remux that won't stream from a 110 Mbit/s uplink);
-   - penalties for Dolby Vision without HDR10 and for AV1;
-   - a small bonus for season packs.
+3. **Rank** each resolution's releases, picture quality first:
+   - **Source:** Blu-ray > WEB-DL > WEBRip > HDTV.
+   - **Bitrate adjusted for the codec:** x265/HEVC ×1.5, AV1 ×2 against H.264. It rewards a fuller
+     picture up to 70 % of the resolution's band; 10-bit or HDR get a little more.
+   - **Runtime:** the bitrate comes from size and runtime (TMDB's episode runtime, else the last aired
+     episode's; the episode count of the seasons a pack covers).
+   - **Seeders:** count half as much as quality. They still have to pass the minimum and the speed check.
+   - **Penalties:** a real bitrate above the band (too heavy to stream), Dolby Vision without HDR10, AV1.
+   - **Season packs:** a small bonus.
+   - **Edgerunners S1:** the 1080p Blu-ray x265 (16 GB, 197 seeders) now beats the Netflix WEB H.264
+     (8 GB, 273 seeders).
+
+   Each line says what it is: "Blu-ray · HEVC 10-bit · 16 GB · 197 seeders".
+
+   **Anime** (original language Japanese + Animation): one more line, "Audio: English dub" / "Audio:
+   Japanese · English subtitles". It switches and redraws the choices, and is remembered per profile
+   (`ruby_anime_audio`).
+   - **English:** DUBBED and dual-audio releases rank higher; untagged anime releases are usually Japanese.
+   - **Japanese:** JAPANESE releases pass the language filter. The stream asks the remux service for the
+     Japanese track with English subtitles on (`&lang=ja`, added in `Lampa.Torserver.stream`).
 4. **Ask** "Play in", a popup in the middle of the screen on computers (Lampa's own side sheet, restyled while
    it's open, so keys and remote still work): one line per resolution with its best release's seeders and size, then "Pick a torrent
    manually" (Lampa's list). Only resolutions up to the screen's are offered:

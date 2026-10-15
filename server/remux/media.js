@@ -10,7 +10,10 @@ const cfg = require('./config');
 
 const SEGMENT_S = 4;
 const TEXT_SUBS = new Set(['subrip', 'ass', 'ssa', 'webvtt', 'mov_text', 'text']);
-const english = s => /^(en|eng)$/i.test((s.tags && s.tags.language) || '') || /english/i.test((s.tags && s.tags.title) || '');
+// a stream in a language: 'en' / 'ja' (ISO 639-1), matched against the 2- and 3-letter tags and track titles
+const LANGS = { en: /^(en|eng)$|english/i, ja: /^(ja|jpn)$|japanese/i };
+const inLang = (s, lang) => (LANGS[lang] || LANGS.en).test((s.tags && s.tags.language) || '') || (LANGS[lang] || LANGS.en).test((s.tags && s.tags.title) || '');
+const english = s => inLang(s, 'en');
 const commentary = s => /comment/i.test((s.tags && s.tags.title) || '') || (s.disposition && s.disposition.comment);
 
 function ffprobe(url) {
@@ -21,9 +24,10 @@ function ffprobe(url) {
     });
 }
 
-function pickAudio(streams) {
+// the track in the language asked for (English unless the player asks for e.g. Japanese), else the default
+function pickAudio(streams, lang) {
     const audio = streams.filter(s => s.codec_type === 'audio');
-    const eng = audio.filter(s => english(s) && !commentary(s));
+    const eng = audio.filter(s => inLang(s, lang) && !commentary(s));
     return eng.find(s => s.disposition && s.disposition.default) || eng[0] ||
         audio.find(s => s.disposition && s.disposition.default) || audio[0] || null;
 }
@@ -56,7 +60,7 @@ function videoCodec(v) {
 
 const PLAYABLE_VIDEO = new Set(['hevc', 'h264', 'av1', 'vp9']);
 
-async function load(hash, index) {
+async function load(hash, index, lang) {
     const url = `${cfg.torrserver}/stream/file?link=${encodeURIComponent(hash)}&index=${encodeURIComponent(index)}&play`;
     const none = () => null;
     const [info, mkvKeys, mp4Keys] = await Promise.all([ffprobe(url), mkv.keyframes(url).catch(none), mp4.keyframes(url).catch(none)]);
@@ -65,7 +69,7 @@ async function load(hash, index) {
     const video = streams.find(s => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
     if (!video) throw new Error('no video stream');
     if (!PLAYABLE_VIDEO.has(video.codec_name)) throw new Error('video codec not playable in a browser: ' + video.codec_name);
-    const audio = pickAudio(streams);
+    const audio = pickAudio(streams, lang);
     const subs = streams.filter(s => s.codec_type === 'subtitle' && TEXT_SUBS.has(s.codec_name) && english(s));
     const duration = parseFloat(info.format.duration) || 0;
     if (!duration) throw new Error('unknown duration');
@@ -77,7 +81,9 @@ async function load(hash, index) {
     // that lands on the one before, so ask for just past it (the next keyframe can't be within 0.011 s).
     const heuristic = !mp4Keys && video.has_b_frames > 0;
     return {
-        hash, index, url, duration, video, audio, subs,
+        hash, index, lang, url, duration, video, audio, subs,
+        // audio not in English (e.g. anime in Japanese): the English subtitles come on by themselves
+        subsOn: !!audio && !english(audio),
         seekPast: heuristic ? 3 / 23 + 0.011 : 0.001,
         // the AAC encoder puts 1024 samples of priming before the first real one
         audioLead: audio && !aac ? 1024 / (parseInt(audio.sample_rate, 10) || 48000) : 0,

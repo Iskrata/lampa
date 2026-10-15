@@ -2,8 +2,9 @@
 // Speaks the protocol Lampa uses for TorrServer's GStreamer build ("Settings → TorrServer → transcoding",
 // storage key torrserver_gts), so Lampa needs no changes. Serve it at <torrserver url>/gst/:
 //   GET /gst/echo                                  -> JSON (Lampa checks this before using /gst/)
-//   GET /gst/<hash>/master.m3u8?index=<file>       -> HLS master (video + English audio + English subtitles)
-//   GET /gst/<hash>/<file>/video.m3u8, init.mp4, seg<n>.m4s, sub<k>.m3u8, sub<k>-<n>.vtt
+//   GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja] -> HLS master (video + audio in that language, English by
+//                                                     default + English subtitles, on by themselves when the audio isn't English)
+//   GET /gst/<hash>/<file>.<lang>/video.m3u8, init.mp4, seg<n>.m4s, sub<k>.m3u8, sub<k>-<n>.vtt
 //   GET /gst/<hash>/heartbeat                      -> TorrServer's stats for the player's info panel
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
@@ -18,11 +19,11 @@ const cfg = require('./config');
 const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000;
 const sessions = new Map();   // "<hash>:<file>" -> Promise<Session>
 
-function session(hash, index) {
-    const key = `${hash}:${index}`;
+function session(hash, index, lang) {
+    const key = `${hash}:${index}:${lang}`;
     if (!sessions.has(key)) {
-        const p = media.load(hash, index).then(m => {
-            const s = new Session(m, path.join(cfg.cache, `${hash}-${index}`));
+        const p = media.load(hash, index, lang).then(m => {
+            const s = new Session(m, path.join(cfg.cache, `${hash}-${index}-${lang}`));
             console.log(`${hash.slice(0, 8)}:${index} ${m.video.codec_name} ${m.resolution}, audio ${m.audio ? m.audio.codec_name + ' ' + ((m.audio.tags || {}).language || '?') : 'none'}` +
                 `, ${m.subs.length} English subtitles, ${m.bounds.length - 1} segments (${m.cuesUsed ? 'keyframes' : 'fixed'})`);
             return s;
@@ -43,12 +44,12 @@ function torrserver(route, body) {
 }
 
 function master(s) {
-    const m = s.m, base = `${m.index}/`;
+    const m = s.m, base = `${m.index}.${m.lang}/`;
     const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
     m.subs.forEach((sub, k) => {
         const name = ((sub.tags && sub.tags.title) || 'English').replace(/"/g, '');
         lines.push(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${name || 'English'} ${k + 1}",LANGUAGE="en",` +
-            `DEFAULT=NO,AUTOSELECT=${k === 0 ? 'YES' : 'NO'},FORCED=NO,URI="${base}sub${k}.m3u8"`);
+            `DEFAULT=${m.subsOn && k === 0 ? 'YES' : 'NO'},AUTOSELECT=${k === 0 ? 'YES' : 'NO'},FORCED=NO,URI="${base}sub${k}.m3u8"`);
     });
     lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${m.bandwidth},CODECS="${m.codecs}"` +
         (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + (m.subs.length ? ',SUBTITLES="subs"' : ''));
@@ -77,6 +78,9 @@ function speedtest(res, mb) {
     const more = () => { while (i < n) { i++; if (!res.write(NOISE)) return res.once('drain', more); } res.end(); };
     more();
 }
+
+// the audio languages a player may ask for (media.js LANGS); anything else is English
+const lang = l => (l === 'ja' ? 'ja' : 'en');
 
 const TYPES = { m3u8: 'application/vnd.apple.mpegurl', mp4: 'video/mp4', m4s: 'video/iso.segment', vtt: 'text/vtt; charset=utf-8' };
 
@@ -115,12 +119,13 @@ async function handle(req, res) {
         return send(res, 200, JSON.stringify(Object.assign({ Readers: [], Pieces: {} }, cache, { Torrent: torrent || {} })), 'application/json');
     }
     if (a === 'master.m3u8') {
-        const s = await session(hash, url.searchParams.get('index') || '1');
+        const s = await session(hash, url.searchParams.get('index') || '1', lang(url.searchParams.get('lang')));
         await s.init();   // ready before the player asks for it
         return send(res, 200, master(s), TYPES.m3u8);
     }
 
-    const s = await session(hash, a);
+    const [file, l] = (a || '').split('.');
+    const s = await session(hash, file, lang(l));
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
     if (b === 'init.mp4') return sendFile(res, await s.init());

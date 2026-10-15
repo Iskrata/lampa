@@ -100,7 +100,7 @@
                 timed.then(function (mbps) {
                     if (stopped) return;
                     Lampa.Loading.stop();
-                    choose(movie, target, params, rubyPick.choices(data.Results, movie, target), back, mbps);
+                    choose(movie, target, params, data.Results, back, mbps);
                 });
             }, function () {
                 if (stopped) return;
@@ -131,17 +131,26 @@
         return speedTest;
     }
 
-    function choose(movie, target, params, list, back, mbps) {
+    // anime: English dub or Japanese with English subtitles, remembered per profile (ruby_anime_audio);
+    // the stream asks the remux service for that audio (Torserver.stream, see init)
+    var ANIME_AUDIO = 'ruby_anime_audio', streamLang = null;
+    function animeAudio(movie) { return rubyPick.anime(movie) ? (Lampa.Storage.get(ANIME_AUDIO, 'en') === 'ja' ? 'ja' : 'en') : null; }
+
+    function choose(movie, target, params, results, back, mbps) {
         rubyFacts.stop();     // not over the question; back once a release is chosen
+        var audio = animeAudio(movie);
+        streamLang = audio === 'ja' ? 'ja' : null;
+        var list = rubyPick.choices(results, movie, target, audio);
         var cap = deviceCap(), fit = list.filter(function (c) { return c.res <= cap; });
         if (fit.length) list = fit;          // nothing at or below the screen's resolution: offer what there is
-        if (!list.length) {
+        if (!list.length && !audio) {   // (anime: still show the sheet, to switch the audio)
             Lampa.Noty.show('No English release with enough seeders: showing all torrents');
             return openList(params);
         }
         var last = +Lampa.Storage.get(LAST_RES, 1080);
         var items = list.map(function (c) {
-            var line = c.best.Seeders + ' seeders · ' + sizeText(c.best.Size);
+            var kind = rubyPick.describe(c.best.Title || '');
+            var line = (kind ? kind + ' · ' : '') + sizeText(c.best.Size) + ' · ' + c.best.Seeders + ' seeders';
             // the release's bitrate, with headroom, against this connection: it would keep stopping to buffer
             var need = rubyPick.bitrate(c.best, movie, target) * 1.3, slow = mbps && mbps < need;
             if (slow) line = 'Your connection (' + Math.round(mbps) + ' Mbit/s) is too slow for this · ' + line;
@@ -150,13 +159,19 @@
         // preselect the last resolution chosen, unless this connection can't carry it
         var pre = items.filter(function (i) { return i.choice.res === last && !i.slow; })[0] ||
             items.filter(function (i) { return !i.slow; })[0] || items[0];
-        pre.selected = true;
+        if (pre) pre.selected = true;
+        if (audio) items.push({ title: audio === 'ja' ? 'Audio: Japanese · English subtitles' : 'Audio: English dub',
+            subtitle: 'Switch to ' + (audio === 'ja' ? 'the English dub' : 'Japanese with English subtitles'), audio: true });
         items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
         centred();
         Lampa.Select.show({
             title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + 'Play in',
             items: items,
             onSelect: function (a) {
+                if (a.audio) {
+                    Lampa.Storage.set(ANIME_AUDIO, audio === 'ja' ? 'en' : 'ja');
+                    return setTimeout(function () { choose(movie, target, params, results, back, mbps); }, 50);
+                }
                 if (a.all) return openList(params);
                 Lampa.Storage.set(LAST_RES, a.choice.res);
                 play(movie, target, a.choice.best);
@@ -308,6 +323,12 @@
         css();
         setting();
         push = Lampa.Activity.push;
+        // anime in Japanese: ask the remux service for the Japanese track (and subtitles on) - server/remux
+        var stream = Lampa.Torserver.stream;
+        Lampa.Torserver.stream = function () {
+            var u = stream.apply(this, arguments);
+            return streamLang && /\/gst\/.*master\.m3u8/.test(u) ? u + '&lang=' + streamLang : u;
+        };
         Lampa.Activity.push = function (params) {
             if (params && params.component === 'torrents' && params.movie && !params.ruby_list && !params.from_search && on())
                 return start(params.movie, null, params);

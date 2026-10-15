@@ -17,9 +17,9 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | request | answer |
 |---|---|
 | `GET /gst/echo` | JSON. Lampa checks it before using `/gst/` (app.min.js `gstCheck`, it parses JSON) |
-| `GET /gst/<hash>/master.m3u8?index=<file>` | HLS master: one video+audio stream, English subtitle tracks |
-| `GET /gst/<hash>/<file>/video.m3u8`, `init.mp4`, `seg<n>.m4s` | the stream |
-| `GET /gst/<hash>/<file>/sub<k>.m3u8`, `sub<k>-<n>.vtt` | subtitles |
+| `GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja]` | HLS master: one video+audio stream (English audio, or the `lang` asked for: `ja`), English subtitle tracks, on by default when the audio isn't English |
+| `GET /gst/<hash>/<file>.<lang>/video.m3u8`, `init.mp4`, `seg<n>.m4s` | the stream |
+| `GET /gst/<hash>/<file>.<lang>/sub<k>.m3u8`, `sub<k>-<n>.vtt` | subtitles |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer |
 
