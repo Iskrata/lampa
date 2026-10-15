@@ -203,6 +203,7 @@
             if (idle >= 3) { clearInterval(check); rubyFacts.stop(); }
         }, 700);
         release.poster = movie.img || release.poster;
+        release.title = release.title || release.Title;   // what TorrServer lists it as (the parser's field is Title)
         Lampa.Torrent.start(release, movie);
     }
 
