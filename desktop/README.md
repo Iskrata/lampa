@@ -32,6 +32,9 @@ Desktop look** on, so Lampa on a TV stays as upstream ships it.
 Torrents play in the browser through `server/remux` (its README): any file becomes HLS on the server, so an
 MKV with HEVC and E-AC3 plays in Safari and Chrome, with subtitles, and AirPlays.
 
+**Name.** The top bar's wordmark and the tab title say "Lampa" unless the host sets `window.lampa_brand`
+before the scripts run (the home server's `lampa-init.js` sets "Ruby").
+
 The `ruby` prefix on globals (`rubyDesktop`), storage keys (`ruby_*`) and CSS classes (`.ruby-*`) comes
 from the home server this was first built for. It keeps everything clear of Lampa's own names.
 

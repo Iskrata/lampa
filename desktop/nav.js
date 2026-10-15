@@ -133,8 +133,9 @@
         nav.className = 'ruby-nav';
         var brand = document.createElement('div');
         brand.className = 'ruby-nav__brand';
-        brand.textContent = 'Lampa';
+        brand.textContent = window.lampa_brand || 'Lampa';   // a host can name its install (window.lampa_brand, set before Lampa loads)
         brand.addEventListener('click', function () { go(LINKS[0]); });
+        if (window.lampa_brand) document.title = window.lampa_brand;
         nav.appendChild(brand);
         LINKS.forEach(function (l) {
             var a = document.createElement('div');
