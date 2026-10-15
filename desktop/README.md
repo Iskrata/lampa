@@ -78,7 +78,8 @@ A round + on every poster while it's pointed at, and "My List" on the billboard,
 Bookmarks (`Lampa.Favorite` `book`): the same list as the title page's bookmark button, per profile. A tick
 when it's in. The top bar's My List opens just that list (`component: 'favorite', type: 'book'`), not
 Lampa's all-favourites overview. The button stops its clicks from reaching the card, which would open
-the title.
+the title. The title page's bookmark button saves with one click too: Lampa's menu of Bookmarks / Like /
+Later / statuses is skipped. The thumbs are the ratings, so Lampa's own "Like" list was a duplicate.
 
 ## Play
 
@@ -105,7 +106,8 @@ episode.
      remux that won't stream from a 110 Mbit/s uplink);
    - penalties for Dolby Vision without HDR10 and for AV1;
    - a small bonus for season packs.
-4. **Ask** "Play in": one line per resolution with its best release's seeders and size, then "Pick a torrent
+4. **Ask** "Play in", a popup in the middle of the screen on computers (Lampa's own side sheet, restyled while
+   it's open, so keys and remote still work): one line per resolution with its best release's seeders and size, then "Pick a torrent
    manually" (Lampa's list). Only resolutions up to the screen's are offered:
    - **Screen:** physical width of 2560 px or more → up to 4K; otherwise 1080p; 720p under 1280. Phones
      stop at 1080p.

@@ -38,6 +38,11 @@
         // title page buttons and chips: Apple pill buttons
         '.full-start__button,.full-start-new__buttons .button{border-radius:2em!important;background:var(--rb-fill)!important}',
         '.full-start__button.focus,.full-start__button:hover{background:#fff!important;color:#000!important}',
+        // with a mouse, only the button under the cursor lights up: Lampa leaves "focus" on the last one hovered
+        // (and on Watch at first), which showed two white buttons or one stuck white
+        'body.mouse--controll .full-start__button.focus:not(:hover){background:var(--rb-fill)!important;color:inherit!important}',
+        '.full-start__button{transition:background-color .15s,color .15s,transform .15s!important}',
+        'body.mouse--controll .full-start__button:hover{transform:scale(1.04)}',
         '.full-start__rate,.full-start__pg,.full-start__status{border-radius:.4em}',
         // grid pages (category / New & Popular / My List): Lampa fixes 6 columns in % of the width, which makes
         // posters huge on a computer screen - follow the rows' density instead (~8 at 1440 px)

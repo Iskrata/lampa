@@ -1,5 +1,6 @@
 // "My List" from anywhere (desktop/README.md, "My List"): a round + on every poster while it is pointed at,
-// and a My List button on the Home billboard (hero.js: rubyMyList.button(item)). Both are Lampa's own
+// a My List button on the Home billboard (hero.js: rubyMyList.button(item)), and the title page's bookmark
+// button saving with one click (no menu of lists). Both are Lampa's own
 // Bookmarks list (Lampa.Favorite 'book'), the one the title page's bookmark button and the top bar's My List
 // show, per profile. A tick when the title is in it; the click toggles.
 // Active only where desktop.js is.
@@ -62,6 +63,16 @@
         style.textContent = CSS;
         document.head.appendChild(style);
         document.addEventListener('mouseover', onPoster, true);
+        // the title page's bookmark button: one click saves to (or removes from) My List, instead of Lampa's
+        // menu of Bookmarks / Like / Later / history / statuses. Capture phase: before Lampa's own handler.
+        document.addEventListener('hover:enter', function (e) {
+            if (!e.target.closest || !e.target.closest('.button--book')) return;
+            var a = Lampa.Activity.active() || {}, item = a.card || a.movie;
+            if (!item || !item.id) return;
+            e.stopImmediatePropagation();
+            toggle(item);
+            Lampa.Noty.show(has(item) ? 'Added to My List' : 'Removed from My List');
+        }, true);
         // added or removed anywhere (here, the title page, another tab of this profile): repaint what's shown
         Lampa.Listener.follow('state:changed', function (e) {
             if (e.target !== 'favorite') return;

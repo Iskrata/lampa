@@ -152,6 +152,7 @@
             items.filter(function (i) { return !i.slow; })[0] || items[0];
         pre.selected = true;
         items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
+        centred();
         Lampa.Select.show({
             title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + 'Play in',
             items: items,
@@ -162,6 +163,19 @@
             },
             onBack: function () { Lampa.Controller.toggle(back); }
         });
+    }
+
+    // "Play in" as a popup in the middle of the screen (computers), not Lampa's side panel: its own Select,
+    // restyled while this one is open (keys and remote work as before); back to normal once it closes
+    function centred() {
+        if (!window.rubyDesktop || !rubyDesktop.active || !rubyDesktop.active()) return;
+        var body = document.body;
+        body.classList.add('ruby-playin');
+        var seen = false, watch = new MutationObserver(function () {
+            if (body.classList.contains('selectbox--open')) seen = true;
+            else if (seen) { watch.disconnect(); setTimeout(function () { body.classList.remove('ruby-playin'); }, 250); }
+        });
+        watch.observe(body, { attributes: true, attributeFilter: ['class'] });
     }
 
     function play(movie, target, release) {
@@ -268,7 +282,17 @@
     function css() {
         var s = document.createElement('style');
         s.id = 'ruby-play';
-        s.textContent = 'body.ruby-autopicking .modal{opacity:0;pointer-events:none}';
+        s.textContent = [
+            'body.ruby-autopicking .modal{opacity:0;pointer-events:none}',
+            'body.ruby-playin .selectbox__layer{display:block!important;background:rgba(0,0,0,.55)}',
+            'body.ruby-playin .selectbox__content{left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;width:min(30em,88vw)!important;',
+            '  height:auto!important;max-height:80vh;border-radius:1em;box-shadow:0 2em 5em rgba(0,0,0,.6);transform:translate(-50%,-46%)!important;opacity:0;',
+            '  transition:opacity .2s,transform .2s!important;padding-bottom:.8em}',
+            'body.ruby-playin.selectbox--open .selectbox__content{transform:translate(-50%,-50%)!important;opacity:1}',
+            // Lampa gives the panel and its list a full-screen height inline (layer--height / layer--wheight)
+            'body.ruby-playin .selectbox__body{max-height:none!important;height:auto!important}',
+            'body.ruby-playin .selectbox__content.layer--height{height:auto!important}'
+        ].join('\n');
         document.head.appendChild(s);
     }
 

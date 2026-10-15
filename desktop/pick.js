@@ -9,8 +9,10 @@
     // `high` is a remux or too heavy for the torrent and the uplink (docs/lampa.md, "How many people")
     var RATE = { 2160: { low: 8, high: 35 }, 1080: { low: 2.5, high: 14 }, 720: { low: 1.2, high: 8 } };
 
+    // Not "dubbed": in English release names it means the English dub (anime: "COMPLETE.DUBBED.720p"); other
+    // languages' dubs are caught by their language ("rus", Cyrillic...)
     var NOT_ENGLISH = new RegExp('[\\u0400-\\u04FF]|\\b(' + [
-        'rus', 'russian', 'ukr', 'ukrainian', 'dub(bed)?', 'mvo', 'dvo', 'avo', 'lat(ino)?', 'castellano', 'spanish', 'esp',
+        'rus', 'russian', 'ukr', 'ukrainian', 'mvo', 'dvo', 'avo', 'lat(ino)?', 'castellano', 'spanish', 'esp',
         'french', 'truefrench', 'vff', 'vfq', 'vf2', 'vostfr', 'ita', 'italian', 'german', 'deutsch', 'hindi', 'tamil',
         'telugu', 'malayalam', 'kannada', 'turkish', 'polish', 'pl', 'czech', 'cz', 'hun', 'hungarian', 'korean',
         'chinese', 'chs', 'cht', 'jpn', 'japanese', 'portuguese', 'por', 'pt-br', 'dublado', 'legendado', 'arabic',
