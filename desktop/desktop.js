@@ -35,6 +35,10 @@
         '.card__title{font-size:.95em;font-weight:500;color:var(--rb-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
         '.card__age{color:var(--rb-text3)}',
         '.card__vote{font-size:.8em;font-weight:600;background:rgba(0,0,0,.6);border-radius:.5em;padding:.15em .5em}',
+        // the Trakt plugin's watchlist / watched / watching badges hang half below the poster, which the rounded
+        // overflow:hidden above cuts into purple half-circles: a dark chip in the corner opposite the rating instead
+        '.card__view .trakt-watchlist-badge,.card__view .trakt-watched-badge,.card__view .trakt-watching-badge{left:.25em;bottom:.25em;transform:none;' +
+            'width:1.25em;height:1.25em;padding:.25em;background:rgba(0,0,0,.6);color:#fff}',
         // title page buttons and chips: Apple pill buttons
         '.full-start__button,.full-start-new__buttons .button{border-radius:2em!important;background:var(--rb-fill)!important}',
         '.full-start__button.focus,.full-start__button:hover{background:#fff!important;color:#000!important}',

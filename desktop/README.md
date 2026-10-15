@@ -22,7 +22,7 @@ see "Touch devices and phones".
 | `more.js` | "More like this" at the end of title pages |
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu |
-| `avatars.js` | `rubyAvatars`: profile pictures, characters from popular titles (TMDB portraits) |
+| `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
 | `facts-data.js` / `facts.js` | `rubyFacts`: "Did you know?" while a title loads |
 | `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
@@ -72,10 +72,13 @@ every minute while it goes on, and `{at: 0}` when it stops. The top bar shows th
 one in the last 3 minutes: an avatar with a green dot, "Vik is watching Breaking Bad · S5 E14" on hover,
 the title page on click. A TV writes too; only the top bar reads.
 
-**Pictures.** Edit Profile offers rows of characters from popular series and films (Stranger Things,
-Breaking Bad, Game of Thrones, The Office…): TMDB cast portraits, labelled with the character, the first 8 of
-each title's cast. The choice is the portrait's TMDB path (`img` in the profile), shared with the rest of
-`profiles.json`; without one, the face on the profile's colour.
+**Pictures.** Edit Profile offers rows of drawn characters, not photos of real people: The Simpsons
+(thesimpsonsapi.com CDN), Rick and Morty (rickandmortyapi.com) and Pokémon (PokeAPI's official artwork on
+GitHub). A fixed list of image URLs, no API calls; every one was checked to load in Chrome on 15 Oct 2026.
+Not Disney: the Disney fandom wiki answers a browser loading its images from another site with a placeholder
+(404 for a cross-site image request, 403 for a browser user agent; curl with its own user agent gets through). The choice is the image URL (`img` in the
+profile), shared with the rest of `profiles.json`; without one, the face on the profile's colour. Profiles
+saved before then hold a TMDB cast-portrait path (`/abc.jpg`), which `rubyAvatars.url` still resolves.
 
 ## My List
 
@@ -362,6 +365,11 @@ has been seen (`DeviceInput.canClick`), which a real phone always sends first; t
 checked on a real iPhone or in iPad Safari.
 
 ## Things Lampa does that these modules work around
+
+- **Trakt plugin card badges.** The Trakt plugin marks cards in your watchlist (bookmark), watched (tick) or
+  in progress (half-filled) with a purple circle centred on the poster's bottom edge, half outside it. The
+  desktop look rounds `.card__view` with `overflow:hidden`, which cut those into half-circles; desktop.js
+  draws them as a dark chip in the poster's bottom-left corner instead, opposite the rating.
 
 - **Interface size.** Lampa sizes everything from one number: `body` font-size = window width / 84.17 ×
   0.9, 1 or 1.05. Density is a stylesheet override of that number.
