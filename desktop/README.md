@@ -139,7 +139,7 @@ Settings → Interface → "Pick torrents for me" turns all of this off.
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Three small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Four small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -147,6 +147,11 @@ Three small edits, each marked `Lampa Desktop:`; re-apply them when updating fro
   deleting a letter and retyping it left the results empty.
 - **Search, `Results.search`:** results 350 ms after you stop typing (upstream: 2.5 s, which looked as if
   Enter were needed).
+- **Search, TMDB `search$5` + `fuzzySearch`:** TMDB matches whole words exactly, so "edge runners" found
+  nothing ("Cyberpunk: Edgerunners") and typos found nothing. With fewer than 3 results, it also searches
+  the words joined and the two longest words alone. It keeps results whose title is close to the query
+  (letter-pair similarity of at least 0.5, or containing it), exact matches first. Verified: "edge
+  runners" → Cyberpunk: Edgerunners, "brekaing bad" → Breaking Bad.
 
 ## Player
 

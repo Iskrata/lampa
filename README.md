@@ -3,7 +3,7 @@
 **[Lampa](https://github.com/yumata/lampa) on a computer, styled like a streaming service.** Lampa is a free
 TV-first app for browsing films and series and playing them through TorrServer. Its web version looks and
 feels like a TV app on a laptop: huge type, a remote-control header, rows that move one card at a time.
-This fork keeps Lampa as it is (apart from three small fixes to its search and episode list, listed in
+This fork keeps Lampa as it is (apart from four small fixes to its search and episode list, listed in
 [desktop/README.md](desktop/README.md)) and adds a desktop layer on top: Netflix-style profiles and navigation, a
 personal Home that learns from thumbs ratings, full-screen trailers, Apple TV-style dark glass and sharp
 artwork.
