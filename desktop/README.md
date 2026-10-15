@@ -158,7 +158,8 @@ Three small edits, each marked `Lampa Desktop:`; re-apply them when updating fro
 
 ## Picked for you
 
-Built once per page load, per profile (`personal.js`, `picks()`). Besides thumbs, what the profile watched
+Built once per page load, per profile (`personal.js`, `picks()`). The billboard draws 6 of the top 18 at random on each visit,
+higher picks more likely, so it isn't the same title every time. Besides thumbs, what the profile watched
 counts: the 6 most recent titles in Lampa's history (`Favorite` `history`, added each time a torrent plays)
 that aren't rated each count as half a thumbs up, and anything watched is left out of the picks.
 

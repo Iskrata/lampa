@@ -118,7 +118,11 @@
                 if (!trakt() && !rated() && !history().length) return done(null);
                 picks(function (items) {
                     var withArt = items.filter(function (i) { return i.backdrop_path && i.overview; });
-                    done(withArt.length >= 3 ? withArt : null);
+                    if (withArt.length < 3) return done(null);
+                    // a different billboard each visit: a weighted draw from the top 18, higher picks more likely
+                    // (each gets random^(1/weight), weight falling with rank; the largest keys win)
+                    var keyed = withArt.slice(0, 18).map(function (it, rank) { return { it: it, k: Math.pow(Math.random(), rank + 3) }; });
+                    done(keyed.sort(function (a, b) { return b.k - a.k; }).map(function (x) { return x.it; }));
                 });
             };
         };
