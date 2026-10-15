@@ -44,14 +44,38 @@
         var k = kind + id;
         if (recs[k]) return done(recs[k]);
         var type = kind === 'tv' ? 'show' : 'movie';
-        call('GET', '/search/tmdb/' + id + '?type=' + type, null, function (found) {
-            var o = found && found[0] && found[0][type];
-            if (!o || !o.ids || !o.ids.trakt) return done(recs[k] = []);
-            call('GET', '/' + type + 's/' + o.ids.trakt + '/related?limit=15', null, function (list) {
+        traktId(kind, id, function (tid) {
+            if (!tid) return done(recs[k] = []);
+            call('GET', '/' + type + 's/' + tid + '/related?limit=15', null, function (list) {
                 recs[k] = (list || []).map(function (x) { return x.ids && x.ids.tmdb ? { kind: kind, id: x.ids.tmdb } : null; }).filter(Boolean);
                 try { sessionStorage.setItem(RELATED, JSON.stringify(recs)); } catch (e) {}
                 done(recs[k]);
             });
+        });
+    }
+
+    // Trakt's own id for a TMDB title (its API takes no TMDB ids), cached for the session
+    var IDS = 'ruby_trakt_ids_v1', ids = {};
+    try { ids = JSON.parse(sessionStorage.getItem(IDS) || '{}'); } catch (e) {}
+    function traktId(kind, id, done) {
+        var k = kind + id, type = kind === 'tv' ? 'show' : 'movie';
+        if (k in ids) return done(ids[k]);
+        call('GET', '/search/tmdb/' + id + '?type=' + type, null, function (found) {
+            var o = found && found[0] && found[0][type];
+            if (!found) return done(null);   // network/API error: ask again next time
+            ids[k] = (o && o.ids && o.ids.trakt) || null;
+            try { sessionStorage.setItem(IDS, JSON.stringify(ids)); } catch (e) {}
+            done(ids[k]);
+        });
+    }
+
+    // this profile's progress in a show (/shows/:id/progress/watched: aired, completed, last_episode,
+    // next_episode), or null when not signed in or unknown
+    function showProgress(tmdbId, done) {
+        if (!connected()) return done(null);
+        traktId('tv', tmdbId, function (tid) {
+            if (!tid) return done(null);
+            call('GET', '/shows/' + tid + '/progress/watched', null, done);
         });
     }
 
@@ -133,6 +157,6 @@
         clearInterval(t);
         settings();
         window.rubyTrakt = { connected: connected, get: function (p, cb) { call('GET', p, null, cb); }, post: function (p, b, cb) { call('POST', p, b, cb); },
-            user: user, connect: connect, related: related };
+            user: user, connect: connect, related: related, showProgress: showProgress };
     }, 20);
 })();

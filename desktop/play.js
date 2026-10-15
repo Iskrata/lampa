@@ -6,8 +6,8 @@
 //   3. opens the chosen release with Lampa's own torrent flow and picks the file itself: the episode asked
 //      for, or the film. Progress, the episode playlist and "next episode" stay Lampa's.
 // Also: Play no longer offers trailers (the Trailers button is removed, so Play goes straight here), and
-// clicking an episode plays it (upstream it only toggled "watched"). A series' Play continues from the
-// last episode watched. Runs everywhere (TV too); Settings → Interface → "Pick torrents for me" turns it off.
+// clicking an episode plays it (upstream it only toggled "watched"). A series' Play continues where you
+// are (resume.js). Runs everywhere (TV too); Settings → Interface → "Pick torrents for me" turns it off.
 (function () {
     var SETTING = 'ruby_autopick', LAST_RES = 'ruby_pick_res', VIDEO = /\.(mkv|mp4|m4v|avi|mov|ts|m2ts|webm|wmv)$/i;
     var pending = null;     // { target, files: [{element, item}] } while Lampa's file list is coming up
@@ -31,10 +31,6 @@
 
     function openList(params) { params.ruby_list = true; push.call(Lampa.Activity, params); }
 
-    function hash(card, s, e) {
-        return Lampa.Utils.hash([s, s > 10 ? ':' : '', e, card.original_name || card.original_title].join(''));
-    }
-
     // A show's seasons as TMDB numbers them. Not Lampa.Api.seasons: for season 1 it splits a show at any
     // 90-day gap in air dates into made-up seasons and renumbers the episodes (app.min.js splitEpisodesIntoSeasons),
     // while torrent files - and the progress Lampa saves for them - use the real numbers.
@@ -49,29 +45,9 @@
         });
     }
 
-    // where a series continues: the last episode with progress (or the one after, once it is ~finished)
+    // where a series continues (resume.js): the episode last watched, or the next once it's finished
     function nextEpisode(card, done) {
-        // a card from a list (the billboard) has no seasons yet: get the show's details first
-        if (!card.seasons && window.rubyDesktop && rubyDesktop.details) return rubyDesktop.details([{ kind: 'tv', id: card.id }], function (d) {
-            card.seasons = (d[0] && d[0].seasons) || [];
-            nextEpisode(card, done);
-        });
-        var nums = (card.seasons || []).map(function (s) { return s.season_number; }).filter(function (n) { return n > 0; });
-        if (!nums.length) return done({ season: 1, episode: 1 });
-        realSeasons(card, nums, function (data) {
-            var all = [], today = new Date();
-            nums.forEach(function (n) {
-                (data[n] || []).forEach(function (ep) {
-                    if (!ep.air_date || new Date(ep.air_date.replace(/-/g, '/')) <= today) all.push(ep);
-                });
-            });
-            if (!all.length) return done({ season: nums[0], episode: 1 });
-            var last = -1;
-            all.forEach(function (ep, i) { if (Lampa.Timeline.view(hash(card, ep.season_number, ep.episode_number)).percent > 0) last = i; });
-            var pick = last < 0 ? all[0] :
-                Lampa.Timeline.view(hash(card, all[last].season_number, all[last].episode_number)).percent >= 90 && all[last + 1] ? all[last + 1] : all[last];
-            done({ season: pick.season_number, episode: pick.episode_number });
-        });
+        rubyResume.where(card, function (r) { done({ season: r.season, episode: r.episode }); });
     }
 
     // The highest resolution worth offering on this screen, in physical pixels (a Retina MacBook is ~3000 wide:
@@ -348,8 +324,10 @@
         episodeClicks();
     }
 
+    window.rubyPlay = { on: on };
+
     var timer = setInterval(function () {
-        if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts) return;
+        if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;
         clearInterval(timer);
         init();
     }, 100);
