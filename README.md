@@ -3,7 +3,7 @@
 **[Lampa](https://github.com/yumata/lampa) on a computer, styled like a streaming service.** Lampa is a free
 TV-first app for browsing films and series and playing them through TorrServer. Its web version looks and
 feels like a TV app on a laptop: huge type, a remote-control header, rows that move one card at a time.
-This fork keeps Lampa as it is (apart from four small fixes to its search and episode list, listed in
+This fork keeps Lampa as it is (apart from five small fixes to its search, episode list and HLS subtitles, listed in
 [desktop/README.md](desktop/README.md)) and adds a desktop layer on top: Netflix-style profiles and navigation, a
 personal Home that learns from thumbs ratings, full-screen trailers, Apple TV-style dark glass and sharp
 artwork.
@@ -48,7 +48,7 @@ and it plays that episode; Play on a series continues where you left off. "All t
 
 **Any file plays in the browser.** With the small server in [`server/remux`](server/remux/README.md) next
 to TorrServer, every torrent plays as HLS: 4K HEVC MKVs with Atmos audio play in Safari and Chrome,
-with seeking, English subtitles (a labelled Subtitles button) and AirPlay to an Apple TV. The video isn't
+with seeking, English subtitles (on by default, with a labelled Subtitles button), back/forward buttons and arrow-key seeking and AirPlay to an Apple TV. The video isn't
 re-encoded, so it's light on the server.
 
 **See who's watching.** The top bar shows other profiles that are watching right now, and what.

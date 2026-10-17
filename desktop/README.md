@@ -200,7 +200,7 @@ Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`)
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Four small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -213,11 +213,35 @@ Four small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   the words joined and the two longest words alone. It keeps results whose title is close to the query
   (letter-pair similarity of at least 0.5, or containing it), exact matches first. Verified: "edge
   runners" → Cyberpunk: Edgerunners, "brekaing bad" → Breaking Bad.
+- **HLS, `createParser`:** where the browser plays HLS itself (Safari), Lampa first reads the master
+  playlist with hls.js and, when it lists no separate audio tracks, gives the browser the video playlist
+  instead of the master. That playlist has no subtitles, so Safari never reported any and the Subtitles
+  button never appeared (the remux service's streams have audio inside the video playlist). It now keeps
+  the master when it lists subtitle tracks.
 
 ## Player
 
 - **Subtitles.** Lampa shows its subtitles button only once the stream reports subtitle tracks, as a small
-  speech-bubble icon. It's now a CC icon labelled "Subtitles".
+  speech-bubble icon. It's now a CC icon labelled "Subtitles". In Safari it only appears since the
+  `createParser` change above.
+- **English subtitles on by default.** `player.js` sets Lampa's defaults for Settings → Player → Subtitles
+  (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps its choice.
+  Lampa itself only switches on tracks the browser reports (Safari); with hls.js (Chrome) it lists them and
+  leaves them off, so `player.js` picks the English one (or the first) when the list arrives. Tracks Safari
+  adds after `loadeddata` (when Lampa looks) are passed on too.
+- **Seeking.** Left/Right seek even while the control bar is up (Lampa only seeks with them while the bar
+  is hidden, and with a mouse it's up whenever the pointer moves; it moves between buttons instead). Not
+  in menus opened from the player. Media keys (`navigator.mediaSession` seek and previous/next track) seek
+  too. Back/forward buttons beside play/pause show the step. All use Lampa's own seek (Settings → Player →
+  Rewind, 20 s by default; repeated presses add up and it seeks once, 1 s after the last).
+- **Verified 2026-10-17** with a local HLS stream shaped like the remux service's (one variant with audio
+  inside, an English WebVTT rendition, `DEFAULT=NO`), in the dev copy:
+  - Safari 27: plain `<video>` with the master adds the track "English 1" (`en`) 1.9 s in, just before
+    `loadeddata`, where Lampa looks. In Lampa, the browser got the master, the track was `showing` with a
+    cue on screen and the Subtitles button visible. Before, Lampa gave it the video playlist (by the code;
+    no subtitle tracks there).
+  - Chrome 152 (hls.js): subtitles on in English without touching anything; Left with the bar up went
+    37.6 → 17.9 s; the forward/back buttons 17.7 → 39.2 → 19.6 s, one seek per click.
 - **F** toggles fullscreen, as in other web players.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it

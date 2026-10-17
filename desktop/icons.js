@@ -22,6 +22,9 @@
         check: '<path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
         cc: '<rect x="2.8" y="5" width="18.4" height="14" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M10.6 10.2a2.4 2.4 0 1 0 0 3.6M17.2 10.2a2.4 2.4 0 1 0 0 3.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
         airplay: '<path d="M6.5 17H5a2.2 2.2 0 0 1-2.2-2.2V6.2A2.2 2.2 0 0 1 5 4h14a2.2 2.2 0 0 1 2.2 2.2v8.6A2.2 2.2 0 0 1 19 17h-1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 13.5l5 6.5H7z" fill="currentColor"/>',
+        // circular arrows with room inside for the number of seconds (player.js)
+        seekBack: '<path d="M5.2 13.5A7 7 0 1 0 7.6 6.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8.6 3.2L7.2 6.9l3.8 1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
+        seekForward: '<path d="M18.8 13.5A7 7 0 1 1 16.4 6.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M15.4 3.2l1.4 3.7-3.8 1" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>',
         // Netflix-style profile face, drawn on the avatar's colour
         face: '<circle cx="8.2" cy="9.4" r="1.5" fill="currentColor"/><circle cx="15.8" cy="9.4" r="1.5" fill="currentColor"/><path d="M6.5 14.2c3.2 3 7.8 3 11 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>'
     };
