@@ -213,15 +213,47 @@
         pending = null;
     }
 
-    // the facts stay until the picture moves (Lampa's player shows only a spinner until then)
-    var watching = 0;
+    // The facts stay until the picture moves (Lampa's player shows only a spinner until then). A video that
+    // ends up paused before it ever played, without anyone pressing pause, gets one more play(), then the
+    // facts go so the player's own play button shows. Reported 2026-10-17: after Continue an episode stayed
+    // paused under the facts until the player's play button was clicked. Not reproduced in Chromium (plain HLS
+    // and torrent → remux, both resuming at a saved time, played on), so what the video did is logged
+    // ("Ruby play") to find the cause.
+    var watching = 0, untrace = null, lastInput = 0;
+    function untraced() { if (untrace) untrace(); untrace = null; }
+    function stopWatching() { clearInterval(watching); untraced(); rubyFacts.stop(); }
     function untilPlaying() {
-        var since = Date.now();
+        var since = Date.now(), pausedSince = 0, retried = false, userPaused = false, traced = null;
         clearInterval(watching);
+        untraced();
         watching = setInterval(function () {
             var v = Lampa.PlayerVideo.video();
-            if ((v && v.readyState >= 3 && v.currentTime > 0.2 && !v.paused) || Date.now() - since > 300000) { clearInterval(watching); rubyFacts.stop(); }
+            if (v && v !== traced) {
+                untraced();
+                traced = v;
+                untrace = trace(v, function () { if (Date.now() - lastInput < 1000) userPaused = true; });
+            }
+            if ((v && v.readyState >= 3 && v.currentTime > 0.2 && !v.paused) || userPaused || Date.now() - since > 300000) return stopWatching();
+            if (!v || !v.paused || v.readyState < 1) return (pausedSince = 0);
+            if (!pausedSince) return (pausedSince = Date.now());
+            if (Date.now() - pausedSince < 1500) return;
+            if (retried) { console.log('Ruby play', 'still paused, showing the player'); return stopWatching(); }
+            retried = true;
+            pausedSince = 0;
+            console.log('Ruby play', 'paused before it played, playing again');
+            Lampa.PlayerVideo.play();
         }, 500);
+    }
+
+    // logs the video's playback events; returns the function that stops it
+    function trace(v, onPause) {
+        var t0 = Date.now(), names = ['play', 'playing', 'pause', 'waiting', 'seeking', 'seeked', 'stalled', 'error'];
+        var log = function (e) {
+            console.log('Ruby play', e.type, 'at', v.currentTime.toFixed(1), 'ready', v.readyState, 'paused', v.paused, '+' + (Date.now() - t0) + 'ms');
+            if (e.type === 'pause') onPause();
+        };
+        names.forEach(function (n) { v.addEventListener(n, log); });
+        return function () { names.forEach(function (n) { v.removeEventListener(n, log); }); };
     }
 
     function done() {
@@ -313,7 +345,11 @@
         };
         Lampa.Listener.follow('torrent_file', files);
         Lampa.Player.listener.follow('start', function () { done(); untilPlaying(); });
-        Lampa.Player.listener.follow('destroy', function () { clearInterval(watching); rubyFacts.stop(); });
+        Lampa.Player.listener.follow('destroy', stopWatching);
+        // a pause right after a key or click is the user's (untilPlaying leaves that alone)
+        var touched = function () { lastInput = Date.now(); };
+        document.addEventListener('keydown', touched, true);
+        document.addEventListener('pointerdown', touched, true);
         // no Trailers source: Play then has one source and goes straight to it (no chooser)
         Lampa.Listener.follow('full', function (e) {
             if (e.type !== 'complite' || !e.object || !e.object.activity) return;

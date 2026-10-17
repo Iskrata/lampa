@@ -152,9 +152,18 @@ the capture phase, before the card's own handler, which upstream only toggled "w
 aired yet keep upstream behaviour.
 
 **While it loads** (`facts.js`): from Play until the picture moves, except while the "Play in" question is
-open, a card at the bottom shows a fun fact about films and TV every 12 s, from `facts-data.js` (110+
+open, a card at the top of the screen shows a fun fact about films and TV every 12 s, from `facts-data.js` (110+
 facts). Each browser sees all of them before any repeats (`ruby_facts_seen`). Facts about the title itself
 (cast, budget) were tried and dropped: the user wanted fun facts.
+
+**Stuck paused under the facts** (reported 2026-10-17, after Continue on an episode: the facts stayed
+until the player's play button was clicked). `play.js` `untilPlaying`: a video paused for 1.5 s before it
+ever played, with no key or click just before the pause, gets one more `play()`; if it's still paused,
+the facts go so the player's play button shows. Not reproduced in Chromium: plain HLS and torrent → remux,
+both resuming at a saved time, played on (2026-10-17, built-in browser). Checked by refusing `play()`
+(`HTMLMediaElement.prototype.play` rejecting with NotAllowedError): refused once, the retry played it;
+refused twice, the facts went. The video's play/pause/seek/stall events are logged as `Ruby play` to find
+the real cause the next time it happens (Safari wasn't checked: safaridriver couldn't attach that day).
 
 Settings → Interface → "Pick torrents for me" turns all of this off.
 

@@ -1,17 +1,18 @@
 // "Did you know?" while a title loads (desktop/README.md, "Play"): from Play until the picture moves, a card
-// at the bottom of the screen shows a fun fact about films and TV every ROTATE_MS (facts-data.js), each
+// at the top of the screen shows a fun fact about films and TV every ROTATE_MS (facts-data.js), each
 // browser going through all of them before any repeats (ruby_facts_seen). Not about the title being opened
 // (the user's call 2026-10-15: fun facts, not cast lists). rubyFacts.start() / .stop(). Runs where play.js does.
 (function () {
     var ROTATE_MS = 12000, SEEN = 'ruby_facts_seen';
     var CSS = [
-        // centred, just under the loading spinner (at the bottom it covered the player's controls)
-        '.ruby-facts{position:fixed;left:50%;top:calc(50% + 4.5em);transform:translate(-50%,1em);z-index:100000;width:min(46em,86vw);padding:1.1em 1.5em 1.2em;',
+        // at the top, just under the top bar, out of the way (at the bottom it covered the player's controls,
+        // under the spinner it sat in the middle of the picture; the user's call 2026-10-17)
+        '.ruby-facts{position:fixed;left:50%;top:4.5em;transform:translate(-50%,-1em);z-index:100000;width:min(40em,86vw);padding:.9em 1.3em 1em;',
         '  border-radius:.8em;background:rgba(18,18,20,.92);border:1px solid rgba(255,255,255,.12);box-shadow:0 1em 3em rgba(0,0,0,.5);',
         '  font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif;color:#e5e5e5;opacity:0;transition:opacity .4s,transform .4s;pointer-events:none}',
         '.ruby-facts.show{opacity:1;transform:translate(-50%,0)}',
         '.ruby-facts__head{font-size:.9em;letter-spacing:.12em;text-transform:uppercase;color:#a3a3a3;margin-bottom:.45em}',
-        '.ruby-facts__text{font-size:1.3em;line-height:1.45;transition:opacity .35s}',
+        '.ruby-facts__text{font-size:1.15em;line-height:1.45;transition:opacity .35s}',
         '.ruby-facts__bar{position:absolute;left:0;bottom:0;height:2px;background:#e50914;border-radius:0 0 .8em .8em}',
         '.ruby-facts__bar.run{animation:ruby-facts-bar linear forwards}',
         '@keyframes ruby-facts-bar{from{width:0}to{width:100%}}'
