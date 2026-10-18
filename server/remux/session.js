@@ -198,7 +198,12 @@ class Session {
     }
 
     betterSubs() {
-        if (this.fetched || !this.source || !opensubs.configured()) return this.fetched;
+        if (this.fetched || !opensubs.configured()) return this.fetched;
+        if (!this.source) {
+            if (!this.unnamed) console.log(`${this.m.hash.slice(0, 8)}:${this.m.index} no title id with this stream: can't ask OpenSubtitles`);
+            this.unnamed = true;
+            return null;
+        }
         const f = Object.assign({ hash: this.m.hash, index: this.m.index, url: this.m.url }, this.source);
         this.fetched = opensubs.find(f).then(r => { this.ext = r; this.fit(); return r; })
             .catch(e => { console.error(`${this.m.hash.slice(0, 8)}:${this.m.index} ${e.message}`); return null; });

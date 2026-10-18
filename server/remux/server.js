@@ -43,8 +43,19 @@ function torrserver(route, body) {
         .then(r => r.ok ? r.json() : null).catch(() => null);
 }
 
+// the title, for subtitles from OpenSubtitles: the torrent file's name says the episode
+async function describe(s, hash, tmdb, kind) {
+    if (!tmdb || s.source) return;
+    const t = await torrserver('/torrents', { action: 'get', hash });
+    const f = ((t && t.file_stats) || []).find(x => String(x.id) === String(s.m.index)) || {};
+    s.describe({ tmdb, kind: kind === 'movie' ? 'movie' : 'tv', name: f.path || '', size: f.length || 0 });
+}
+
 function master(s) {
-    const m = s.m, base = `${m.index}.${m.lang}/`, n = s.subtitleCount();
+    // the title rides along in every path (<file>.<lang>.<kind><tmdb>/): a session made again from a segment
+    // request (after a restart the player carries on without asking for the master) still knows the episode
+    const src = s.source, m = s.m, n = s.subtitleCount();
+    const base = `${m.index}.${m.lang}${src ? '.' + (src.kind === 'movie' ? 'm' : 't') + src.tmdb : ''}/`;
     const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
     // with no subtitles of its own, the one from OpenSubtitles (session.js betterSubs)
     (m.subs.length ? m.subs : n ? [{}] : []).forEach((sub, k) => {
@@ -121,20 +132,17 @@ async function handle(req, res) {
     }
     if (a === 'master.m3u8') {
         const s = await session(hash, url.searchParams.get('index') || '1', lang(url.searchParams.get('lang')));
-        const tmdb = url.searchParams.get('tmdb');
-        if (tmdb && !s.source) {   // the title, for subtitles from OpenSubtitles: the torrent file's name says the episode
-            const t = await torrserver('/torrents', { action: 'get', hash });
-            const f = ((t && t.file_stats) || []).find(x => String(x.id) === String(s.m.index)) || {};
-            s.describe({ tmdb, kind: url.searchParams.get('kind') === 'movie' ? 'movie' : 'tv', name: f.path || '', size: f.length || 0 });
-        }
+        await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
         // a file without subtitles of its own waits a little for OpenSubtitles: the master lists them or not
         const wait = !s.m.subs.length && s.fetched ? Promise.race([s.fetched, new Promise(r => setTimeout(r, 8000))]) : null;
         await Promise.all([s.init(), wait]);   // ready before the player asks for it
         return send(res, 200, master(s), TYPES.m3u8);
     }
 
-    const [file, l] = (a || '').split('.');
+    const [file, l, title] = (a || '').split('.');
     const s = await session(hash, file, lang(l));
+    const t = /^([mt])(\d+)$/.exec(title || '');
+    if (t) await describe(s, hash, t[2], t[1] === 'm' ? 'movie' : 'tv');
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
     if (b === 'init.mp4') return sendFile(res, await s.init());

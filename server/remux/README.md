@@ -95,7 +95,11 @@ Some releases carry only the US broadcast captions as English subtitles. Despera
 pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best with the captions shifted
 0.25 s, so the "weird timing" is the cutting, not a delay. Better subtitles come from OpenSubtitles:
 
-- **When.** The browser sends the title's TMDB id with the stream (`desktop/play.js`, `&tmdb=&kind=`); the
+- **When.** The browser sends the title's TMDB id with the stream (`desktop/play.js`, `&tmdb=&kind=`), and the
+  master puts it into every path below it (`<file>.<lang>.t<id>/`, `m` for a film): after a restart of this
+  service Safari carries on by asking for the next segment, not the master, and the session made again from
+  that request didn't know the episode (2026-10-18: S1E14 kept its captions after the restart; a session
+  without it now logs "no title id"); the
   episode comes from the torrent file's name (`S01E12`, `1x12`). A file with no English text subtitles asks
   at once, and the master playlist waits up to 8 s to list the result. Otherwise, once subtitle 0 has 15
   lines, mostly upper-case text (under 10 % lower-case letters, speaker labels aside) means TV captions;
