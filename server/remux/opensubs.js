@@ -68,15 +68,27 @@ function episodeOf(name) {
     return m ? { season: +m[1], episode: +m[2] } : null;
 }
 
-const words = s => new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 1 && !/^(s\d+e\d+|\d+)$/.test(w)));
+// a release's source (WEB, DVD, Blu-ray, TV) and its other tags. Only these count when comparing names: the
+// show's and the episode's words are in most names (with them, S1E12's DVD rips "...Every Day a Little
+// Death.DVDRip" beat the WEB rip of the same broadcast, 2026-10-18).
+function source(s) {
+    s = String(s || '').toLowerCase();
+    return /web/.test(s) ? 'web' : /dvd/.test(s) ? 'dvd' : /blu-?ray|bdrip|brrip|bdremux/.test(s) ? 'bluray' : /hdtv|pdtv/.test(s) ? 'tv' : '';
+}
+const TAGS = /^(amzn|nf|hulu|dsnp|hmax|atvp|x264|x265|h264|h265|hevc|avc|480p|576p|720p|1080p|2160p|proper|repack)$/;
+function tags(s) {
+    const w = String(s || '').toLowerCase().split(/[^a-z0-9]+/);
+    const group = (/-([a-z0-9]+)(\[[^\]]*\])?(\.[a-z0-9]{2,4})?$/i.exec(String(s || '')) || [])[1];
+    return new Set(w.filter(x => TAGS.test(x)).concat(group ? ['group:' + group.toLowerCase()] : []));
+}
 
-// the subtitle most likely to fit this file: the same file (hash) first, then a release named like it
-// (WEB vs DVD timings differ), not for the hearing impaired ([door slams]), then the most downloaded
+// the subtitle most likely to fit this file: the same file (hash) first, then the same source (WEB vs DVD
+// timings and cuts differ) and tags, not for the hearing impaired ([door slams]), then the most downloaded
 function best(list, name) {
-    const mine = words(path.basename(name || ''));
+    const file = path.basename(name || ''), mine = tags(file), src = source(file);
     const score = a => (a.moviehash_match ? 1000 : 0) +
-        [...words(a.release)].filter(w => mine.has(w)).length * 10 +
-        (/web/i.test(a.release || '') && /web/i.test(name || '') ? 20 : 0) +
+        (src && source(a.release) === src ? 40 : 0) +
+        [...tags(a.release)].filter(w => mine.has(w)).length * 10 +
         (a.hearing_impaired ? -15 : 0) + (a.from_trusted ? 5 : 0) + Math.log10(1 + (a.download_count || 0));
     return list.filter(s => s.attributes.files && s.attributes.files.length)
         .sort((x, y) => score(y.attributes) - score(x.attributes))[0] || null;
@@ -170,4 +182,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, align, shouting, episodeOf, configured: () => !!creds().key };
+module.exports = { find, align, shouting, episodeOf, best, configured: () => !!creds().key };

@@ -102,8 +102,10 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   then it asks, and so do later episodes of the same torrent, right at the start.
 - **Which.** One search (`/subtitles`, parameters in alphabetical order or the API answers with a redirect)
   by OpenSubtitles' file hash (size + first and last 64 KiB) and the title + season/episode. Best: made for
-  this file (hash match), then the release named most like the file (WEB vs DVD timings differ), not for
-  the hearing impaired, most downloaded.
+  this file (hash match), then the same source (WEB / DVD / Blu-ray / TV: timings and cuts differ) and
+  release tags (service, codec, resolution, group), not for the hearing impaired, most downloaded. Only
+  tags count: the show's and episode's words are in most names, and with them S1E12's DVD rips beat the
+  WEB rip.
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
@@ -115,7 +117,10 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   copy cut into pairs of lines, shifted and sped to 25 fps: shift and speed found from 60 lines; and end to
   end through the service (a test file with ALL CAPS lines and a stand-in download shifted 3 s): "TV
   captions" after 15 lines, shift -3.0 s, overlap 0.95 at 74 lines, later subtitle segments from the
-  download. The real download was first tried on the home server (the sign-in is the service's own).
+  download. On the home server the same day, S1E12 played through its remux: TV captions found, signed in (20
+  downloads a day), one download (19 left), "...DVDRip.NonHI.cc.en.BNVST" lined up against 149 caption lines
+  at shift 10.6 s, speed 0.959 (a PAL DVD), overlap 0.87; segment 70 then read "I'd love to." at 6:54.36,
+  the captions' "I'D LOVE TO." at 6:54.58. (That pick was before the source rule above.)
 - With no captions to line up with, a hash match is used as it is, and otherwise the best guess as it is.
 
 Not handled: video codecs a browser can't decode (MPEG-4 Part 2/Xvid, VC-1) get an error instead of a
