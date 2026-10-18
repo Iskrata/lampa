@@ -189,7 +189,8 @@ per profile by `profiles.js`). The hash is Lampa's own `Utils.hash(season + epis
   `next_episode`, and its `last_episode` for the line. Asked at most once a minute per show.
 
 The series page shows it:
-- **Play button:** "Continue S2 E5", "Play S2 E6" or "Play S1 E1".
+- **Play button:** "Continue S2 E5", "Play S2 E6" or "Play S1 E1". The label stays when another button has the focus
+  (Lampa shows a title-page button's label only while it's focused; `title.js`).
 - **Line under the ratings:** "S2 E5 · 26 min left" and a progress bar, "Last watched S1 E3", or "Watched
   all 62 episodes". Time left is the saved duration minus the saved time, else TMDB's runtime.
 - **Trakt plugin's watched status ("Unwatched"):** the line goes inside it, and the plugin's own text is

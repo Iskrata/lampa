@@ -32,6 +32,9 @@
         'body.ruby-title .full-start-new__tagline{font-size:1.15em;opacity:.85}',
         'body.ruby-title .full-start-new__head,body.ruby-title .full-start-new__details{text-shadow:0 1px 3px rgba(0,0,0,.6)}',
         'body.ruby-title .full-start-new .ruby-trailer__mute{right:3.5%;bottom:2em}',
+        // Play keeps its label ("Continue S2 E5") when another button has the focus: Lampa shows a button's
+        // label only while it's focused (.full-start__button:not(.focus) span{display:none})
+        'body.ruby-title .full-start-new__buttons .button--play span{display:inline!important}',
         // phones: Lampa's own phone layout (max-width 480px) pulls the details up into a rounded sheet with
         // negative margins, which here cut them off at the left edge; the hero fades from the bottom instead
         // of the left, and Play gets a whole line (a white button with its label, the rest stay icons)
