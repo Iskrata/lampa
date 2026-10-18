@@ -44,15 +44,16 @@ function torrserver(route, body) {
 }
 
 function master(s) {
-    const m = s.m, base = `${m.index}.${m.lang}/`;
+    const m = s.m, base = `${m.index}.${m.lang}/`, n = s.subtitleCount();
     const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
-    m.subs.forEach((sub, k) => {
+    // with no subtitles of its own, the one from OpenSubtitles (session.js betterSubs)
+    (m.subs.length ? m.subs : n ? [{}] : []).forEach((sub, k) => {
         const name = ((sub.tags && sub.tags.title) || 'English').replace(/"/g, '');
         lines.push(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${name || 'English'} ${k + 1}",LANGUAGE="en",` +
             `DEFAULT=${m.subsOn && k === 0 ? 'YES' : 'NO'},AUTOSELECT=${k === 0 ? 'YES' : 'NO'},FORCED=NO,URI="${base}sub${k}.m3u8"`);
     });
     lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${m.bandwidth},CODECS="${m.codecs}"` +
-        (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + (m.subs.length ? ',SUBTITLES="subs"' : ''));
+        (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + (n ? ',SUBTITLES="subs"' : ''));
     lines.push(`${base}video.m3u8`);
     return lines.join('\n') + '\n';
 }
@@ -120,7 +121,15 @@ async function handle(req, res) {
     }
     if (a === 'master.m3u8') {
         const s = await session(hash, url.searchParams.get('index') || '1', lang(url.searchParams.get('lang')));
-        await s.init();   // ready before the player asks for it
+        const tmdb = url.searchParams.get('tmdb');
+        if (tmdb && !s.source) {   // the title, for subtitles from OpenSubtitles: the torrent file's name says the episode
+            const t = await torrserver('/torrents', { action: 'get', hash });
+            const f = ((t && t.file_stats) || []).find(x => String(x.id) === String(s.m.index)) || {};
+            s.describe({ tmdb, kind: url.searchParams.get('kind') === 'movie' ? 'movie' : 'tv', name: f.path || '', size: f.length || 0 });
+        }
+        // a file without subtitles of its own waits a little for OpenSubtitles: the master lists them or not
+        const wait = !s.m.subs.length && s.fetched ? Promise.race([s.fetched, new Promise(r => setTimeout(r, 8000))]) : null;
+        await Promise.all([s.init(), wait]);   // ready before the player asks for it
         return send(res, 200, master(s), TYPES.m3u8);
     }
 
@@ -130,8 +139,8 @@ async function handle(req, res) {
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
     if (b === 'init.mp4') return sendFile(res, await s.init());
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) return sendFile(res, await s.segment(+m[1]));
-    if ((m = /^sub(\d+)\.m3u8$/.exec(b)) && s.m.subs[+m[1]]) return send(res, 200, playlist(s, i => `sub${m[1]}-${i}.vtt`), TYPES.m3u8);
-    if ((m = /^sub(\d+)-(\d+)\.vtt$/.exec(b)) && s.m.subs[+m[1]]) return send(res, 200, await s.subtitle(+m[1], +m[2]), TYPES.vtt);
+    if ((m = /^sub(\d+)\.m3u8$/.exec(b)) && +m[1] < s.subtitleCount()) return send(res, 200, playlist(s, i => `sub${m[1]}-${i}.vtt`), TYPES.m3u8);
+    if ((m = /^sub(\d+)-(\d+)\.vtt$/.exec(b)) && +m[1] < s.subtitleCount()) return send(res, 200, await s.subtitle(+m[1], +m[2]), TYPES.vtt);
     return send(res, 404, 'not found');
 }
 

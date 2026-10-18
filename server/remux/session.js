@@ -8,9 +8,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { Splitter } = require('./mp4');
 const { ffmpegArgs, seekTime } = require('./media');
+const opensubs = require('./opensubs');
 const cfg = require('./config');
 
 const AHEAD = 30, BEHIND = 40, WAIT_MS = 90000, JUMP = 6, SLACK_S = 0.05;
+// torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
+const shouty = new Set();
 
 class Session {
     constructor(media, dir) {
@@ -22,6 +25,14 @@ class Session {
         this.used = Date.now();
         this.waiters = [];
         this.cues = media.subs.map(() => new Map());   // per subtitle: "start|text" -> cue
+        // subtitles from OpenSubtitles (opensubs.js): `source` describes the torrent file, `better` the cues that
+        // replace subtitle 0 (or are the only subtitle when the file has none)
+        this.source = null;
+        this.fetched = null;
+        this.ext = null;
+        this.better = null;
+        this.fitted = 0;
+        this.checked = false;
         fs.mkdirSync(dir, { recursive: true });
     }
 
@@ -154,11 +165,64 @@ class Session {
         this.used = Date.now();
         const passed = () => { const j = this.job; return j && n >= j.start && (j.cur > n || j.ended); };
         await this.until(passed, WAIT_MS).catch(() => {});
-        this.readCues(k);
+        if (this.cues[k]) this.readCues(k);
+        if (k === 0 && this.cues[0]) this.checkCaptions();
         const from = this.m.bounds[n], to = this.m.bounds[n + 1];
-        const cues = [...this.cues[k].values()].filter(c => c.end > from && c.start < to).sort((a, b) => a.start - b.start);
+        const all = k === 0 && this.better ? this.better : this.cues[k] ? [...this.cues[k].values()] : [];
+        const cues = all.filter(c => c.end > from && c.start < to).sort((a, b) => a.start - b.start);
         return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' +
             cues.map(c => `${vttTime(c.start)} --> ${vttTime(c.end)}\n${c.text}\n`).join('\n');
+    }
+
+    // subtitles shown: the file's own, or better ones from OpenSubtitles in their place (see betterSubs)
+    subtitleCount() { return this.m.subs.length || (this.better ? 1 : 0); }
+
+    // the torrent file (name, size, the title's TMDB id): what OpenSubtitles is searched by
+    describe(file) {
+        if (!this.source && file && file.tmdb) this.source = file;
+        if (this.source && (!this.m.subs.length || shouty.has(this.m.hash))) this.betterSubs();
+    }
+
+    // Once the file's own subtitle 0 has enough lines: TV captions (ALL CAPS) get replaced
+    checkCaptions() {
+        const ref = [...this.cues[0].values()];
+        if (!this.checked && ref.length >= 15) {
+            this.checked = true;
+            if (opensubs.shouting(ref)) {
+                console.log(`${this.m.hash.slice(0, 8)}:${this.m.index} subtitles are TV captions (ALL CAPS): asking OpenSubtitles`);
+                shouty.add(this.m.hash);
+                this.betterSubs();
+            }
+        }
+        this.fit();
+    }
+
+    betterSubs() {
+        if (this.fetched || !this.source || !opensubs.configured()) return this.fetched;
+        const f = Object.assign({ hash: this.m.hash, index: this.m.index, url: this.m.url }, this.source);
+        this.fetched = opensubs.find(f).then(r => { this.ext = r; this.fit(); return r; })
+            .catch(e => { console.error(`${this.m.hash.slice(0, 8)}:${this.m.index} ${e.message}`); return null; });
+        return this.fetched;
+    }
+
+    // The download onto the file's own captions' timing, from 60 of their lines (opensubs.js align), again at
+    // 3x as many.
+    // No captions in the file: a download for this very file (hash match) as it is, else the best guess.
+    fit() {
+        const ext = this.ext, tag = `${this.m.hash.slice(0, 8)}:${this.m.index}`;
+        if (!ext || !ext.cues.length) return;
+        if (!this.m.subs.length) {
+            if (!this.better) console.log(`${tag} subtitles from OpenSubtitles: "${ext.release}"${ext.match ? ' (made for this file)' : ''}`);
+            this.better = ext.cues;
+            return;
+        }
+        const ref = [...this.cues[0].values()];
+        if (ref.length < 60 || ref.length < this.fitted * 3) return;
+        this.fitted = ref.length;
+        const a = opensubs.align(ext.cues, ref);
+        console.log(`${tag} OpenSubtitles "${ext.release}" against ${ref.length} caption lines: ` +
+            (a ? `shift ${a.offset.toFixed(1)} s, speed ${a.scale.toFixed(4)}, overlap ${a.score.toFixed(2)}` : 'no fit') + (a && a.cues ? '' : ', keeping the captions'));
+        if (a && a.cues) this.better = a.cues;
     }
 
     readCues(k) {

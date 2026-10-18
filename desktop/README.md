@@ -236,6 +236,9 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
 - **Subtitles.** Lampa shows its subtitles button only once the stream reports subtitle tracks, as a small
   speech-bubble icon. It's now a CC icon labelled "Subtitles". In Safari it only appears since the
   `createParser` change above.
+- **Better subtitles.** When a file's English subtitles are TV captions (ALL CAPS) or missing, the remux
+  service swaps in ones from OpenSubtitles, lined up with the file (server/remux/README.md, "Subtitles from
+  OpenSubtitles"). `play.js` adds the title's TMDB id to the stream URL for it.
 - **English subtitles on by default.** `player.js` sets Lampa's defaults for Settings → Player → Subtitles
   (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps its choice.
   Lampa itself only switches on tracks the browser reports (Safari); with hls.js (Chrome) it lists them and

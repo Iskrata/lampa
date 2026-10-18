@@ -332,11 +332,16 @@
         css();
         setting();
         push = Lampa.Activity.push;
-        // anime in Japanese: ask the remux service for the Japanese track (and subtitles on) - server/remux
+        // anime in Japanese: ask the remux service for the Japanese track (and subtitles on) - server/remux.
+        // The title's TMDB id goes along, for subtitles from OpenSubtitles (server/remux/opensubs.js).
         var stream = Lampa.Torserver.stream;
         Lampa.Torserver.stream = function () {
             var u = stream.apply(this, arguments);
-            return streamLang && /\/gst\/.*master\.m3u8/.test(u) ? u + '&lang=' + streamLang : u;
+            if (!/\/gst\/.*master\.m3u8/.test(u)) return u;
+            var a = Lampa.Activity.active() || {}, card = a.card || a.movie;
+            if (card && card.id && !/[?&]tmdb=/.test(u))
+                u += '&tmdb=' + card.id + '&kind=' + (card.original_name || card.first_air_date ? 'tv' : 'movie');
+            return streamLang ? u + '&lang=' + streamLang : u;
         };
         Lampa.Activity.push = function (params) {
             if (params && params.component === 'torrents' && params.movie && !params.ruby_list && !params.from_search && on())
