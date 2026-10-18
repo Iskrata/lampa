@@ -266,6 +266,13 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
     no subtitle tracks there).
   - Chrome 152 (hls.js): subtitles on in English without touching anything; Left with the bar up went
     37.6 → 17.9 s; the forward/back buttons 17.7 → 39.2 → 19.6 s, one seek per click.
+- **Next episode countdown** (`nextup.js`), as on Netflix: in an episode's last 10 s a card in the corner says
+  "Next episode in 7" with the next item's title, its white fill growing as the seconds run out; the next
+  episode starts when this one ends (Lampa's own Settings → Player → "Next episode"). The button starts it
+  now; the cross hides the card for this episode (seeking back brings it again). No card on the last
+  episode or with "Next episode" off. The user asked for it "when the episode ends" (2026-10-18), not at
+  the credits: credits times exist only for some shows (TheIntroDB). Checked 2026-10-18 in the built-in
+  browser with a two-item playlist: card at 0:10 left, counted down, item 2 started at the end.
 - **F** toggles fullscreen, as in other web players.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
