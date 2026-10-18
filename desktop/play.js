@@ -65,7 +65,7 @@
         var series = !!(movie.original_name || movie.name && !movie.title);
         var back = Lampa.Controller.enabled().name, stopped = false;
         params = params || searchParams(movie);
-        rubyFacts.start();
+        rubyFacts.start('Finding the best release…');
         Lampa.Loading.start(function () { stopped = true; rubyFacts.stop(); Lampa.Loading.stop(); Lampa.Controller.toggle(back); });
         Lampa.Loading.setText('Finding the best release…');
 
@@ -171,7 +171,7 @@
 
     function play(movie, target, release) {
         pending = { target: target, files: [], at: Date.now() };
-        rubyFacts.start();
+        rubyFacts.start('Connecting to the torrent…');
         // backed out of Lampa's torrent dialog before anything played: take the facts away
         var idle = 0, check = setInterval(function () {
             if (Lampa.Player.opened()) return clearInterval(check);
@@ -224,6 +224,7 @@
     function stopWatching() { clearInterval(watching); untraced(); rubyFacts.stop(); }
     function untilPlaying() {
         var since = Date.now(), pausedSince = 0, retried = false, userPaused = false, traced = null;
+        rubyFacts.status('Starting playback…');
         clearInterval(watching);
         untraced();
         watching = setInterval(function () {

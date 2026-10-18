@@ -156,6 +156,13 @@ open, a card at the top of the screen shows a fun fact about films and TV every 
 facts). Each browser sees all of them before any repeats (`ruby_facts_seen`). Facts about the title itself
 (cast, budget) were tried and dropped: the user wanted fun facts.
 
+The card is the only loading indicator: under the fact, a spinner, the step ("Finding the best release…",
+"Connecting to the torrent…", "Starting playback…") and Cancel, which does what Back does. Lampa's own
+loading layer and its empty "loading torrent" window (`Torrent.loading()`, a large modal with a spinner)
+are hidden while the card shows; error windows aren't. Before, the window sat behind the card with its
+spinner behind the fact ("this loading screen is ugly", 2026-10-18). Checked in the built-in browser:
+both loaders hidden under the card, Cancel closing each through its own Back handler.
+
 **Stuck paused under the facts** (reported 2026-10-17, after Continue on an episode: the facts stayed
 until the player's play button was clicked). `play.js` `untilPlaying`: a video paused for 1.5 s before it
 ever played, with no key or click just before the pause, gets one more `play()`; if it's still paused,

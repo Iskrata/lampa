@@ -1,7 +1,10 @@
 // "Did you know?" while a title loads (desktop/README.md, "Play"): from Play until the picture moves, a card
 // at the top of the screen shows a fun fact about films and TV every ROTATE_MS (facts-data.js), each
 // browser going through all of them before any repeats (ruby_facts_seen). Not about the title being opened
-// (the user's call 2026-10-15: fun facts, not cast lists). rubyFacts.start() / .stop(). Runs where play.js does.
+// (the user's call 2026-10-15: fun facts, not cast lists). Under the fact: a spinner, what's happening
+// ("Finding the best release…") and Cancel. It is the only loading indicator: Lampa's own loading layer and
+// its empty "loading torrent" window are hidden while it shows (a box behind the card with a spinner behind
+// the fact, "ugly", 2026-10-18). rubyFacts.start(status) / .status(text) / .stop(). Runs where play.js does.
 (function () {
     var ROTATE_MS = 12000, SEEN = 'ruby_facts_seen';
     var CSS = [
@@ -13,6 +16,15 @@
         '.ruby-facts.show{opacity:1;transform:translate(-50%,0)}',
         '.ruby-facts__head{font-size:.9em;letter-spacing:.12em;text-transform:uppercase;color:#a3a3a3;margin-bottom:.45em}',
         '.ruby-facts__text{font-size:1.15em;line-height:1.45;transition:opacity .35s}',
+        '.ruby-facts__foot{display:flex;align-items:center;gap:.6em;margin-top:.8em;padding-top:.7em;border-top:1px solid rgba(255,255,255,.1);font-size:.95em;color:#a3a3a3}',
+        '.ruby-facts__spin{flex:none;width:1em;height:1em;border-radius:50%;border:2px solid rgba(255,255,255,.18);border-top-color:#e5e5e5;animation:ruby-facts-spin .8s linear infinite}',
+        '@keyframes ruby-facts-spin{to{transform:rotate(360deg)}}',
+        '.ruby-facts__status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.ruby-facts__cancel{flex:none;pointer-events:auto;cursor:pointer;padding:.3em .8em;border-radius:.4em;color:#e5e5e5;background:rgba(255,255,255,.08)}',
+        '.ruby-facts__cancel:hover{background:rgba(255,255,255,.2)}',
+        // Lampa's loaders: the card says it instead (the layer stays where it is, for its keys)
+        'body.ruby-facts-on .loading-layer{opacity:0!important;pointer-events:none!important}',
+        'body.ruby-facts-on .modal:has(.modal-loading){opacity:0!important;pointer-events:none!important}',
         '.ruby-facts__bar{position:absolute;left:0;bottom:0;height:2px;background:#e50914;border-radius:0 0 .8em .8em}',
         '.ruby-facts__bar.run{animation:ruby-facts-bar linear forwards}',
         '@keyframes ruby-facts-bar{from{width:0}to{width:100%}}'
@@ -55,27 +67,39 @@
         timer = setTimeout(next, ROTATE_MS);
     }
 
-    function start() {
+    function start(text) {
         stop();
         if (!document.getElementById('ruby-facts-css')) {
             var st = document.createElement('style'); st.id = 'ruby-facts-css'; st.textContent = CSS; document.head.appendChild(st);
         }
         box = document.createElement('div');
         box.className = 'ruby-facts';
-        box.innerHTML = '<div class="ruby-facts__head">Did you know?</div><div class="ruby-facts__text"></div><div class="ruby-facts__bar"></div>';
+        box.innerHTML = '<div class="ruby-facts__head">Did you know?</div><div class="ruby-facts__text"></div>' +
+            '<div class="ruby-facts__foot"><div class="ruby-facts__spin"></div><div class="ruby-facts__status"></div>' +
+            '<div class="ruby-facts__cancel">Cancel</div></div><div class="ruby-facts__bar"></div>';
+        // Back, as the key does: Lampa's loading layer, the torrent window or the player each cancel on it
+        box.querySelector('.ruby-facts__cancel').addEventListener('click', function () { Lampa.Controller.back(); });
         document.body.appendChild(box);
+        document.body.classList.add('ruby-facts-on');
+        status(text || 'Loading…');
         requestAnimationFrame(function () { if (box) box.classList.add('show'); });
         queue = trivia();
         next();
     }
 
+    function status(text) {
+        var el = box && box.querySelector('.ruby-facts__status');
+        if (el && text) el.textContent = text;
+    }
+
     function stop() {
         clearTimeout(timer);
+        document.body.classList.remove('ruby-facts-on');
         if (!box) return;
         var b = box; box = null;
         b.classList.remove('show');
         setTimeout(function () { b.remove(); }, 450);
     }
 
-    window.rubyFacts = { start: start, stop: stop };
+    window.rubyFacts = { start: start, status: status, stop: stop };
 })();
