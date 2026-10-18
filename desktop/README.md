@@ -164,6 +164,8 @@ both resuming at a saved time, played on (2026-10-17, built-in browser). Checked
 (`HTMLMediaElement.prototype.play` rejecting with NotAllowedError): refused once, the retry played it;
 refused twice, the facts went. The video's play/pause/seek/stall events are logged as `Ruby play` to find
 the real cause the next time it happens (Safari wasn't checked: safaridriver couldn't attach that day).
+Still reported 2026-10-18. Likely cause: Continue's jump to the saved time paused the video and relied on a
+later `play()`; Player → Seeking now jumps without pausing.
 
 Settings → Interface → "Pick torrents for me" turns all of this off.
 
@@ -241,8 +243,20 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
 - **Seeking.** Left/Right seek even while the control bar is up (Lampa only seeks with them while the bar
   is hidden, and with a mouse it's up whenever the pointer moves; it moves between buttons instead). Not
   in menus opened from the player. Media keys (`navigator.mediaSession` seek and previous/next track) seek
-  too. Back/forward buttons beside play/pause show the step. All use Lampa's own seek (Settings → Player →
-  Rewind, 20 s by default; repeated presses add up and it seeks once, 1 s after the last).
+  too. Back/forward buttons beside play/pause show the step. All use `player.js`'s own seek, not Lampa's:
+  - **Exactly the step** per press (Settings → Player → Rewind, now 10 s by default). Presses within 350 ms
+    add up to one seek, so the remux restarts ffmpeg once. A badge on that side shows the total ("−30 s").
+  - **No pause.** Lampa's rewind paused the video on every press, grew the step 3 % a press, and a second
+    after the last one seeked and called `play()`; when that `play()` didn't take, the video stayed paused
+    ("it pauses when I rewind sometimes", Safari, 2026-10-18). Now only `currentTime` changes.
+  - **`Lampa.PlayerVideo.to`** (Continue's jump to the saved time, a click on the timeline, the skip button)
+    did the same pause/seek/play. While the video plays it now only seeks. With Safari's native HLS,
+    Continue starts at 0 and jumps on the first `timeupdate`, through `to`; hls.js (Chrome) starts at the
+    saved time itself, which is why Continue never hung in Chromium.
+  - Checked 2026-10-18 in the built-in browser (Chromium, local remux of a synthetic 15-min H.264 MKV):
+    3 × Left from 5:19 → 4:50 then Right → +10 s, never paused; `to(600)` with
+    `HTMLMediaElement.prototype.play` rejecting → 10:04 and still playing (Lampa's `to` stays paused there).
+    Not yet checked in Safari (the user was watching in Safari on the same Mac).
 - **Verified 2026-10-17** with a local HLS stream shaped like the remux service's (one variant with audio
   inside, an English WebVTT rendition, `DEFAULT=NO`), in the dev copy:
   - Safari 27: plain `<video>` with the master adds the track "English 1" (`en`) 1.9 s in, just before

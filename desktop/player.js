@@ -4,7 +4,8 @@
 //     Safari only gets them since app.min.js keeps the HLS master when it lists subtitles (README "Changes to
 //     Lampa itself"). English subtitles are on by default.
 //   * F toggles fullscreen. Left/Right seek even while the control bar is up (Lampa moves between its buttons
-//     then), media keys seek too, and the bar has back/forward buttons beside play/pause.
+//     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
+//     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
 //   * AirPlay: a button next to picture-in-picture, in Safari when an AirPlay screen is around
 //     (WebKitPlaybackTargetAvailabilityEvent). It hands the stream to an Apple TV: torrents play as HLS
 //     from the server (server/remux), which the Apple TV fetches itself.
@@ -18,13 +19,69 @@
         '.player-panel__center{display:flex;align-items:center;justify-content:center;gap:.4em}',
         '.player-panel .ruby-seek{position:relative;display:flex;align-items:center;justify-content:center;width:4.2em;height:4.2em;padding:0}',
         '.player-panel .button.ruby-seek svg{width:2.9em!important;height:2.9em!important}',
-        '.ruby-seek__n{position:absolute;font-size:1.05em;font-weight:700;top:55%;left:50%;transform:translate(-50%,-50%)}'
+        '.ruby-seek__n{position:absolute;font-size:1.05em;font-weight:700;top:55%;left:50%;transform:translate(-50%,-50%)}',
+        '.ruby-seekbadge{position:absolute;top:50%;z-index:30;display:flex;align-items:center;gap:.5em;padding:.6em 1.1em;border-radius:2em;' +
+            'background:rgba(0,0,0,.55);color:#fff;font-size:1.6em;font-weight:600;pointer-events:none;opacity:0;transform:translateY(-50%) scale(.92);transition:opacity .25s,transform .25s}',
+        '.ruby-seekbadge svg{width:1.4em!important;height:1.4em!important}',
+        '.ruby-seekbadge--back{left:12%}.ruby-seekbadge--fwd{right:12%}',
+        '.ruby-seekbadge--on{opacity:1;transform:translateY(-50%) scale(1);transition:opacity .1s,transform .1s}'
     ].join('\n');
 
-    // Lampa's seek step (Settings → Player → Rewind), with its own build-up on repeated presses
+    // Seeks the way other web players do: exactly the step (Settings → Player → Rewind, 10 s by default) per
+    // press, presses add up, and the video keeps playing. Lampa's own rewind paused the video on each press,
+    // grew the step 3 % a press, and played again a second after the last one; when that play() didn't take,
+    // the video stayed paused (reported 2026-10-18 in Safari).
+    var seekTarget = null, seekTimer = 0, seekSum = 0, badge = null, badgeTimer = 0;
+
     function seek(forward) {
         if (Lampa.PlayerIPTV && Lampa.PlayerIPTV.playning && Lampa.PlayerIPTV.playning()) return;
-        Lampa.PlayerVideo.rewind(forward);
+        var v = Lampa.PlayerVideo.video(), step = +Lampa.Storage.field('player_rewind') || 10;
+        if (!v || !v.duration) return;
+        if (seekTarget == null) { seekTarget = v.currentTime; seekSum = 0; }
+        seekTarget = Math.max(0, Math.min(v.duration - 1, seekTarget + (forward ? step : -step)));
+        seekSum += forward ? step : -step;
+        showBadge(seekSum);
+        Lampa.PlayerVideo.listener.send('timeupdate', { duration: v.duration, current: seekTarget });   // the panel's bar
+        // presses close together make one seek (each far seek restarts the remux's ffmpeg)
+        clearTimeout(seekTimer);
+        seekTimer = setTimeout(function () {
+            var t = seekTarget;
+            seekTarget = null;
+            seekNow(t);
+        }, 350);
+    }
+
+    // currentTime only: no pause/play around it, so a playing video plays on and a paused one stays paused
+    function seekNow(t) {
+        var v = Lampa.PlayerVideo.video();
+        if (!v) return;
+        console.log('Ruby player', 'seek', v.currentTime.toFixed(1), '->', t.toFixed(1), v.paused ? 'paused' : 'playing');
+        try { v.currentTime = t; } catch (e) { console.log('Ruby player', 'seek failed', e.message); }
+    }
+
+    function showBadge(sum) {
+        var root = document.querySelector('.player');
+        if (!root) return;
+        if (!badge || !root.contains(badge)) {
+            badge = document.createElement('div');
+            badge.className = 'ruby-seekbadge';
+            root.appendChild(badge);
+        }
+        badge.className = 'ruby-seekbadge ruby-seekbadge--' + (sum < 0 ? 'back' : 'fwd') + ' ruby-seekbadge--on';
+        badge.innerHTML = rubyIcons.svg(sum < 0 ? 'seekBack' : 'seekForward') + '<span>' + (sum < 0 ? '−' : '+') + Math.abs(sum) + ' s</span>';
+        clearTimeout(badgeTimer);
+        badgeTimer = setTimeout(function () { badge.classList.remove('ruby-seekbadge--on'); }, 900);
+    }
+
+    // Lampa's PlayerVideo.to (resuming at the saved time on Continue, a click on the timeline, the skip
+    // button) also paused, seeked and played again. While the video plays, it now only seeks.
+    function seekWithoutPause() {
+        var to = Lampa.PlayerVideo.to;
+        Lampa.PlayerVideo.to = function (seconds) {
+            var v = Lampa.PlayerVideo.video();
+            if (!v || v.paused || !v.duration) return to.apply(this, arguments);
+            seekNow(seconds == -1 ? Math.max(0, v.duration - 3) : Math.max(0, Math.min(seconds, v.duration)));
+        };
     }
 
     // Lampa turns a click on a .selector into hover:enter, so both can arrive for one press
@@ -151,6 +208,8 @@
         // English unless the profile chose otherwise (Lampa's defaults, so Settings → Player still decides)
         Lampa.Params.defaults.subtitles_start = true;
         Lampa.Params.defaults.subtitles_lang = 'en';
+        Lampa.Params.defaults.player_rewind = '10';
+        seekWithoutPause();
         Lampa.PlayerVideo.listener.follow('subs', function (e) {
             var video = Lampa.PlayerVideo.video();
             if (video) video._rubySubsSeen = true;
