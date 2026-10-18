@@ -283,7 +283,9 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   episode or with "Next episode" off. The user asked for it "when the episode ends" (2026-10-18), not at
   the credits: credits times exist only for some shows (TheIntroDB). Checked 2026-10-18 in the built-in
   browser with a two-item playlist: card at 0:10 left, counted down, item 2 started at the end.
-- **F** toggles fullscreen, as in other web players.
+- **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: English, else the
+  first track), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
+  in the built-in browser: the subtitle layer went away and came back with the downloaded text.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
   needs a URL that works without the browser: on the home server the stream path has no password.

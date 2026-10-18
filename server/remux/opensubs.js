@@ -2,7 +2,7 @@
 // file whose own are TV captions (ALL CAPS, cut into 1-2 s pieces) or that has none. Downloads cost quota
 // (OpenSubtitles counts them per account per day), so each is made once and kept in cfg.subs for everyone.
 //   find({ hash, index, url, size, tmdb, kind, name }) -> { id, release, match, cues } | null
-//   align(cues, ref) -> { cues, offset, scale, score } | null: moved onto the file's own captions' timing
+//   align(cues, ref) -> { cues, anchors, speed, from, to } | null: moved onto the file's own captions' timing
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -140,39 +140,79 @@ async function find(f) {
     return out;
 }
 
-// The shift (and speed: PAL DVDs run 25/23.976 fast) that lays the downloaded lines best over the file's own
-// captions, which are in step with the video. On a 0.2 s grid over the captions' span: overlap / union of
-// "someone is talking" in both. Shifts up to ±90 s, from 60 caption lines (about 4 minutes): a shorter span
-// has too few pauses to tell shifts apart (S1E12's first 20 lines, the dense "previously on" recap, matched a
-// shift of 59 s at 0.96, and within ±5 s always the edge).
-const STEP = 0.2, RANGE = 90, SCALES = [1, 25 / 23.976, 23.976 / 25];
+// The downloaded lines moved onto the file's own captions, which are in step with the video. Both are
+// transcripts of the same dialogue, so their words line them up: a run of 3 words found in exactly one caption
+// anchors that moment (download time -> caption time, each at the run's place within its line). The shift is
+// followed from anchor to anchor, which also covers a different speed and edits: S1E14's WEB rip (checked
+// 2026-10-18 against 382 anchors) runs 25/23.976 fast, and on top of that its shift moves 12.0 -> 10.7 s, jumps
+// to 12.4 s at 11 min and to 6.4 s at 14:40 (about 5 s of footage the Amazon file doesn't have). One shift and
+// speed for the whole episode (the first version: overlap of "someone is talking" on a 0.2 s grid) was up to
+// 4 s off there, and found none for S1E13, which kept its captions. Chance matches of a phrase said twice
+// are dropped (anchors()). Past the last anchor: the last shift, at
+// the anchors' overall speed. Captions come up about CAPTION_LAG late (on 37 s of S1E12 the speech lined up
+// best with them 0.25 s earlier), so the result is that much earlier.
+const CAPTION_LAG = 0.25, MIN_ANCHORS = 8;
 
-function align(cues, ref) {
-    if (!cues.length || ref.length < 60) return null;
-    const r0 = Math.min(...ref.map(c => c.start)), r1 = Math.max(...ref.map(c => c.end));
-    const n = Math.ceil((r1 - r0) / STEP), K = Math.round(RANGE / STEP);
-    const grid = (list, scale, from, len) => {
-        const g = new Uint8Array(len);
-        for (const c of list) {
-            const a = Math.max(0, Math.floor((c.start * scale - from) / STEP)), b = Math.min(len, Math.ceil((c.end * scale - from) / STEP));
-            for (let i = a; i < b; i++) g[i] = 1;
+const spoken = s => (String(s).toLowerCase().replace(/<[^>]+>/g, ' ').replace(/^[a-z .']{2,25}:/gm, ' ').match(/[a-z0-9']+/g)) || [];
+
+function anchors(cues, ref) {
+    const rw = ref.map(c => spoken(c.text)), index = new Map();
+    rw.forEach((w, i) => {
+        for (let k = 0; k + 3 <= w.length; k++) {
+            const key = w.slice(k, k + 3).join(' '), e = index.get(key);
+            if (e) e.dup = true; else index.set(key, { i, k, dup: false });
         }
-        return g;
-    };
-    const refG = grid(ref, 1, r0, n);
-    let top = null;
-    for (const scale of SCALES) {
-        const candG = grid(cues, scale, r0 - RANGE, n + 2 * K);   // candG[i + K - k] is the candidate shifted by k steps
-        for (let k = -K; k <= K; k++) {
-            let both = 0, any = 0;
-            for (let i = 0; i < n; i++) { const x = refG[i], y = candG[i + K - k]; both += x & y; any += x | y; }
-            const score = any ? both / any : 0;
-            if (!top || score > top.score) top = { scale, offset: k * STEP, score };
+    });
+    const at = (c, k, n) => c.start + (c.end - c.start) * k / Math.max(1, n);
+    const out = [];
+    for (const c of cues) {
+        const w = spoken(c.text);
+        for (let k = 0; k + 3 <= w.length; k++) {
+            const e = index.get(w.slice(k, k + 3).join(' '));
+            if (e && !e.dup) { out.push({ a: at(c, k, w.length), b: at(ref[e.i], e.k, rw[e.i].length) }); break; }
         }
     }
-    if (!top || top.score < 0.45) return top && Object.assign(top, { cues: null });
-    top.cues = cues.map(c => ({ start: c.start * top.scale + top.offset, end: c.end * top.scale + top.offset, text: c.text }));
-    return top;
+    out.sort((x, y) => x.a - y.a);
+    // both times move forward: the longest such chain. Drops chance matches of a common phrase ("you and me"),
+    // above all from the part of the download past the captions read so far (S1E14 at 19 min: a line from
+    // 27:49 matched one at 18:25).
+    const tails = [], prev = new Array(out.length);
+    out.forEach((p, i) => {
+        let lo = 0, hi = tails.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (out[tails[mid]].b < p.b) lo = mid + 1; else hi = mid; }
+        prev[i] = lo ? tails[lo - 1] : -1;
+        tails[lo] = i;
+    });
+    const chain = [];
+    for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = prev[i]) chain.unshift(out[i]);
+    // runs: consecutive anchors whose shift changes by at most 1.5 s. An edit is a jump between two long runs;
+    // a chance match is a run of one or two
+    const runs = [];
+    chain.forEach((p, i) => {
+        if (i && Math.abs((p.b - p.a) - (chain[i - 1].b - chain[i - 1].a)) <= 1.5) runs[runs.length - 1].push(p);
+        else runs.push([p]);
+    });
+    return [].concat(...runs.filter(r => r.length >= 3));
+}
+
+function align(cues, ref) {
+    if (!cues.length || !ref.length) return null;
+    const pts = anchors(cues, ref);
+    if (pts.length < MIN_ANCHORS) return { anchors: pts.length, cues: null };
+    // overall speed: least squares of caption time on download time
+    const n = pts.length, ma = pts.reduce((x, p) => x + p.a, 0) / n, mb = pts.reduce((x, p) => x + p.b, 0) / n;
+    const speed = pts.reduce((x, p) => x + (p.a - ma) * (p.b - mb), 0) / (pts.reduce((x, p) => x + (p.a - ma) ** 2, 0) || 1);
+    const map = t => {
+        let lo = 0, hi = n - 1;
+        if (t <= pts[0].a) return pts[0].b + (t - pts[0].a) * speed;
+        if (t >= pts[hi].a) return pts[hi].b + (t - pts[hi].a) * speed;
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid].a <= t) lo = mid; else hi = mid; }
+        const p = pts[lo], q = pts[hi], f = q.a > p.a ? (t - p.a) / (q.a - p.a) : 0;
+        return p.b + (q.b - p.b) * f;
+    };
+    const out = cues.map(c => ({ start: map(c.start) - CAPTION_LAG, end: map(c.end) - CAPTION_LAG, text: c.text }))
+        .filter(c => c.end > c.start);
+    return { anchors: n, speed, from: pts[0].b - pts[0].a, to: pts[n - 1].b - pts[n - 1].a, cues: out };
 }
 
 // TV captions: almost no lower-case letters

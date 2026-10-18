@@ -109,18 +109,25 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
-- **Lined up** with the file's own captions, which are in step with the video: on a 0.2 s grid, the shift
-  (±90 s) and speed (1, or 25/23.976 either way, for PAL DVDs) where "someone is talking" overlaps most
-  (overlap / union, at least 0.45). From 60 caption lines (about 4 minutes) and again at 3x as many; until
-  then the captions show. Fewer lines don't work: S1E12's first 20 (the dense "previously on" recap) matched
-  a shift of 59 s at 0.96, and within ±5 s always the edge. Checked 2026-10-18 on S1E12's captions against a
-  copy cut into pairs of lines, shifted and sped to 25 fps: shift and speed found from 60 lines; and end to
-  end through the service (a test file with ALL CAPS lines and a stand-in download shifted 3 s): "TV
-  captions" after 15 lines, shift -3.0 s, overlap 0.95 at 74 lines, later subtitle segments from the
-  download. On the home server the same day, S1E12 played through its remux: TV captions found, signed in (20
-  downloads a day), one download (19 left), "...DVDRip.NonHI.cc.en.BNVST" lined up against 149 caption lines
-  at shift 10.6 s, speed 0.959 (a PAL DVD), overlap 0.87; segment 70 then read "I'd love to." at 6:54.36,
-  the captions' "I'D LOVE TO." at 6:54.58. (That pick was before the source rule above.)
+- **Lined up** with the file's own captions, which are in step with the video, **by their words**: both are
+  transcripts of the same dialogue, so a run of 3 words found in exactly one caption anchors that moment.
+  Anchors must move forward in both files (the longest such chain), and only runs of 3+ anchors whose shift
+  changes by at most 1.5 s count (a chance match of a phrase said twice is a run of one). The shift is
+  followed from anchor to anchor, so a different speed and edits are covered; past the last anchor, the last
+  shift at the anchors' overall speed; 0.25 s earlier than the captions (they come up that late: on 37 s of
+  S1E12 the speech energy lined up best with them shifted 0.25 s). From 20 caption lines (about a minute),
+  again every 40 more.
+  - **Why not one shift:** the first version found one shift and speed (overlap of "someone is talking" on
+    a 0.2 s grid, from 60 lines). S1E14's WEB rip ("...WEBRip.x264-ION10") runs 25/23.976 fast, and on top of
+    that its shift moves 12.0 -> 10.7 s, jumps to 12.4 s at 11 min and to 6.4 s at 14:40 (about 5 s of footage
+    the Amazon file doesn't have): up to 4 s off ("the subs are a bit out of sync", 2026-10-18). S1E13's DVD
+    rip got no fit at all and kept its captions. Broadcast captions run back to back, so "someone is talking"
+    is on almost all the time and many shifts score alike.
+  - **Checked 2026-10-18** on the real files from the home server, lining up with every other caption line and
+    measuring on the lines it never saw: S1E14 WEB rip median error 0.04 s, 90 % within 0.10 s, worst 1.1 s;
+    S1E12 DVD rip median 0.32 s, 90 % within 1.0 s; S1E13 DVD rip median 0.38 s, 90 % within 1.2 s (DVD
+    subtitles reword lines, and part of that is the measurement's own noise). End to end through the service
+    (test file, ALL CAPS lines, a stand-in download in mixed case shifted 3 s): 45 anchors, shift -2.9 s.
 - With no captions to line up with, a hash match is used as it is, and otherwise the best guess as it is.
 
 Not handled: video codecs a browser can't decode (MPEG-4 Part 2/Xvid, VC-1) get an error instead of a

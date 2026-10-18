@@ -31,7 +31,7 @@ class Session {
         this.fetched = null;
         this.ext = null;
         this.better = null;
-        this.fitted = 0;
+        this.fitted = -40;   // caption lines at the last fit (the first at 20)
         this.checked = false;
         fs.mkdirSync(dir, { recursive: true });
     }
@@ -205,8 +205,8 @@ class Session {
         return this.fetched;
     }
 
-    // The download onto the file's own captions' timing, from 60 of their lines (opensubs.js align), again at
-    // 3x as many.
+    // The download onto the file's own captions' timing by their words (opensubs.js align): from 20 caption
+    // lines, again every 40 more, so later edits in the release are followed as the captions come in.
     // No captions in the file: a download for this very file (hash match) as it is, else the best guess.
     fit() {
         const ext = this.ext, tag = `${this.m.hash.slice(0, 8)}:${this.m.index}`;
@@ -217,12 +217,13 @@ class Session {
             return;
         }
         const ref = [...this.cues[0].values()];
-        if (ref.length < 60 || ref.length < this.fitted * 3) return;
+        if (ref.length < 20 || ref.length < this.fitted + 40) return;
         this.fitted = ref.length;
         const a = opensubs.align(ext.cues, ref);
-        console.log(`${tag} OpenSubtitles "${ext.release}" against ${ref.length} caption lines: ` +
-            (a ? `shift ${a.offset.toFixed(1)} s, speed ${a.scale.toFixed(4)}, overlap ${a.score.toFixed(2)}` : 'no fit') + (a && a.cues ? '' : ', keeping the captions'));
-        if (a && a.cues) this.better = a.cues;
+        if (!a) return;
+        console.log(`${tag} OpenSubtitles "${ext.release}" against ${ref.length} caption lines: ${a.anchors} anchors` +
+            (a.cues ? `, speed ${a.speed.toFixed(4)}, shift ${a.from.toFixed(1)} -> ${a.to.toFixed(1)} s` : ', too few, keeping the captions'));
+        if (a.cues) this.better = a.cues;
     }
 
     readCues(k) {

@@ -3,7 +3,7 @@
 //     tracks (with server/remux: the file's English subtitles). It becomes a labelled "CC" button.
 //     Safari only gets them since app.min.js keeps the HLS master when it lists subtitles (README "Changes to
 //     Lampa itself"). English subtitles are on by default.
-//   * F toggles fullscreen. Left/Right seek even while the control bar is up (Lampa moves between its buttons
+//   * F toggles fullscreen, C subtitles. Left/Right seek even while the control bar is up (Lampa moves between its buttons
 //     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
 //     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
 //   * AirPlay: a button next to picture-in-picture, in Safari when an AirPlay screen is around
@@ -114,6 +114,23 @@
         return /^en/i.test(s.language || s.lang || s.srclang || '') || /english/i.test(s.label || '');
     }
 
+    var subsList = null;   // the stream's subtitle tracks, as Lampa got them (its 'subs' event)
+
+    // C: subtitles off if any are on, else on (English, else the first), as Lampa's own menu does it
+    function toggleSubs() {
+        var list = (subsList || []).filter(function (t) { return t.index !== -1; });   // not the menu's "Disabled"
+        if (!list.length) return Lampa.Noty.show('No subtitles in this video');
+        var on = list.some(function (t) { return t.mode === 'showing' || t.selected; });
+        (subsList || []).forEach(function (t) { t.mode = 'disabled'; t.selected = t.index === -1 && on; });
+        if (!on) {
+            var pick = list.filter(isEnglish)[0] || list[0];
+            pick.mode = 'showing';
+            pick.selected = true;
+        }
+        Lampa.PlayerVideo.subsview(!on);
+        Lampa.Noty.show(on ? 'Subtitles off' : 'Subtitles on');
+    }
+
     // English subtitles on by default. Lampa only applies "subtitles on" to tracks the browser reports itself
     // (Safari); with hls.js (Chrome) it lists them and leaves them off, so pick one here for both.
     function autoSubs(subs) {
@@ -194,6 +211,14 @@
             if (full) (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
             else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
         }, true);
+        // C = subtitles on/off (as F is fullscreen)
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'c' && e.key !== 'C' || e.metaKey || e.ctrlKey || e.altKey || !Lampa.Player.opened()) return;
+            if (e.target && /^(input|textarea)$/i.test(e.target.tagName)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            toggleSubs();
+        }, true);
         // Left/Right seek as in every web player. Lampa only seeks with them while its control bar is hidden,
         // and with a mouse the bar is up whenever the pointer moves. Not in menus opened from the player.
         var SEEKING = { player: 1, player_panel: 1, player_rewind: 1 };
@@ -213,6 +238,7 @@
         Lampa.PlayerVideo.listener.follow('subs', function (e) {
             var video = Lampa.PlayerVideo.video();
             if (video) video._rubySubsSeen = true;
+            subsList = e.subs;
             autoSubs(e.subs);
         });
         Lampa.Player.listener.follow('ready', function () {
