@@ -173,6 +173,26 @@ process.on('unhandledRejection', e => console.error('unhandled:', e && e.message
 
 fs.rmSync(cfg.cache, { recursive: true, force: true });
 fs.mkdirSync(cfg.cache, { recursive: true });
-http.createServer((req, res) => {
+const waiting = new Set();   // responses not started yet (most wait for ffmpeg to write a segment)
+const server = http.createServer((req, res) => {
+    waiting.add(res);
+    const orig = res.writeHead;
+    res.writeHead = function () { waiting.delete(res); return orig.apply(this, arguments); };
+    res.on('close', () => waiting.delete(res));
     handle(req, res).catch(e => { console.error(req.url, e.message); if (!res.headersSent) send(res, 500, e.message); else res.end(); });
 }).listen(cfg.port, cfg.host, () => console.log(`lampa-remux on ${cfg.host}:${cfg.port}, TorrServer ${cfg.torrserver}, cache ${cfg.cache}`));
+
+// A deploy restarts this service while people watch (README "Restarts"). Caddy holds new requests until the
+// next process listens and sends a GET again when its connection closes before an answer, so: stop listening,
+// drop the requests still waiting (Caddy asks the next process), let the segments being sent finish, exit.
+// WinSW's stop is a Ctrl+C, which Node sees as SIGINT.
+function shutdown(sig) {
+    console.log(`${sig}: stopping, ${waiting.size} waiting request(s) handed to the next process`);
+    server.close(() => process.exit(0));
+    for (const res of waiting) res.socket && res.socket.destroy();
+    server.closeIdleConnections();
+    for (const p of sessions.values()) p.then(s => s.stop(), () => {});
+    setTimeout(() => process.exit(0), 5000).unref();
+}
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);

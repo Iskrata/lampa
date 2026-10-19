@@ -41,6 +41,28 @@ Node 18+ (no dependencies), plus ffmpeg and ffprobe 8.x. Environment variables:
 
 `node server.js`. On the home server it's a Windows service; see the ruby repo's `scripts/lampa-setup.ps1`.
 
+## Restarts
+
+A deploy restarts this service while people watch, and nobody should notice:
+- **On SIGINT/SIGTERM** (a Windows service stop is a Ctrl+C, which Node sees as SIGINT):
+  1. It stops listening.
+  2. It closes the requests it hasn't started answering. Most of these are waiting for ffmpeg to write a segment.
+  3. It lets the segments it is already sending finish, stops ffmpeg and exits. That takes 0.1 s.
+- **Caddy covers the gap** (`lb_try_duration 30s` on `/gst/`):
+  - A request arriving while nothing listens waits until the next process does.
+  - A GET whose connection closed before an answer is sent again.
+- **The next process starts from the request.** Its cache is empty. It rebuilds the session from the first
+  segment asked for, and the title id in the path brings OpenSubtitles back too (below). The player sees one
+  slow segment.
+
+Tested 2026-10-19 on the Mac, with:
+- Lampa's hls.js 1.4.7 with Lampa's settings, playing Big Buck Bunny from the home server's TorrServer;
+- Caddy 2.11.7 with the home server's `/gst/` route;
+- SIGINT, then a new process at once.
+
+The waiting segment 27 was handed on. Caddy answered the player's retry with it from the new process in
+1.5 s. There was no stall, no error status, and no ffmpeg left behind.
+
 ## How it works
 
 | file | |
