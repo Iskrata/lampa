@@ -101,7 +101,7 @@
                     }
                     list.push(p);
                 });
-                state.list = list.slice(0, 5);
+                state.list = list.slice(0, MAX);
                 state.synced = true;
                 rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
                 if (!fresh && find(state.current)) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
