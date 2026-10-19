@@ -5,6 +5,7 @@
 //   search({ hash, index, url, size, tmdb, kind, name }, lang) -> { id, release, match } | null
 //   download(pick) -> cues; find(f, lang): both
 //   align(cues, ref) -> { cues, anchors, speed, from, to } | null: moved onto the file's own captions' timing
+//   alignTiming(cues, ref, lag) -> the same, or { cues: null, misfit }: another language, by the lines' timing
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -192,7 +193,7 @@ const CAPTION_LAG = 0.25, MIN_ANCHORS = 8;
 
 const spoken = s => (String(s).toLowerCase().replace(/<[^>]+>/g, ' ').replace(/^[a-z .']{2,25}:/gm, ' ').match(/[a-z0-9']+/g)) || [];
 
-function anchors(cues, ref) {
+function wordPairs(cues, ref) {
     const rw = ref.map(c => spoken(c.text)), index = new Map();
     rw.forEach((w, i) => {
         for (let k = 0; k + 3 <= w.length; k++) {
@@ -209,10 +210,72 @@ function anchors(cues, ref) {
             if (e && !e.dup) { out.push({ a: at(c, k, w.length), b: at(ref[e.i], e.k, rw[e.i].length) }); break; }
         }
     }
-    out.sort((x, y) => x.a - y.a);
-    // both times move forward: the longest such chain. Drops chance matches of a common phrase ("you and me"),
-    // above all from the part of the download past the captions read so far (S1E14 at 19 min: a line from
-    // 27:49 matched one at 18:25).
+    return out;
+}
+
+// Pairs from timing alone, for subtitles in another language than the reference: a line's start and those of
+// its neighbours (NEAR on each side) form a pattern of pauses and speech that the reference has once, at the
+// right shift. A pair is a line whose pattern lands on reference starts (within TOL) for at least HITS of its
+// neighbours at one shift and clearly fewer at any other (a different film or a cut gets no such pairs).
+// `speed`: download time x speed = reference time (a 25 fps release of a 23.976 film: 25/23.976).
+const T = { NEAR: 8, TOL: 0.3, HITS: 9, MARGIN: 3, RANGE: 900, GRID: 0.05, WINDOW: 20, PEAKS: 6 };
+const lowerBound = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < x) lo = m + 1; else hi = m; } return lo; };
+function timingPairs(cues, ref, speed) {
+    if (!ref.length) return [];
+    const starts = ref.map(c => c.start).sort((x, y) => x - y), last = starts[starts.length - 1];
+    // which grid cells are within TOL of a reference start: a lookup per neighbour instead of a search
+    const cell = t => Math.round(t / T.GRID), hit = new Uint8Array(cell(last + T.TOL) + 2);
+    for (const t of starts) for (let c = Math.max(0, cell(t - T.TOL)); c <= cell(t + T.TOL); c++) hit[c] = 1;
+    const near = t => t >= 0 && t <= last + T.TOL && hit[cell(t)] === 1;
+    // the shifts worth trying near a line: the PEAKS most common differences between the starts of the lines
+    // around it (WINDOW) and the reference's (a second apart or more). Trying every reference line in RANGE
+    // took 4 s for a film.
+    const peaks = [], bins = Math.round(T.RANGE / 0.2), votes = new Int32Array(2 * bins + 1);
+    for (let w = 0; w < cues.length; w += T.WINDOW) {
+        votes.fill(0);
+        let j0 = 0;
+        for (let k = Math.max(0, w - T.WINDOW); k < Math.min(cues.length, w + 2 * T.WINDOW); k++) {
+            const at = cues[k].start * speed;
+            while (j0 < starts.length && starts[j0] < at - T.RANGE) j0++;
+            for (let j = j0; j < starts.length && starts[j] <= at + T.RANGE; j++) votes[bins + Math.round((starts[j] - at) / 0.2)]++;
+        }
+        const top = [];
+        for (let p = 0; p < T.PEAKS; p++) {
+            let m = -1;
+            for (let d = 0; d < votes.length; d++) if (votes[d] && (m < 0 || votes[d] > votes[m])) m = d;
+            if (m < 0) break;
+            top.push(m);
+            votes.fill(0, Math.max(0, m - 4), m + 5);
+        }
+        peaks.push(top.map(d => (d - bins) * 0.2));
+    }
+    const out = [];
+    cues.forEach((c, i) => {
+        const nb = [];
+        for (let k = Math.max(0, i - T.NEAR); k <= Math.min(cues.length - 1, i + T.NEAR); k++) if (k !== i) nb.push((cues[k].start - c.start) * speed);
+        if (nb.length < T.HITS) return;
+        const at = c.start * speed, cand = [];
+        for (const d of peaks[Math.floor(i / T.WINDOW)]) {
+            let j = lowerBound(starts, at + d - 0.6);
+            for (; j < starts.length && starts[j] <= at + d + 0.6; j++) {
+                let n = 0;
+                for (const o of nb) if (near(starts[j] + o)) n++;
+                cand.push({ b: starts[j], n });
+            }
+        }
+        const best = cand.reduce((x, y) => (!x || y.n > x.n ? y : x), null);
+        // the runner-up at another shift (reference lines less than a second apart are the same moment)
+        const second = cand.reduce((m, y) => (best && Math.abs(y.b - best.b) >= 1 ? Math.max(m, y.n) : m), 0);
+        if (best && best.n >= T.HITS && best.n >= second + T.MARGIN) out.push({ a: c.start, b: best.b, n: best.n });
+    });
+    return out;
+}
+
+// Both times move forward: the longest such chain. Drops chance matches of a common phrase ("you and me"),
+// above all from the part of the download past the captions read so far (S1E14 at 19 min: a line from
+// 27:49 matched one at 18:25).
+function chain(pairs) {
+    const out = pairs.slice().sort((x, y) => x.a - y.a);
     const tails = [], prev = new Array(out.length);
     out.forEach((p, i) => {
         let lo = 0, hi = tails.length;
@@ -220,38 +283,65 @@ function anchors(cues, ref) {
         prev[i] = lo ? tails[lo - 1] : -1;
         tails[lo] = i;
     });
-    const chain = [];
-    for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = prev[i]) chain.unshift(out[i]);
+    const ch = [];
+    for (let i = tails.length ? tails[tails.length - 1] : -1; i >= 0; i = prev[i]) ch.unshift(out[i]);
     // runs: consecutive anchors whose shift changes by at most 1.5 s. An edit is a jump between two long runs;
     // a chance match is a run of one or two
     const runs = [];
-    chain.forEach((p, i) => {
-        if (i && Math.abs((p.b - p.a) - (chain[i - 1].b - chain[i - 1].a)) <= 1.5) runs[runs.length - 1].push(p);
+    ch.forEach((p, i) => {
+        if (i && Math.abs((p.b - p.a) - (ch[i - 1].b - ch[i - 1].a)) <= 1.5) runs[runs.length - 1].push(p);
         else runs.push([p]);
     });
     return [].concat(...runs.filter(r => r.length >= 3));
 }
 
-function align(cues, ref) {
-    if (!cues.length || !ref.length) return null;
-    const pts = anchors(cues, ref);
+// the cues moved along the anchors (download time a -> reference time b), `lag` earlier
+// (past the ends: at `rate`, else the anchors' overall speed)
+function follow(cues, pts, lag, rate) {
     if (pts.length < MIN_ANCHORS) return { anchors: pts.length, cues: null };
     // overall speed: least squares of caption time on download time
     const n = pts.length, ma = pts.reduce((x, p) => x + p.a, 0) / n, mb = pts.reduce((x, p) => x + p.b, 0) / n;
-    const speed = pts.reduce((x, p) => x + (p.a - ma) * (p.b - mb), 0) / (pts.reduce((x, p) => x + (p.a - ma) ** 2, 0) || 1);
+    const speed = rate || pts.reduce((x, p) => x + (p.a - ma) * (p.b - mb), 0) / (pts.reduce((x, p) => x + (p.a - ma) ** 2, 0) || 1);
     const map = t => {
         let lo = 0, hi = n - 1;
         if (t <= pts[0].a) return pts[0].b + (t - pts[0].a) * speed;
         if (t >= pts[hi].a) return pts[hi].b + (t - pts[hi].a) * speed;
         while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (pts[mid].a <= t) lo = mid; else hi = mid; }
         const p = pts[lo], q = pts[hi], f = q.a > p.a ? (t - p.a) / (q.a - p.a) : 0;
+        // between two runs (an edit, chain()): the nearer one's shift. The cut is at one moment, and sliding
+        // from one shift to the other over the gap put the lines in it up to 38 s off (BG TELESYNC, 2026-10-19)
+        if (Math.abs((q.b - q.a) - (p.b - p.a)) > 1.5) return t + (f < 0.5 ? p.b - p.a : q.b - q.a);
         return p.b + (q.b - p.b) * f;
     };
-    const out = cues.map(c => ({ start: map(c.start) - CAPTION_LAG, end: map(c.end) - CAPTION_LAG, text: c.text }))
+    const out = cues.map(c => ({ start: map(c.start) - lag, end: map(c.end) - lag, text: c.text }))
         .filter(c => c.end > c.start);
     // map: download time -> video time, for other languages of the same release (session.js osCues)
     return { anchors: n, speed, from: pts[0].b - pts[0].a, to: pts[n - 1].b - pts[n - 1].a, cues: out,
-        map: t => map(t) - CAPTION_LAG };
+        map: t => map(t) - lag };
+}
+
+function align(cues, ref) {
+    if (!cues.length || !ref.length) return null;
+    return follow(cues, chain(wordPairs(cues, ref)), CAPTION_LAG);
+}
+
+// Another language onto the reference (the file's own English, or English already lined up) by timing, at the
+// frame-rate change a release is most commonly converted by that gives the most anchors. A fit pairs at least
+// MIN_SHARE of the download's lines that land among the reference lines read so far: lining up Nolan's "The Odyssey"
+// with The Asylum's film of the same name (2026-10-19) paired 1-2 % of them by chance (16-22 anchors), real fits
+// 58-80 %. No fit: { cues: null, misfit }, misfit when there was enough English to tell (MIN_REF lines, about
+// 10 min; the real fits worked from 60).
+const SPEEDS = [1, 25 / 23.976, 23.976 / 25, 1.001, 1 / 1.001], MIN_SHARE = 0.2, MIN_REF = 200;
+function alignTiming(cues, ref, lag = 0) {
+    if (!cues.length || !ref.length) return null;
+    let pts = [], rate = 1;
+    for (const s of SPEEDS) { const p = chain(timingPairs(cues, ref, s)); if (p.length > pts.length) { pts = p; rate = s; } }
+    // the lines that land among reference lines (within 10 s of one: after a seek the file's own cover pieces)
+    const r = follow(cues, pts, lag, rate), starts = ref.map(c => c.start).sort((x, y) => x - y);
+    const among = t => { const j = lowerBound(starts, t - 10); return j < starts.length && starts[j] <= t + 10; };
+    const span = r.cues ? r.cues.filter(c => among(c.start)).length : 0;
+    if (r.cues && pts.length >= MIN_SHARE * span) return r;
+    return { anchors: pts.length, cues: null, misfit: ref.length >= MIN_REF };
 }
 
 // TV captions: almost no lower-case letters
@@ -261,4 +351,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, search, download, align, shouting, episodeOf, best, configured: () => !!creds().key };
+module.exports = { find, search, download, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, configured: () => !!creds().key };

@@ -36,6 +36,7 @@ class Session {
         this.picks = {};
         this.found = {};
         this.osLines = {};
+        this.osFit = {};   // per language: { lines: English lines at the last fit, cues }
         // subtitle 0 is English when the file has English ones (media.js puts them first)
         this.english = !!media.subs.length && media.subs[0].lang === 'en';
         this.fitted = -40;   // caption lines at the last fit (the first at 20)
@@ -229,18 +230,34 @@ class Session {
             .catch(e => { console.error(`${this.m.hash.slice(0, 8)}:${this.m.index} ${e.message}`); return null; });
     }
 
-    // Its lines. Made from the same release as the English download, they follow the English onto the video
-    // (fit's map); otherwise as they are.
+    // Its lines on the video's timing. Made from the same release as the English download, they follow the
+    // English (fit's map); otherwise they are lined up by timing with the English in step with the video
+    // (opensubs.js alignTiming): the download lined up, else the file's own, else the download as it is. From
+    // 20 English lines, again every 40 more, like fit(). No fit yet: as they are; none with plenty of English to
+    // go by (another film or cut under the same title): no lines, they would be wrong all along.
     async osCues(lang) {
-        const pick = await this.picks[lang];
+        const pick = await this.picks[lang], tag = `${this.m.hash.slice(0, 8)}:${this.m.index}`;
         if (!pick) return [];
         if (!this.osLines[lang]) {
             this.osLines[lang] = opensubs.download(pick).catch(e => { console.error(e.message); delete this.osLines[lang]; return []; });
-            console.log(`${this.m.hash.slice(0, 8)}:${this.m.index} ${lang} subtitles from OpenSubtitles: "${pick.release}"${pick.match ? ' (made for this file)' : ''}`);
+            console.log(`${tag} ${lang} subtitles from OpenSubtitles: "${pick.release}"${pick.match ? ' (made for this file)' : ''}`);
         }
         const cues = await this.osLines[lang], map = this.fitMap;
         const same = map && this.ext && String(this.ext.release).toLowerCase() === String(pick.release).toLowerCase();
-        return same ? cues.map(c => ({ start: map(c.start), end: map(c.end), text: c.text })).filter(c => c.end > c.start) : cues;
+        if (same) return cues.map(c => ({ start: map(c.start), end: map(c.end), text: c.text })).filter(c => c.end > c.start);
+        if (this.english) this.readCues(0);
+        const ref = this.better || (this.english ? [...this.cues[0].values()].sort((a, b) => a.start - b.start) : []);
+        const fit = this.osFit[lang] || (this.osFit[lang] = { lines: -40, cues });
+        if (ref.length >= 20 && ref.length >= fit.lines + 40) {
+            fit.lines = ref.length;
+            // the file's own TV captions come up late (fit())
+            const a = opensubs.alignTiming(cues, ref, !this.better && shouty.has(this.m.hash) ? opensubs.CAPTION_LAG : 0);
+            console.log(`${tag} ${lang} "${pick.release}" against ${ref.length} English lines by timing: ${a.anchors} anchors` +
+                (a.cues ? `, speed ${a.speed.toFixed(4)}, shift ${a.from.toFixed(1)} -> ${a.to.toFixed(1)} s` : a.misfit ? ', not this video: no lines' : ', no fit yet, as it is'));
+            if (a.cues) fit.cues = a.cues;
+            else if (a.misfit) fit.cues = [];
+        }
+        return fit.cues;
     }
 
     // Once the file's own subtitle 0 has enough lines: TV captions (ALL CAPS) get replaced

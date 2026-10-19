@@ -159,20 +159,62 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
 
 **Bulgarian and Russian** (2026-10-19), for a file without its own in that language. Searched (free) as soon as
 the master is asked for, by the same hash and title; the master waits up to 8 s for the answers and lists a
-track per language found. Downloaded (quota) only when someone picks the track. Its words can't be lined up
-with English captions, so it plays as it is, unless it's of the same release as an English download that was
-lined up: then it follows the same map. Picking, on top of the rules above:
+track per language found. Downloaded (quota) only when someone picks the track. Of the same release as an
+English download that was lined up, it follows the same map; otherwise it's lined up by timing (below).
+Picking, on top of the rules above:
 - **Same title.** OpenSubtitles files other releases under a film's TMDB id: for "The Odyssey" (2026) the
   Bulgarian "The.Odyssey.The.Making.of.an.Epic.2026.1080p.AMZN.WEB-DL...-Kitsune" won on matching tags
   (AMZN, WEB, group) against a file of the film itself. A release whose title (the words before the year or
   episode) has words the file's title doesn't is now last.
 - **Not a cinema copy** (CAM, TS, TELESYNC, TC) unless the file is one: their timing is a cinema
-  recording's. Still used when nothing else exists: for that film the only Russian one,
-  "Odyssey.2026.1080p.TELESYNC.x264-DKS", is out of step (different lines at 10:05).
+  recording's. Still used when nothing else exists (then lined up by timing).
 - **Checked 2026-10-19** through the service and Lampa's player (built-in browser, hls.js) with that WEB-DL
   file: the Bulgarian pick (YTS WEBRip) is within 0.1 s of the file's own English lines at 10:05-10:16
   ("Но сега когато войната свърши" 10:05.15 vs "But now that the war is over" 10:05.25); with Settings →
   Player → Subtitle language set to Bulgarian, it came on by itself. The master took 2 s with both searches.
+
+**Lined up by timing** (`alignTiming`, 2026-10-19). Words can't be matched across languages, but the
+lines' starts can: where people talk and pause is the same in any translation. The reference is English in
+step with the video: the download lined up by words, else the file's own English, else the English download as
+it is. Each line's start and those of its 8 neighbours on each side form a pattern; a pair (download time ->
+video time) is a line whose pattern lands on reference starts (within 0.3 s) for at least 9 of its 16
+neighbours at one shift, and at least 3 fewer at any other. Shifts tried: the most common differences of
+starts around that line (6 peaks of a 0.2 s histogram, up to 15 min either way), each at the speeds a release
+is commonly converted by (1, 25/23.976 and back, 1.001 and back; the one with most pairs wins). From there as
+for words: the longest chain moving forward in both, runs of 3+ whose shift changes by at most 1.5 s, the shift
+followed from anchor to anchor. From 20 English lines, again every 40 more (about 0.15 s each for a film).
+- **Between two runs** (an edit: a shift jump of more than 1.5 s) a line now takes the nearer run's shift
+  instead of sliding from one to the other over the gap (that put lines up to 38 s off below). This applies to
+  the English word fit too; its numbers above were measured before.
+- **No fit** when fewer than 20 % of the download's lines that land among the reference's (within 10 s of one)
+  are paired. With 200+ English lines (about 10 min) read and no fit, it isn't this video: the track shows no
+  lines (log: "not this video"); with fewer, as it is until the next try.
+- **Measured 2026-10-19** (scratch scripts, srt files from OpenSubtitles and the file's own English extracted
+  with ffmpeg):
+  - **Real, two cinema copies of Nolan's "The Odyssey"**: the Bulgarian for "...TELESYNC.x264-DKS" onto the
+    English for "...TELESYNC.HEVC.AAC2.0-SPLiCE". Truth from words: the Bulgarian for SPLiCE is in step with
+    its English, and the two Bulgarian translations share 587 3-word runs, which give DKS -> SPLiCE: +12 s,
+    then +106 s from 5:30, +126 s from 93:50, +140 s from 98:30 (different recordings with different cuts). By
+    timing: 1,019 anchors, 0.15 s. On the 1,402 lines the truth is sure of (its anchors on both sides with the
+    same shift): median error 0.08 s, 90 % within 0.49 s, worst 1.47 s; as it was, 106-140 s. The 365 lines in
+    the 4 jump gaps can't be checked. With only the first 60 English lines (5 min): 29 anchors, median 0.10 s;
+    first 20 (3 min): 6 anchors, no fit yet.
+  - **The file from the task** ("The Odyssey 2026 1080p AMZN WEB-DL DDP5 1 H 264-Kitsune", torrent 51090985)
+    is The Asylum's 86-minute "The Odyssey", not Nolan's 165-minute film that TMDB 1368337 and every Russian
+    subtitle under it are: that's why "Odyssey.2026.1080p.TELESYNC.x264-DKS" showed different lines at 10:05.
+    Against the file's own English it gets 17 chance anchors (no fit, "not this video"); so do the Bulgarian
+    DKS (16) and SPLiCE (22). The Bulgarian pick ("...WEBRip...YTS", 1:22:56 long, "АСИЛУМ ПРЕДСТАВЯ") is of
+    The Asylum's film, filed under Nolan's id: 1,386 anchors, shift 0.02 s, median change 0.01 s.
+  - **Known distortion**: that Bulgarian slowed to 25 fps (x 23.976/25), +7 s, and 5 s cut out at 40 min: speed
+    found 1.0427 (25/23.976), median error 0.013 s, 90 % within 0.023 s, worst 5.0 s (one line at the cut); as it
+    was, 99-201 s. With only pieces of the English (the first 3 min and 60-63 min, as after a seek): 94
+    anchors, median 0.013 s at 60-63 min.
+  - The Russian for DKS is timed to a SPLiCE-like copy already: against SPLiCE's English, shift -0.3 s.
+  - **End to end** through the service (local, TorrServer on the home server, that file with `tmdb=1368337`,
+    segments and both tracks asked for in order to 14 min): the Bulgarian lined up at 20, 61, 101, 141, 182 and
+    223 English lines with 17 to 217 anchors, shift 0.1 s (0.08 s more than against the extracted srt: the session
+    shows the file's own lines in step with the video, mp4.js); "Но сега когато войната свърши" at 10:05.20 vs "But now that" 10:05.17. The Russian:
+    0-12 anchors, as it was until 223 English lines, then "not this video: no lines".
 
 Not handled: video codecs a browser can't decode (MPEG-4 Part 2/Xvid, VC-1) get an error instead of a
 playlist. Dolby Vision profile 5 (no HDR10 base layer) shows wrong colours. Bitmap subtitles (PGS,
