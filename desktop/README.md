@@ -8,6 +8,7 @@ see "Touch devices and phones".
 
 | file | what it does |
 |---|---|
+| `loading.js` | the startup intro (the wordmark, Netflix-style) and the red spinner in place of Lampa's loaders; first, and on every platform |
 | `icons.js` | `rubyIcons.svg(name)`: shared SVG icons (no emoji or text glyphs as icons) |
 | `store.js` | where profiles live (`rubyStore`): a WebDAV folder at `./sync/` if the server has one, else this browser |
 | `profiles.js` | profiles and "Who's watching?" (`rubyProfiles`); must load **before** Lampa, see below |
@@ -351,6 +352,31 @@ What made scrolling laggy in Safari, and what replaced it:
   chips, torrent rows. The top bar is nearly opaque once scrolled, so it has no blur either.
 - **Title hero.** It follows the page scroll by copying Lampa's own transform and CSS transition, so
   there's no `requestAnimationFrame` loop reading styles every frame.
+
+## Loading screens
+
+`loading.js` replaces Lampa's look while things load, on **every platform** (unlike the rest of this folder:
+it's the brand, the user's call 2026-10-19). It runs first, before the other modules.
+
+- **Startup intro**, in place of Lampa's splash picture (`.welcome`, `img/welcome.jpg`, which stays and
+  fades out under it). Black at once; at `DOMContentLoaded` (after the host's `lampa-init.js` has set
+  `window.lampa_brand`) the wordmark's letters drop in one after another, red with a dark fold that
+  brightens as they land (1.5 s). If the app isn't shown yet, a light sweep runs over the letters. When Lampa
+  shows the app (`window.show_app`, set in `app.min.js` `showApp()` as it fades its splash) the view flies
+  into the letters and they burst into ribbons of light (46, crowded in the middle) while the black lifts:
+  1.6 s, the app usable from the start of it (the overlay stops taking clicks). It also ends on Lampa's
+  first-run language picker (`.lang`) and after 15 s whatever happens. Reduced motion: no drop, a plain fade.
+  Where text can't be clipped to a gradient (`@supports`), the letters are plain red.
+- **Timing** (2026-10-19, `tools/dev-server.js` in the built-in browser, ruby over a relayed tailnet,
+  `performance.timing`): `DOMContentLoaded` 0.6 s (most of it the proxied `lampa-init.js`, 0.33 s), app
+  ready 2.2 s, shown 3.2 s (Lampa's own 1 s wait), intro gone ~4.8 s. Lampa's splash would have finished
+  fading at ~3.7 s, so the intro costs about a second at startup when loading takes longer than the intro.
+- **One spinner:** a red arc on a faint red track (Netflix's), as a data-URI SVG with Lampa's 94 px size,
+  over the 14 rules in `css/app.css` that draw `img/loader.svg` (page loads, player buffering, dialogs,
+  episode stills, the Watch button, extensions…; the list is `LOADERS`). Buffering drops Lampa's frosted
+  grey disc: the ring alone over the picture. `facts.js`'s small spinner is the same red.
+- **Not verified in Safari** yet: safaridriver needs Safari → Settings → Developer → "Allow remote
+  automation", which was off on 2026-10-19.
 
 ## Loading
 

@@ -54,6 +54,8 @@ re-encoded, so it's light on the server.
 **See who's watching.** The top bar shows other profiles that are watching right now, and what.
 
 **And:**
+- A Netflix-style intro at startup (the wordmark drops in, then bursts into ribbons of light) and a red
+  spinner wherever Lampa shows one.
 - A featured billboard on Home that rotates through your picks, or what's trending, with its trailer.
 - Apple TV-style dark look, liquid-glass panels, and soft colour light taken from the poster you hover,
   ported from [spotifast](https://github.com/Iskrata/spotifast)'s album-art background.

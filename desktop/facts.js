@@ -17,7 +17,7 @@
         '.ruby-facts__head{font-size:.9em;letter-spacing:.12em;text-transform:uppercase;color:#a3a3a3;margin-bottom:.45em}',
         '.ruby-facts__text{font-size:1.15em;line-height:1.45;transition:opacity .35s}',
         '.ruby-facts__foot{display:flex;align-items:center;gap:.6em;margin-top:.8em;padding-top:.7em;border-top:1px solid rgba(255,255,255,.1);font-size:.95em;color:#a3a3a3}',
-        '.ruby-facts__spin{flex:none;width:1em;height:1em;border-radius:50%;border:2px solid rgba(255,255,255,.18);border-top-color:#e5e5e5;animation:ruby-facts-spin .8s linear infinite}',
+        '.ruby-facts__spin{flex:none;width:1em;height:1em;border-radius:50%;border:2px solid rgba(229,9,20,.2);border-top-color:#e50914;animation:ruby-facts-spin .8s linear infinite}',
         '@keyframes ruby-facts-spin{to{transform:rotate(360deg)}}',
         '.ruby-facts__status{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
         '.ruby-facts__cancel{flex:none;pointer-events:auto;cursor:pointer;padding:.3em .8em;border-radius:.4em;color:#e5e5e5;background:rgba(255,255,255,.08)}',
