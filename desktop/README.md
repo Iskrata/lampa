@@ -293,6 +293,12 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
   needs a URL that works without the browser: on the home server the stream path has no password.
+  On phones Lampa hides that button row and lists its buttons in the panel's "⋯" menu, which presses them
+  with jQuery's `trigger('hover:enter')`: that reaches only jQuery handlers, so ours are bound with jQuery.
+  Before that (until 2026-10-19), picking AirPlay there only closed the menu: a friend's iPhone played
+  fine, but no AirPlay receiver ever requested the stream (`access-public.log`), and a diagnostic beacon on
+  the button never fired. Checked 2026-10-19 in the built-in browser at 375×812: the menu entry now calls
+  the picker, and its icon is 2.7em like Lampa's (icons.js's `1em!important` had made it 11 px).
 
 ## Picked for you
 

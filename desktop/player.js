@@ -14,6 +14,8 @@
 (function () {
     var CSS = [
         '.player-panel__subs svg,.player-panel__airplay svg{width:1.6em;height:1.6em}',
+        // the "⋯" menu on phones copies these icons; icons.js's 1em would beat Lampa's menu icon size
+        '.selectbox-item__icon>.ruby-icon{width:2.7em!important;height:2.7em!important}',
         '.player-panel__subs .ruby-cc-label{margin-left:.35em;font-size:.85em;font-weight:600;letter-spacing:.02em}',
         '.player-panel__subs{display:flex;align-items:center;width:auto!important;padding:0 .6em}',
         '.player-panel__airplay.hide{display:none!important}',
@@ -92,7 +94,9 @@
             last = Date.now();
             fn();
         };
-        btn.addEventListener('hover:enter', go);    // remote / keyboard
+        // remote / keyboard. Through jQuery: on phones the panel's "⋯" menu presses the button with jQuery's
+        // trigger('hover:enter') (app.min.js mobile_more), which skips addEventListener listeners
+        $(btn).on('hover:enter', go);
         btn.addEventListener('click', go);
     }
 
