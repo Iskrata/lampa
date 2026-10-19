@@ -5,15 +5,20 @@
 // rubyAvatars.url(img) -> image URL; rubyAvatars.gallery(host, current, onPick(url|null)).
 // Loaded with profiles.js, before Lampa.
 (function () {
-    // [row title, URL with {} for the key, [[key, character], ...]]; every URL checked to load in Chrome (15 Oct 2026)
+    // [row title, URL with {} for the key, [[key, character], ...]]; every URL checked to load in Chrome (15 Oct 2026; the
+    // Pokémon added 19 Oct 2026 checked with curl, all HTTP 200)
     var ROWS = [
+        ['Pokémon', 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{}.png', [[25, 'Pikachu'],
+            [1, 'Bulbasaur'], [4, 'Charmander'], [7, 'Squirtle'], [39, 'Jigglypuff'], [54, 'Psyduck'], [94, 'Gengar'], [133, 'Eevee'],
+            [143, 'Snorlax'], [150, 'Mewtwo'], [6, 'Charizard'], [9, 'Blastoise'], [3, 'Venusaur'], [26, 'Raichu'], [172, 'Pichu'],
+            [35, 'Clefairy'], [37, 'Vulpix'], [52, 'Meowth'], [58, 'Growlithe'], [79, 'Slowpoke'], [92, 'Gastly'], [104, 'Cubone'],
+            [129, 'Magikarp'], [130, 'Gyarados'], [131, 'Lapras'], [132, 'Ditto'], [149, 'Dragonite'], [151, 'Mew'], [175, 'Togepi'],
+            [196, 'Espeon'], [197, 'Umbreon'], [249, 'Lugia'], [384, 'Rayquaza'], [448, 'Lucario'], [658, 'Greninja'], [700, 'Sylveon'],
+            [778, 'Mimikyu']]],
         ['The Simpsons', 'https://cdn.thesimpsonsapi.com/200/character/{}.webp', [[1, 'Homer'], [2, 'Marge'], [3, 'Bart'],
             [4, 'Lisa'], [5, 'Maggie'], [6, 'Grampa'], [9, 'Ned Flanders'], [13, 'Mr. Burns'], [15, 'Krusty'], [16, 'Moe']]],
         ['Rick and Morty', 'https://rickandmortyapi.com/api/character/avatar/{}.jpeg', [[1, 'Rick'], [2, 'Morty'], [3, 'Summer'],
-            [4, 'Beth'], [5, 'Jerry'], [47, 'Birdperson'], [118, 'Evil Morty'], [242, 'Mr. Meeseeks'], [244, 'Mr. Poopybutthole'], [265, 'Pickle Rick']]],
-        ['Pokémon', 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{}.png', [[25, 'Pikachu'],
-            [1, 'Bulbasaur'], [4, 'Charmander'], [7, 'Squirtle'], [39, 'Jigglypuff'], [54, 'Psyduck'], [94, 'Gengar'], [133, 'Eevee'],
-            [143, 'Snorlax'], [150, 'Mewtwo']]]
+            [4, 'Beth'], [5, 'Jerry'], [47, 'Birdperson'], [118, 'Evil Morty'], [242, 'Mr. Meeseeks'], [244, 'Mr. Poopybutthole'], [265, 'Pickle Rick']]]
     ];
 
     var CSS = [
