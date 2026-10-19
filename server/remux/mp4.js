@@ -2,10 +2,12 @@
 // moof+mdat per video keyframe) into the HLS init segment and fragments with their start time.
 // ffmpeg starts every run's tracks at 0, each on its own; the player needs them at their place in the film,
 // in sync. So each fragment's decode times (tfdt) are moved later:
-//   video by `at.video`: the run starts at that keyframe
+//   video by `at.video`: the run starts at that keyframe, shown the file's reorder delay after it
 //   other tracks by `at.audio` + the video's reorder delay: audio starts where ffmpeg was told to seek, and
 //   is shown in step with the video, which is displayed `delay` after its decode time (B-frames)
-// new Splitter({ onInit(buf), onFragment(videoSeconds, buf) }, { video, audio }).push(chunk); .delay
+// `at.delay` is the file's reorder delay from an earlier run (this run's own is `.delay`); videoSeconds is
+// when the fragment's first keyframe is shown, on the film's timeline (the keyframe index's times).
+// new Splitter({ onInit(buf), onFragment(videoSeconds, buf) }, { video, audio, delay }).push(chunk); .delay
 'use strict';
 
 function boxes(b, start, end, fn) {
@@ -118,8 +120,15 @@ class Splitter {
             const frag = Buffer.concat([this.moof, b]);   // a copy, safe to patch
             const moof = frag.subarray(0, this.moof.length);
             if (this.delay == null) this.delay = firstOffset(moof, this.tracks);
-            const shift = t => t.handler === 'vide' ? this.at.video : this.at.audio + this.delay;
-            this.h.onFragment(retime(moof, this.tracks, shift), frag);
+            // keyframes don't all have the same composition offset (x265 open GOPs: 0.083 s and 0.25 s in one
+            // file), so every run is lined up on the file's own delay (its first run's), not this run's first
+            // keyframe: a run from a later segment then shows its frames when a run from the start would
+            const lead = this.at.delay != null ? this.at.delay : this.delay;
+            const shift = t => t.handler === 'vide' ? this.at.video + lead - this.delay : this.at.audio + lead;
+            const decode = retime(moof, this.tracks, shift);
+            // the keyframe's place in the film is when it is shown, not decoded: by decode time the fragment
+            // starting at 10.427 s came out at 10.26 s and went into the segment before
+            this.h.onFragment(decode + firstOffset(moof, this.tracks) - lead, frag);
             this.moof = null;
         }
     }

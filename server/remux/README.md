@@ -102,6 +102,14 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
     file). Without this, audio was 0.3 s off the picture.
   - Checked against ffmpeg's MPEG-TS output with `-copyts`, which keeps the source times: equal to within
     one sample.
+- **Keyframes don't all have the same reorder delay.** In an x265 open-GOP file (*Gladiator* 2000, HDR10,
+  2026-10-19) the first keyframe is shown 0.083 s after its decode time and the one at 10.427 s 0.25 s after.
+  - Fragments are therefore placed by when their keyframe is *shown* (decode time + its composition offset
+    − the file's delay), which is what the keyframe index lists. By decode time the 10.427 s fragment came
+    out at 10.26 s and went into segment 0: every segment then held other times than the playlist said
+    (seg0 0–20.8 s for 0–10.4 s, seg3 overlapping seg2).
+  - Every run lines its video up on the file's delay (the first run's), not its own first keyframe's, so a
+    run started at a 0.25 s keyframe doesn't show the picture 0.17 s late.
 - **E-AC3 can't be copied into HLS fMP4.** ffmpeg's HLS muxer fails with "Cannot write moov atom before
   EAC3 packets parsed". Audio is therefore AAC: 5.1 kept at 384 kbit/s, otherwise stereo at 192 kbit/s.
   That also plays in Chrome, which has no E-AC3.

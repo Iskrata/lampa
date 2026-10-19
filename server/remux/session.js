@@ -85,7 +85,7 @@ class Session {
         j.subFiles = subFiles;
         j.proc = spawn(cfg.ffmpeg, ffmpegArgs(m, m.bounds[n], { subFiles }), { stdio: ['ignore', 'pipe', 'pipe'] });
         const splitter = new Splitter({ onInit: () => {}, onFragment: (t, buf) => this.fragment(j, t, buf) },
-            { video: m.bounds[n], audio: seekTime(m, m.bounds[n]) - m.audioLead });
+            { video: m.bounds[n], audio: seekTime(m, m.bounds[n]) - m.audioLead, delay: this.delay });
         j.splitter = splitter;
         j.proc.stdout.on('data', c => { try { splitter.push(c); } catch (e) { console.error(e); j.proc.kill(); } });
         let err = '';
