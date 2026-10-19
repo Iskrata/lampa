@@ -1,6 +1,6 @@
-// What to play from one torrent file: streams picked (video, English audio, English text subtitles), the
-// segment plan (cut at keyframes from the file's own index: Matroska Cues or the MP4 moov, else every
-// SEGMENT_S), and the ffmpeg arguments that turn it into fragmented MP4 a browser plays (video copied,
+// What to play from one torrent file: streams picked (video, English audio, English/Bulgarian/Russian text
+// subtitles), the segment plan (cut at keyframes from the file's own index: Matroska Cues or the MP4 moov,
+// else every SEGMENT_S), and the ffmpeg arguments that turn it into fragmented MP4 a browser plays (video copied,
 // audio AAC unless it already is).
 'use strict';
 const { execFile } = require('child_process');
@@ -10,10 +10,14 @@ const cfg = require('./config');
 
 const SEGMENT_S = 4;
 const TEXT_SUBS = new Set(['subrip', 'ass', 'ssa', 'webvtt', 'mov_text', 'text']);
-// a stream in a language: 'en' / 'ja' (ISO 639-1), matched against the 2- and 3-letter tags and track titles
-const LANGS = { en: /^(en|eng)$|english/i, ja: /^(ja|jpn)$|japanese/i };
+// a stream in a language (ISO 639-1), matched against the 2- and 3-letter tags and track titles
+const LANGS = { en: /^(en|eng)$|english/i, ja: /^(ja|jpn)$|japanese/i, bg: /^(bg|bul)$|bulgarian|българск/i,
+    ru: /^(ru|rus)$|russian|русск/i };
+// the subtitle languages offered, in the order the player lists them
+const SUB_LANGS = ['en', 'bg', 'ru'];
 const inLang = (s, lang) => (LANGS[lang] || LANGS.en).test((s.tags && s.tags.language) || '') || (LANGS[lang] || LANGS.en).test((s.tags && s.tags.title) || '');
 const english = s => inLang(s, 'en');
+const subLang = s => SUB_LANGS.find(l => inLang(s, l));
 const commentary = s => /comment/i.test((s.tags && s.tags.title) || '') || (s.disposition && s.disposition.comment);
 
 function ffprobe(url) {
@@ -70,7 +74,10 @@ async function load(hash, index, lang) {
     if (!video) throw new Error('no video stream');
     if (!PLAYABLE_VIDEO.has(video.codec_name)) throw new Error('video codec not playable in a browser: ' + video.codec_name);
     const audio = pickAudio(streams, lang);
-    const subs = streams.filter(s => s.codec_type === 'subtitle' && TEXT_SUBS.has(s.codec_name) && english(s));
+    // English first (subtitle 0 is the one OpenSubtitles' are lined up with), then Bulgarian, Russian
+    const subs = streams.filter(s => s.codec_type === 'subtitle' && TEXT_SUBS.has(s.codec_name) && subLang(s))
+        .map(s => Object.assign({ lang: subLang(s) }, s))
+        .sort((x, y) => SUB_LANGS.indexOf(x.lang) - SUB_LANGS.indexOf(y.lang));
     const duration = parseFloat(info.format.duration) || 0;
     if (!duration) throw new Error('unknown duration');
     const bitrate = parseInt(info.format.bit_rate, 10) || 8e6;
@@ -120,4 +127,4 @@ function ffmpegArgs(m, start, opts) {
     return a;
 }
 
-module.exports = { load, ffmpegArgs, seekTime };
+module.exports = { load, ffmpegArgs, seekTime, SUB_LANGS };

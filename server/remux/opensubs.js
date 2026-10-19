@@ -1,7 +1,9 @@
-// Better English subtitles from OpenSubtitles (server/remux/README.md, "Subtitles from OpenSubtitles"), for a
-// file whose own are TV captions (ALL CAPS, cut into 1-2 s pieces) or that has none. Downloads cost quota
-// (OpenSubtitles counts them per account per day), so each is made once and kept in cfg.subs for everyone.
-//   find({ hash, index, url, size, tmdb, kind, name }) -> { id, release, match, cues } | null
+// Subtitles from OpenSubtitles (server/remux/README.md, "Subtitles from OpenSubtitles"): better English ones
+// for a file whose own are TV captions (ALL CAPS, cut into 1-2 s pieces) or that has none, and Bulgarian and
+// Russian ones for a file without its own. Downloads cost quota (OpenSubtitles counts them per account per
+// day), so each is made once, only when wanted, and kept in cfg.subs for everyone.
+//   search({ hash, index, url, size, tmdb, kind, name }, lang) -> { id, release, match } | null
+//   download(pick) -> cues; find(f, lang): both
 //   align(cues, ref) -> { cues, anchors, speed, from, to } | null: moved onto the file's own captions' timing
 'use strict';
 const fs = require('fs');
@@ -82,11 +84,26 @@ function tags(s) {
     return new Set(w.filter(x => TAGS.test(x)).concat(group ? ['group:' + group.toLowerCase()] : []));
 }
 
-// the subtitle most likely to fit this file: the same file (hash) first, then the same source (WEB vs DVD
-// timings and cuts differ) and tags, not for the hearing impaired ([door slams]), then the most downloaded
+// the title part of a release name, before the year or episode: a release of something else filed under the
+// same TMDB id ("The.Odyssey.The.Making.of.an.Epic.2026...-Kitsune" under The Odyssey, 2026-10-19) has words
+// the file's title doesn't
+function titleWords(s) {
+    const w = String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const end = w.findIndex((x, i) => i && (/^(19|20)\d\d$/.test(x) || /^s\d+e\d+$/.test(x) || /^\d+x\d+$/.test(x)));
+    return end > 0 ? w.slice(0, end) : null;
+}
+// recorded in a cinema: the timing of a cinema copy, not of a WEB or disc release
+const CAM = /\b(cam|hdcam|camrip|ts|hdts|telesync|tc|telecine)\b/i;
+
+// the subtitle most likely to fit this file: the same file (hash) first, then the same title, the same source
+// (WEB vs DVD timings and cuts differ) and tags, not from a cinema copy, not for the hearing impaired ([door
+// slams]), then the most downloaded
 function best(list, name) {
     const file = path.basename(name || ''), mine = tags(file), src = source(file);
+    const title = new Set(titleWords(file.replace(/[._]/g, ' ')) || []);
+    const other = r => { const w = titleWords(r); return !!(title.size && w && w.some(x => !title.has(x))); };
     const score = a => (a.moviehash_match ? 1000 : 0) +
+        (other(a.release) ? -100 : 0) + (CAM.test(String(a.release).replace(/[._-]/g, ' ')) && !CAM.test(file.replace(/[._-]/g, ' ')) ? -30 : 0) +
         (src && source(a.release) === src ? 40 : 0) +
         [...tags(a.release)].filter(w => mine.has(w)).length * 10 +
         (a.hearing_impaired ? -15 : 0) + (a.from_trusted ? 5 : 0) + Math.log10(1 + (a.download_count || 0));
@@ -108,36 +125,56 @@ function parseSrt(text) {
     return cues;
 }
 
-async function find(f) {
+// OpenSubtitles' hash of one torrent file, worked out once (two reads of 64 KiB from the torrent)
+const hashes = new Map();
+function fileHash(f) {
+    const key = `${f.hash}:${f.index}`;
+    if (!hashes.has(key)) hashes.set(key, moviehash(f.url, f.size).catch(() => null));
+    return hashes.get(key);
+}
+
+// The best subtitle in one language for this torrent file: { id, release, match } | null. A search costs no
+// quota; a pick is kept per torrent file and language.
+async function search(f, lang) {
     const c = creds();
     if (!c.key || !f.tmdb) return null;
     const ep = f.kind === 'tv' ? episodeOf(f.name) : null;
     if (f.kind === 'tv' && !ep) return null;
-    const hash = await moviehash(f.url, f.size).catch(() => null);
-    const cacheFile = path.join(cfg.subs, `pick-${f.hash}-${f.index}.json`);
+    const cacheFile = path.join(cfg.subs, `pick-${f.hash}-${f.index}-${lang}.json`);
     try { return JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch (e) { /* not picked yet */ }
+    const hash = await fileHash(f);
     // the API answers only with its parameters in alphabetical order (else a redirect)
-    const q = Object.assign({ languages: 'en' }, hash ? { moviehash: hash } : {},
+    const q = Object.assign({ languages: lang }, hash ? { moviehash: hash } : {},
         f.kind === 'tv' ? { parent_tmdb_id: f.tmdb, season_number: ep.season, episode_number: ep.episode } : { tmdb_id: f.tmdb });
     const qs = Object.keys(q).sort().map(k => `${k}=${encodeURIComponent(q[k])}`).join('&');
     const found = await request(API, '/subtitles?' + qs, {});
     const pick = best(found.data || [], f.name);
-    if (!pick) { console.log(`opensubtitles: nothing for ${qs}`); return null; }
-    const a = pick.attributes, fileId = a.files[0].file_id;
-    const srtFile = path.join(cfg.subs, `os-${fileId}.srt`);
+    if (!pick) console.log(`opensubtitles: nothing for ${qs}`);
+    const a = pick && pick.attributes;
+    const out = pick ? { id: a.files[0].file_id, release: a.release, match: !!a.moviehash_match } : null;
+    // nothing found is asked again next time: subtitles get uploaded after a release
+    if (out) { fs.mkdirSync(cfg.subs, { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify(out)); }
+    return out;
+}
+
+// a picked subtitle's lines: downloaded once (counts against the daily quota), then from cfg.subs
+async function download(pick) {
+    const srtFile = path.join(cfg.subs, `os-${pick.id}.srt`);
     let srt;
     try { srt = fs.readFileSync(srtFile, 'utf8'); } catch (e) {
         const s = await session();
-        const dl = await request(s.base, '/download', { body: { file_id: fileId }, token: s.token });
+        const dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token });
         srt = await (await fetch(dl.link)).text();
         fs.mkdirSync(cfg.subs, { recursive: true });
         fs.writeFileSync(srtFile, srt);
-        console.log(`opensubtitles: downloaded ${fileId} "${a.release}" (${dl.remaining} downloads left today)`);
+        console.log(`opensubtitles: downloaded ${pick.id} "${pick.release}" (${dl.remaining} downloads left today)`);
     }
-    const out = { id: fileId, release: a.release, match: !!a.moviehash_match, cues: parseSrt(srt) };
-    fs.mkdirSync(cfg.subs, { recursive: true });
-    fs.writeFileSync(cacheFile, JSON.stringify(out));
-    return out;
+    return parseSrt(srt);
+}
+
+async function find(f, lang) {
+    const pick = await search(f, lang);
+    return pick && Object.assign({ cues: await download(pick) }, pick);
 }
 
 // The downloaded lines moved onto the file's own captions, which are in step with the video. Both are
@@ -212,7 +249,9 @@ function align(cues, ref) {
     };
     const out = cues.map(c => ({ start: map(c.start) - CAPTION_LAG, end: map(c.end) - CAPTION_LAG, text: c.text }))
         .filter(c => c.end > c.start);
-    return { anchors: n, speed, from: pts[0].b - pts[0].a, to: pts[n - 1].b - pts[n - 1].a, cues: out };
+    // map: download time -> video time, for other languages of the same release (session.js osCues)
+    return { anchors: n, speed, from: pts[0].b - pts[0].a, to: pts[n - 1].b - pts[n - 1].a, cues: out,
+        map: t => map(t) - CAPTION_LAG };
 }
 
 // TV captions: almost no lower-case letters
@@ -222,4 +261,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, align, shouting, episodeOf, best, configured: () => !!creds().key };
+module.exports = { find, search, download, align, shouting, episodeOf, best, configured: () => !!creds().key };

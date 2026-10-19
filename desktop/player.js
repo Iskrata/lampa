@@ -1,8 +1,9 @@
 // The player's control bar (desktop/README.md, "Player"):
 //   * Subtitles: Lampa's button is a speech-bubble icon that only appears once a stream reports subtitle
-//     tracks (with server/remux: the file's English subtitles). It becomes a labelled "CC" button.
+//     tracks (with server/remux: English, Bulgarian and Russian ones). It becomes a labelled "CC" button.
 //     Safari only gets them since app.min.js keeps the HLS master when it lists subtitles (README "Changes to
-//     Lampa itself"). English subtitles are on by default.
+//     Lampa itself"). On by default, in Settings → Player → Subtitle language (English unless chosen; those
+//     three are at the top of its list).
 //   * F toggles fullscreen, C subtitles. Left/Right seek even while the control bar is up (Lampa moves between its buttons
 //     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
 //     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
@@ -110,20 +111,42 @@
         });
     }
 
-    function isEnglish(s) {
-        return /^en/i.test(s.language || s.lang || s.srclang || '') || /english/i.test(s.label || '');
+    // the subtitle languages server/remux offers, first in Settings → Player → Subtitle language
+    var SUB_LANGS = { en: /english/i, bg: /bulgarian|българ/i, ru: /russian|русск/i };
+
+    // a track in a language: Safari's text tracks have it, hls.js's (as Lampa lists them) only the name
+    function inLang(s, code) {
+        var tag = s.language || s.lang || s.srclang || '';
+        return tag ? tag.slice(0, 2).toLowerCase() === code : !!(SUB_LANGS[code] && SUB_LANGS[code].test(s.label || ''));
+    }
+
+    // the profile's subtitle language ("auto": English), else English, else the first
+    function preferred(list) {
+        var want = Lampa.Storage.field('subtitles_lang');
+        if (!want || want === 'auto') want = 'en';
+        var byLang = function (code) { return list.filter(function (t) { return inLang(t, code); })[0]; };
+        return byLang(want) || byLang('en') || list[0];
+    }
+
+    function subLangsFirst() {
+        var values = Lampa.Params.values && Lampa.Params.values.subtitles_lang;
+        if (!values) return;
+        var ordered = { auto: values.auto };
+        Object.keys(SUB_LANGS).forEach(function (code) { if (values[code]) ordered[code] = values[code]; });
+        Object.keys(values).forEach(function (code) { if (!(code in ordered)) ordered[code] = values[code]; });
+        Lampa.Params.values.subtitles_lang = ordered;
     }
 
     var subsList = null;   // the stream's subtitle tracks, as Lampa got them (its 'subs' event)
 
-    // C: subtitles off if any are on, else on (English, else the first), as Lampa's own menu does it
+    // C: subtitles off if any are on, else on (the profile's language, see preferred), as Lampa's own menu does it
     function toggleSubs() {
         var list = (subsList || []).filter(function (t) { return t.index !== -1; });   // not the menu's "Disabled"
         if (!list.length) return Lampa.Noty.show('No subtitles in this video');
         var on = list.some(function (t) { return t.mode === 'showing' || t.selected; });
         (subsList || []).forEach(function (t) { t.mode = 'disabled'; t.selected = t.index === -1 && on; });
         if (!on) {
-            var pick = list.filter(isEnglish)[0] || list[0];
+            var pick = preferred(list);
             pick.mode = 'showing';
             pick.selected = true;
         }
@@ -131,14 +154,13 @@
         Lampa.Noty.show(on ? 'Subtitles off' : 'Subtitles on');
     }
 
-    // English subtitles on by default. Lampa only applies "subtitles on" to tracks the browser reports itself
-    // (Safari); with hls.js (Chrome) it lists them and leaves them off, so pick one here for both.
+    // Subtitles on by default, in the profile's language. Lampa only applies "subtitles on" to tracks the
+    // browser reports itself (Safari); with hls.js (Chrome) it lists them and leaves them off, so pick one here
+    // for both.
     function autoSubs(subs) {
         if (!subs || !subs.length || !Lampa.Storage.field('subtitles_start')) return;
         for (var i = 0; i < subs.length; i++) if (subs[i].selected || subs[i].mode === 'showing') return;
-        var want = Lampa.Storage.field('subtitles_lang'), pick = null;
-        if (want === 'en' || want === 'auto') for (var k = 0; k < subs.length && !pick; k++) if (isEnglish(subs[k])) pick = subs[k];
-        pick = pick || subs[0];
+        var pick = preferred(subs);
         pick.mode = 'showing';
         pick.selected = true;
         Lampa.PlayerVideo.subsview(true);
@@ -233,6 +255,7 @@
         // English unless the profile chose otherwise (Lampa's defaults, so Settings → Player still decides)
         Lampa.Params.defaults.subtitles_start = true;
         Lampa.Params.defaults.subtitles_lang = 'en';
+        subLangsFirst();
         Lampa.Params.defaults.player_rewind = '10';
         seekWithoutPause();
         Lampa.PlayerVideo.listener.follow('subs', function (e) {

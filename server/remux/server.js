@@ -3,8 +3,10 @@
 // storage key torrserver_gts), so Lampa needs no changes. Serve it at <torrserver url>/gst/:
 //   GET /gst/echo                                  -> JSON (Lampa checks this before using /gst/)
 //   GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja] -> HLS master (video + audio in that language, English by
-//                                                     default + English subtitles, on by themselves when the audio isn't English)
-//   GET /gst/<hash>/<file>.<lang>/video.m3u8, init.mp4, seg<n>.m4s, sub<k>.m3u8, sub<k>-<n>.vtt
+//                                                     default + English/Bulgarian/Russian subtitles, English on by
+//                                                     themselves when the audio isn't English)
+//   GET /gst/<hash>/<file>.<lang>/video.m3u8, init.mp4, seg<n>.m4s, <track>.m3u8, <track>-<n>.vtt
+//                                                     (track: sub<k> the file's own, os<lang> from OpenSubtitles)
 //   GET /gst/<hash>/heartbeat                      -> TorrServer's stats for the player's info panel
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
@@ -25,7 +27,7 @@ function session(hash, index, lang) {
         const p = media.load(hash, index, lang).then(m => {
             const s = new Session(m, path.join(cfg.cache, `${hash}-${index}-${lang}`));
             console.log(`${hash.slice(0, 8)}:${index} ${m.video.codec_name} ${m.resolution}, audio ${m.audio ? m.audio.codec_name + ' ' + ((m.audio.tags || {}).language || '?') : 'none'}` +
-                `, ${m.subs.length} English subtitles, ${m.bounds.length - 1} segments (${m.cuesUsed ? 'keyframes' : 'fixed'})`);
+                `, subtitles ${m.subs.map(x => x.lang).join(' ') || 'none'}, ${m.bounds.length - 1} segments (${m.cuesUsed ? 'keyframes' : 'fixed'})`);
             return s;
         });
         p.catch(e => { console.error(`${key}: ${e.message}`); sessions.delete(key); });
@@ -51,20 +53,26 @@ async function describe(s, hash, tmdb, kind) {
     s.describe({ tmdb, kind: kind === 'movie' ? 'movie' : 'tv', name: f.path || '', size: f.length || 0 });
 }
 
+const LANG_NAMES = { en: 'English', bg: 'Bulgarian', ru: 'Russian' };
+
 function master(s) {
     // the title rides along in every path (<file>.<lang>.<kind><tmdb>/): a session made again from a segment
     // request (after a restart the player carries on without asking for the master) still knows the episode
-    const src = s.source, m = s.m, n = s.subtitleCount();
+    const src = s.source, m = s.m, tracks = s.tracks();
     const base = `${m.index}.${m.lang}${src ? '.' + (src.kind === 'movie' ? 'm' : 't') + src.tmdb : ''}/`;
     const lines = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-INDEPENDENT-SEGMENTS'];
-    // with no subtitles of its own, the one from OpenSubtitles (session.js betterSubs)
-    (m.subs.length ? m.subs : n ? [{}] : []).forEach((sub, k) => {
-        const name = ((sub.tags && sub.tags.title) || 'English').replace(/"/g, '');
-        lines.push(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${name || 'English'} ${k + 1}",LANGUAGE="en",` +
-            `DEFAULT=${m.subsOn && k === 0 ? 'YES' : 'NO'},AUTOSELECT=${k === 0 ? 'YES' : 'NO'},FORCED=NO,URI="${base}sub${k}.m3u8"`);
+    // the menu shows NAME, which must be unique; the player picks by LANGUAGE (desktop/player.js)
+    const names = new Set();
+    tracks.forEach((t, k) => {
+        let name = LANG_NAMES[t.lang] + (t.title && !/^(english|bulgarian|russian)$/i.test(t.title) ? ` (${t.title.replace(/"/g, '')})` : '');
+        for (let i = 2; names.has(name); i++) name = `${LANG_NAMES[t.lang]} ${i}`;
+        names.add(name);
+        const first = tracks.findIndex(x => x.lang === t.lang) === k;
+        lines.push(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="${name}",LANGUAGE="${t.lang}",` +
+            `DEFAULT=${m.subsOn && k === 0 && t.lang === 'en' ? 'YES' : 'NO'},AUTOSELECT=${first ? 'YES' : 'NO'},FORCED=NO,URI="${base}${t.id}.m3u8"`);
     });
     lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${m.bandwidth},CODECS="${m.codecs}"` +
-        (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + (n ? ',SUBTITLES="subs"' : ''));
+        (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + (tracks.length ? ',SUBTITLES="subs"' : ''));
     lines.push(`${base}video.m3u8`);
     return lines.join('\n') + '\n';
 }
@@ -133,9 +141,8 @@ async function handle(req, res) {
     if (a === 'master.m3u8') {
         const s = await session(hash, url.searchParams.get('index') || '1', lang(url.searchParams.get('lang')));
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
-        // a file without subtitles of its own waits a little for OpenSubtitles: the master lists them or not
-        const wait = !s.m.subs.length && s.fetched ? Promise.race([s.fetched, new Promise(r => setTimeout(r, 8000))]) : null;
-        await Promise.all([s.init(), wait]);   // ready before the player asks for it
+        // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
+        await Promise.all([s.init(), s.ready()]);   // ready before the player asks for it
         return send(res, 200, master(s), TYPES.m3u8);
     }
 
@@ -147,8 +154,8 @@ async function handle(req, res) {
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
     if (b === 'init.mp4') return sendFile(res, await s.init());
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) return sendFile(res, await s.segment(+m[1]));
-    if ((m = /^sub(\d+)\.m3u8$/.exec(b)) && +m[1] < s.subtitleCount()) return send(res, 200, playlist(s, i => `sub${m[1]}-${i}.vtt`), TYPES.m3u8);
-    if ((m = /^sub(\d+)-(\d+)\.vtt$/.exec(b)) && +m[1] < s.subtitleCount()) return send(res, 200, await s.subtitle(+m[1], +m[2]), TYPES.vtt);
+    if ((m = /^(sub\d+|os[a-z]{2})\.m3u8$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, playlist(s, i => `${m[1]}-${i}.vtt`), TYPES.m3u8);
+    if ((m = /^(sub\d+|os[a-z]{2})-(\d+)\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitle(m[1], +m[2]), TYPES.vtt);
     return send(res, 404, 'not found');
 }
 

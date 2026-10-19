@@ -5,8 +5,9 @@ starts in Safari: Lampa's player just spins. This service repackages what TorrSe
 
 - **Video:** copied as is, no re-encoding.
 - **Audio:** English, converted to AAC.
-- **Subtitles:** the file's English text subtitles as WebVTT; better ones from OpenSubtitles when the file's
-  are TV captions (ALL CAPS) or missing ("Subtitles from OpenSubtitles" below).
+- **Subtitles:** English, Bulgarian and Russian, in that order: the file's own text subtitles as WebVTT, and
+  from OpenSubtitles in a language the file has none in, or in place of English TV captions (ALL CAPS)
+  ("Subtitles from OpenSubtitles" below).
 
 Safari plays it natively (so AirPlay works), Chrome plays it through Lampa's hls.js, and seeking works
 everywhere.
@@ -18,9 +19,9 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | request | answer |
 |---|---|
 | `GET /gst/echo` | JSON. Lampa checks it before using `/gst/` (app.min.js `gstCheck`, it parses JSON) |
-| `GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja][&tmdb=<id>&kind=tv\|movie]` | HLS master: one video+audio stream (English audio, or the `lang` asked for: `ja`), English subtitle tracks, on by default when the audio isn't English |
+| `GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja][&tmdb=<id>&kind=tv\|movie]` | HLS master: one video+audio stream (English audio, or the `lang` asked for: `ja`), English/Bulgarian/Russian subtitle tracks (`NAME` English/Bulgarian/Russian, `LANGUAGE` en/bg/ru), English on by default when the audio isn't English |
 | `GET /gst/<hash>/<file>.<lang>/video.m3u8`, `init.mp4`, `seg<n>.m4s` | the stream |
-| `GET /gst/<hash>/<file>.<lang>/sub<k>.m3u8`, `sub<k>-<n>.vtt` | subtitles |
+| `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer |
 
@@ -133,6 +134,23 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
     subtitles reword lines, and part of that is the measurement's own noise). End to end through the service
     (test file, ALL CAPS lines, a stand-in download in mixed case shifted 3 s): 45 anchors, shift -2.9 s.
 - With no captions to line up with, a hash match is used as it is, and otherwise the best guess as it is.
+
+**Bulgarian and Russian** (2026-10-19), for a file without its own in that language. Searched (free) as soon as
+the master is asked for, by the same hash and title; the master waits up to 8 s for the answers and lists a
+track per language found. Downloaded (quota) only when someone picks the track. Its words can't be lined up
+with English captions, so it plays as it is, unless it's of the same release as an English download that was
+lined up: then it follows the same map. Picking, on top of the rules above:
+- **Same title.** OpenSubtitles files other releases under a film's TMDB id: for "The Odyssey" (2026) the
+  Bulgarian "The.Odyssey.The.Making.of.an.Epic.2026.1080p.AMZN.WEB-DL...-Kitsune" won on matching tags
+  (AMZN, WEB, group) against a file of the film itself. A release whose title (the words before the year or
+  episode) has words the file's title doesn't is now last.
+- **Not a cinema copy** (CAM, TS, TELESYNC, TC) unless the file is one: their timing is a cinema
+  recording's. Still used when nothing else exists: for that film the only Russian one,
+  "Odyssey.2026.1080p.TELESYNC.x264-DKS", is out of step (different lines at 10:05).
+- **Checked 2026-10-19** through the service and Lampa's player (built-in browser, hls.js) with that WEB-DL
+  file: the Bulgarian pick (YTS WEBRip) is within 0.1 s of the file's own English lines at 10:05-10:16
+  ("Но сега когато войната свърши" 10:05.15 vs "But now that the war is over" 10:05.25); with Settings →
+  Player → Subtitle language set to Bulgarian, it came on by itself. The master took 2 s with both searches.
 
 Not handled: video codecs a browser can't decode (MPEG-4 Part 2/Xvid, VC-1) get an error instead of a
 playlist. Dolby Vision profile 5 (no HDR10 base layer) shows wrong colours. Bitmap subtitles (PGS,

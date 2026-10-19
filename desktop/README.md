@@ -246,8 +246,11 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
 - **Better subtitles.** When a file's English subtitles are TV captions (ALL CAPS) or missing, the remux
   service swaps in ones from OpenSubtitles, lined up with the file (server/remux/README.md, "Subtitles from
   OpenSubtitles"). `play.js` adds the title's TMDB id to the stream URL for it.
-- **English subtitles on by default.** `player.js` sets Lampa's defaults for Settings → Player → Subtitles
-  (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps its choice.
+- **Subtitles on by default, in the profile's language.** `player.js` sets Lampa's defaults for Settings →
+  Player → Subtitles (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps
+  its choice. English, Bulgarian and Russian (what the remux service offers) are at the top of that list, and
+  the track in the chosen language comes on, else English, else the first. hls.js tracks reach Lampa with
+  only a name, so the language is read from it ("Bulgarian"); Safari's have the language code.
   Lampa itself only switches on tracks the browser reports (Safari); with hls.js (Chrome) it lists them and
   leaves them off, so `player.js` picks the English one (or the first) when the list arrives. Tracks Safari
   adds after `loadeddata` (when Lampa looks) are passed on too.
@@ -283,8 +286,8 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   episode or with "Next episode" off. The user asked for it "when the episode ends" (2026-10-18), not at
   the credits: credits times exist only for some shows (TheIntroDB). Checked 2026-10-18 in the built-in
   browser with a two-item playlist: card at 0:10 left, counted down, item 2 started at the end.
-- **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: English, else the
-  first track), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
+- **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: the profile's language as
+  above), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
   in the built-in browser: the subtitle layer went away and came back with the downloaded text.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
