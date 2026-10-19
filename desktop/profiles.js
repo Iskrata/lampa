@@ -18,6 +18,7 @@
         'recomends_list', 'recomends_scan', 'mine_reactions', 'user_clarifys', 'person_subscribes_id', 'discuss_voited', 'activity'];
     var OWN_PREFIX = ['file_view_', 'trakt', 'ruby_ratings'];
     var SHARED = ['trakt_client_id', 'trakt_client_secret'];
+    var MAX = 10;
     var NOT_SYNCED = /cache|_log$|debug/;   // per profile, but rebuilt on their own: not worth uploading
     var COLORS = ['#2f6fdf', '#e50914', '#1f9d55', '#8b3fd9', '#e8730c', '#0e9aa7'];
     var UPLOAD_MS = 15000;
@@ -245,7 +246,7 @@
             el.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
             list.appendChild(el);
         });
-        if (state.list.length < 5) {
+        if (state.list.length < MAX) {
             var add = document.createElement('div');
             add.className = 'ruby-who__p ruby-who__add';
             add.tabIndex = 0;

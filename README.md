@@ -12,7 +12,7 @@ artwork.
 
 ## What it adds
 
-**Profiles, like Netflix.** "Who's watching?" on the first visit, up to five profiles, each with its own
+**Profiles, like Netflix.** "Who's watching?" on the first visit, up to ten profiles, each with its own
 avatar colour. Every profile has its own My List, watch history and progress, search history, thumbs
 ratings and Trakt account, so one person's taste never shows up in another's Home. Switch profiles from
 the avatar menu in the top bar.
