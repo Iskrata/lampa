@@ -228,13 +228,22 @@
     function same(a, b) { return !a.size || !b.size || Math.abs(a.size - b.size) / Math.max(a.size, b.size) < 0.02; }
 
     // A release without a hash (a .torrent link) takes its twin's: the same name and size on an indexer that
-    // gives one. -> { hashes: [every hash to ask the swarm about], twins: { key: { hash, size } } }
+    // gives one. Every hash of a name is kept: fakes take a real release's name (Clayface's four 1080p
+    // "...-FLUX" on 2026-10-20, three sizes), and the last one alone matched no link of another size.
+    // -> { hashes: [every hash to ask the swarm about], twins: { key: [{ hash, size }] } }
     function twins(results) {
-        var t = {};
-        results.forEach(function (r) { var h = hashOf(r); if (h) t[key(r.Title)] = { hash: h, size: r.Size }; });
-        var hashes = Object.keys(t).map(function (k) { return t[k].hash; });
-        results.forEach(function (r) { var h = hashOf(r); if (h && hashes.indexOf(h) < 0) hashes.push(h); });
+        var t = {}, hashes = [];
+        results.forEach(function (r) {
+            var h = hashOf(r), k = key(r.Title);
+            if (!h || hashes.indexOf(h) >= 0) return;
+            hashes.push(h);
+            (t[k] = t[k] || []).push({ hash: h, size: r.Size });
+        });
         return { hashes: hashes, twins: t };
+    }
+    function twinOf(known, r) {
+        var size = { size: r.Size };
+        return ((known.twins[key(r.Title)] || []).filter(function (t) { return same(t, size); })[0] || {}).hash || '';
     }
 
     // swarm: the remux's /gst/swarm answer { seeders: { hash: n | null }, dead: [{ hash, title, size }] }.
@@ -245,7 +254,7 @@
         var dead = {}, deadKeys = [];
         (swarm.dead || []).forEach(function (d) { dead[d.hash] = true; deadKeys.push({ key: key(d.title), size: d.size }); });
         return results.filter(function (r) {
-            var k = key(r.Title), twin = known.twins[k], h = hashOf(r) || (twin && same(twin, { size: r.Size }) ? twin.hash : '');
+            var k = key(r.Title), h = hashOf(r) || twinOf(known, r);
             if (h ? dead[h] : deadKeys.some(function (d) { return d.key === k && same(d, { size: r.Size }); })) return false;
             var n = h && swarm.seeders ? swarm.seeders[h] : null;
             if (n === 0) return false;

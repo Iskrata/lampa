@@ -411,7 +411,9 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
   - The filtering is `rubyPick.alive` (pick.js), which the server's `/gst/pick` runs too.
   - Seeders become the trackers' real count. A release without a hash (a `.torrent` link, as
     LimeTorrents gives) takes its twin's: the same name (letters and digits) and size within 2 % on an
-    indexer that gives the hash. WiKi's LimeTorrents line went from 19 to 5.
+    indexer that gives the hash. WiKi's LimeTorrents line went from 19 to 5. Every hash of a name counts
+    (fakes take a real release's name in other sizes); until 2026-10-20 only the last one listed did, and
+    Clayface's TorrentGalaxy link matched none of its three same-named twins.
   - Releases are left out when the trackers know them with 0 seeders, or when Ruby saw them dead in the
     last 7 days (by hash, or by name and size for those without one).
   - Play's minimums (15 / 5 / 3) apply to the real count. WiKi (5 real) still shows in the manual list
@@ -430,6 +432,16 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
   same moment. Its timecode is set by hand, whatever Settings → Player → timecode says. At most 3 switches.
   - **No peers:** no file list 45 s after the release was opened, while Lampa's loading window is still
     up (Lampa itself gives up at 90 s).
+  - **No video:** the file list came and has nothing Lampa plays (its `formats`: mkv, mp4, avi…). That's a
+    fake: on 2026-10-20 all of Clayface's (tmdb 1400940) 1080p releases from `/gst/pick`, four listings
+    named "Clayface (2026) 1080p AMZN WEB-DL DDP5 1 H 264-FLUX", were one `.exe` each (1.28, 1.50 and
+    1.62 GB, the fourth a TorrentGalaxy link to the 1.62 GB one; read from TorrServer on the home server).
+    Lampa showed "Empty: Failed to extract suitable files" and stopped. The fake's name is a real
+    release's, so after one the others of that name are still tried, by hash (or the `.torrent` link of
+    one without a hash).
+  - With nothing left to switch to, Lampa's window (loading, or its "Empty") is closed and the message
+    says so ("This release has no video in it, and there is no other 1080p release to switch to"), so
+    Lampa's own text never shows, nor its "Timeout expired" at 90 s after a no-peers give-up.
   - **Dead:** the heartbeat says `Swarm.dead` and the video hasn't moved for 5 s.
   - **Too slow:** the video has waited 30 s (60 s before it ever played, counted from when the player has its
     stream, not from opening it), not paused, while the remux holds one of its requests waiting on the torrent
@@ -451,6 +463,15 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
   - Too slow: WiKi (14.8 Mbit/s needed, about 3 had) played to 0:41 and stalled, then switched to YTS at
     0:41. That run's next switch, YTS → RARBN, was the test's own leftover fake; RARBN went on at 0:42.
   - Afterwards TorrServer held none of the test torrents.
+  - No video, 2026-10-20 in the built-in browser (dev server, the home server's remux through an SSH
+    tunnel): Play on Clayface opened 9df441b9, then cc9f90c4, then 12643af8 (the TorrentGalaxy link was
+    9df441b9's twin and skipped), each "no video" within 3 to 9 s of the last, each reported to the server,
+    then the message above on the card, no Lampa window. Before the change: "Empty" and nothing more. A
+    made-up 720p release (no other 720p) gave up at 45 s, Lampa's window closed, back on the card.
+  - The iOS run (14:26 UTC the same day) showed "Empty" after ~90 s; here the list came within 9 s, as
+    TorrServer already had the fakes' metadata. If the phone's list came after 45 s, the no-peers rule did
+    fire but found nothing to switch to (the other three had the same name), and before this change it only
+    showed a short message and left Lampa's window up. Not measured on the phone.
   - Not checked: Safari (WebDriver needs "Allow remote automation" in Safari's Developer settings),
     a real phone, TV.
 

@@ -2,6 +2,8 @@
 //   * lists: every torrent search (Play and the manual list both use Lampa.Parser.get) shows the real seeder
 //     counts from trackers instead of the indexers' stale ones, and leaves out releases nobody seeds (0 on the
 //     trackers) or that Ruby saw send nothing in the last 7 days
+//   * opening: a release whose file list has no video in it (a fake: Clayface's 1080p releases were each one
+//     .exe on 2026-10-20) or that nobody sends the file list of switches to the next one
 //   * playing: when the release stops sending (the remux says so) or can't keep up while the video waits, it
 //     switches to the next best release of the same resolution and goes on at the same moment, up to 3 times
 // Without the remux service (plain TorrServer) none of this runs.
@@ -18,8 +20,12 @@
     // a plain TorrServer answers /gst/ with an error at once: the lists stay as they are
     function remux() { return !!Lampa.Torserver.url(); }
 
-    // what was tried: the name and the hash (the same torrent is listed by several indexers under other names)
-    function marks(r) { var h = rubyPick.hashOf(r); return [rubyPick.key(r.Title || r.title)].concat(h ? [h] : []); }
+    // what was tried: the name and the hash (the same torrent is listed by several indexers under other names),
+    // and the .torrent link of one without a hash (when the name doesn't count, nextRelease)
+    function marks(r) {
+        var h = rubyPick.hashOf(r);
+        return [rubyPick.key(r.Title || r.title)].concat(h ? [h] : r.Link ? [r.Link] : []);
+    }
 
     function ask(path) {
         var timeout = new Promise(function (r) { setTimeout(function () { r(null); }, ASK_MS); });
@@ -69,9 +75,23 @@
             }, LIST_MS);
             return start.apply(this, arguments);
         };
+        // the hash of a release given as a .torrent link (no hash in the search results): TorrServer tells it
+        var hash = Lampa.Torserver.hash;
+        Lampa.Torserver.hash = function (params, oncomplite, onerror) {
+            var cur = current;
+            return hash.call(this, params, function (json) {
+                if (cur && cur === current && json && json.hash) cur.hash = String(json.hash).toLowerCase();
+                oncomplite.apply(this, arguments);
+            }, onerror);
+        };
         Lampa.Listener.follow('torrent_file', function (e) {
             if (!current) return;
             if (e.type === 'list_open') current.listed = true;
+            // nothing Lampa can play in it: it shows "Empty" right after this, which the switch closes
+            if (e.type === 'list_open' && !(e.items || []).length) {
+                var cur = current;
+                setTimeout(function () { if (current === cur) switchRelease('nofiles'); }, 0);
+            }
             if (e.type === 'onenter' && e.element && e.element.episode)
                 current.target = { season: +e.element.season, episode: +e.element.episode };
         });
@@ -79,13 +99,16 @@
 
     // the next release of the same resolution: Play's ranking (the server's or this browser's), else the
     // ranking of the last search (a release picked from the list), without the ones tried
-    function nextRelease() {
+    // A fake goes by a real release's name (Clayface's four 1080p were all "...-FLUX", three of them one .exe
+    // each): after one, the others of that name are tried, by hash.
+    function nextRelease(why) {
         var c = current, movie = c.movie || {};
+        var tried = why === 'nofiles' ? c.tried.filter(function (m) { return m !== rubyPick.key(c.release.Title || c.release.title); }) : c.tried;
         var res = rubyPick.resolution(c.release.Title || c.release.title || '');
         var groups = rubyPlay.ranked(movie);
         if (!groups && last && last.movie && last.movie.id === movie.id)
             groups = rubyPick.ranked(last.results, movie, c.target, rubyPlay.audio ? rubyPlay.audio(movie) : null);
-        return ((groups || {})[res] || []).filter(function (r) { return !marks(r).some(function (m) { return c.tried.indexOf(m) >= 0; }); })[0] || null;
+        return ((groups || {})[res] || []).filter(function (r) { return !marks(r).some(function (m) { return tried.indexOf(m) >= 0; }); })[0] || null;
     }
 
     // the server remembers it for the title: never offered for it again (server/remux/releases.js). A dead one
@@ -102,12 +125,18 @@
 
     function switchRelease(why) {
         stop();
-        var c = current, next = c && c.switches < MAX_SWITCHES ? nextRelease() : null;
+        var c = current, next = c && c.switches < MAX_SWITCHES ? nextRelease(why) : null;
         var v = Lampa.PlayerVideo.video(), at = v && v.currentTime > 5 ? v.currentTime : c && c.at || 0;
-        var what = why === 'dead' ? 'This release stopped sending' : why === 'nopeers' ? 'Nobody is sharing this release' : 'This release is too slow to play';
+        var what = why === 'dead' ? 'This release stopped sending' : why === 'nopeers' ? 'Nobody is sharing this release' :
+            why === 'nofiles' ? 'This release has no video in it' : 'This release is too slow to play';
         console.log('Ruby swarm', why, c && c.hash, 'at', Math.round(at), 'next:', next && next.Title);
         if (c) report(c, why);
-        if (!next) return Lampa.Noty.show(what + ', and there is no other ' + (c ? rubyPick.resolution(c.release.Title || '') + 'p' : '') + ' release to switch to');
+        if (!next) {
+            // still in Lampa's window (loading, or its "Empty"): close it, or Lampa's own message stays (or comes
+            // at 90 s, "Timeout expired")
+            if (!Lampa.Player.opened() && Lampa.Controller.enabled().name === 'modal') Lampa.Controller.back();
+            return Lampa.Noty.show(what + ', and there is no other ' + (c ? rubyPick.resolution(c.release.Title || '') + 'p' : '') + ' release to switch to');
+        }
         carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + 1 };
         Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
         if (Lampa.Player.opened()) Lampa.Player.close();
