@@ -26,7 +26,15 @@ const cfg = require('./config');
 const { post: torrserver, describe } = require('./torrserver');
 const downloads = require('./download');
 
-const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000;
+const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000, SLOW_MS = 3000;
+const sec = ms => (ms / 1000).toFixed(1) + ' s';
+
+// every log line with its time: a slow start or a hang is matched to what the player saw
+for (const k of ['log', 'error']) {
+    const orig = console[k];
+    console[k] = (...a) => orig(new Date().toISOString().slice(5, 19).replace('T', ' '), ...a);
+}
+
 const sessions = new Map();   // "<hash>:<file>" -> Promise<Session>
 
 function session(hash, index, lang) {
@@ -46,6 +54,12 @@ function session(hash, index, lang) {
 
 function forHash(hash) {
     return [...sessions.keys()].filter(k => k.startsWith(hash + ':')).map(k => sessions.get(k));
+}
+
+// the torrent's state for the log: how many peers it reaches and how fast it downloads
+async function swarm(hash) {
+    const t = await torrserver('/torrents', { action: 'get', hash }) || {};
+    return `peers ${t.active_peers || 0}/${t.total_peers || 0}, ${((t.download_speed || 0) / 1e6).toFixed(1)} MB/s`;
 }
 
 const LANG_NAMES = { en: 'English', bg: 'Bulgarian', ru: 'Russian' };
@@ -137,12 +151,18 @@ async function handle(req, res) {
             { Torrent: torrent || {}, Startup: startup.report(hash, url.searchParams.get('index'), cache, torrent) })), 'application/json');
     }
     if (a === 'master.m3u8') {
-        const index = url.searchParams.get('index') || '1', st = startup.begin(hash, index);
+        const t0 = Date.now(), index = url.searchParams.get('index') || '1', st = startup.begin(hash, index);
         const s = st.session = await session(hash, index, lang(url.searchParams.get('lang')));
+        const loaded = Date.now();
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
         // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
         await Promise.all([s.init(), s.ready()]);   // ready before the player asks for it
-        return send(res, 200, master(s), TYPES.m3u8);
+        send(res, 200, master(s), TYPES.m3u8);
+        // a session that already existed (a seek, another tab) costs nothing: only the first master is logged
+        const took = s.m.took || {};
+        if (loaded - t0 > 50) console.log(`${hash.slice(0, 8)}:${index} master in ${sec(Date.now() - t0)}: probe ${took.probe} s, ` +
+            `index ${took.index} s, then init and subtitles ${sec(Date.now() - loaded)} (${await swarm(hash)})`);
+        return;
     }
 
     const [file, l, title] = (a || '').split('.');
@@ -152,7 +172,13 @@ async function handle(req, res) {
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
     if (b === 'init.mp4') return sendFile(res, await s.init());
-    if ((m = /^seg(\d+)\.m4s$/.exec(b))) return sendFile(res, await s.segment(+m[1]));
+    if ((m = /^seg(\d+)\.m4s$/.exec(b))) {
+        const t0 = Date.now(), file = await s.segment(+m[1]);
+        sendFile(res, file);
+        // the player waited for this one (the first segment, a seek, or the download falling behind)
+        if (Date.now() - t0 > SLOW_MS) console.log(`${hash.slice(0, 8)}:${s.m.index} seg${m[1]} in ${sec(Date.now() - t0)} (${await swarm(hash)})`);
+        return;
+    }
     if ((m = /^(sub\d+|os[a-z]{2})\.m3u8$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, playlist(s, i => `${m[1]}-${i}.vtt`), TYPES.m3u8);
     if ((m = /^(sub\d+|os[a-z]{2})\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitleFile(m[1]), TYPES.vtt);
     if ((m = /^(sub\d+|os[a-z]{2})-(\d+)\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitle(m[1], +m[2]), TYPES.vtt);
@@ -180,7 +206,11 @@ const server = http.createServer((req, res) => {
     const orig = res.writeHead;
     res.writeHead = function () { waiting.delete(res); return orig.apply(this, arguments); };
     res.on('close', () => waiting.delete(res));
-    handle(req, res).catch(e => { console.error(req.url, e.message); if (!res.headersSent) send(res, 500, e.message); else res.end(); });
+    handle(req, res).catch(async e => {
+        const h = /\/gst\/([0-9a-f]{40})\//i.exec(req.url);
+        console.error(req.url, e.message, e.message === 'timeout' && h ? `(${await swarm(h[1])})` : '');
+        if (!res.headersSent) send(res, 500, e.message); else res.end();
+    });
 }).listen(cfg.port, cfg.host, () => console.log(`lampa-remux on ${cfg.host}:${cfg.port}, TorrServer ${cfg.torrserver}, cache ${cfg.cache}`));
 
 // A deploy restarts this service while people watch (README "Restarts"). Caddy holds new requests until the

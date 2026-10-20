@@ -190,8 +190,18 @@
         return [src, codec].filter(Boolean).join(' · ');
     }
 
+    var VIDEO = /\.(mkv|mp4|m4v|avi|mov|ts|m2ts|webm|wmv)$/i;
+
+    // the file of a release to play: the episode asked for (target), else the largest video; null when none.
+    // files: [{ path, length, season, episode }] (Lampa's file list, with what Torserver.parse made of each name)
+    function file(files, target) {
+        var videos = files.filter(function (f) { return VIDEO.test(f.path || ''); });
+        if (target) return videos.filter(function (f) { return +f.season === target.season && +f.episode === target.episode; })[0] || null;
+        return videos.sort(function (a, b) { return (b.length || 0) - (a.length || 0); })[0] || null;
+    }
+
     // a release's average bitrate in Mbit/s
     function bitrate(r, movie, target) { return (r.Size || 0) * 8 / 1e6 / seconds(r.Title || '', movie, target); }
 
-    window.rubyPick = { choices: choices, anime: anime, bitrate: bitrate, describe: describe, english: english, seasons: seasons, episode: episode };
+    window.rubyPick = { choices: choices, anime: anime, bitrate: bitrate, describe: describe, english: english, seasons: seasons, episode: episode, file: file };
 })();

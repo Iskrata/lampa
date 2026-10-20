@@ -9,7 +9,7 @@
 // clicking an episode plays it (upstream it only toggled "watched"). A series' Play continues where you
 // are (resume.js). Runs everywhere (TV too); Settings → Interface → "Pick torrents for me" turns it off.
 (function () {
-    var SETTING = 'ruby_autopick', LAST_RES = 'ruby_pick_res', VIDEO = /\.(mkv|mp4|m4v|avi|mov|ts|m2ts|webm|wmv)$/i;
+    var SETTING = 'ruby_autopick', LAST_RES = 'ruby_pick_res';
     var pending = null;     // { target, files: [{element, item}] } while Lampa's file list is coming up
     var push = null;        // Lampa.Activity.push before we wrapped it
 
@@ -136,6 +136,8 @@
         var pre = items.filter(function (i) { return i.choice.res === last && !i.slow; })[0] ||
             items.filter(function (i) { return !i.slow; })[0] || items[0];
         if (pre) pre.selected = true;
+        // TorrServer starts on it while the question is open (warm.js)
+        if (pre) rubyWarm.start(prepare(pre.choice.best, movie), movie, target);
         if (audio) items.push({ title: audio === 'ja' ? 'Audio: Japanese · English subtitles' : 'Audio: English dub',
             subtitle: 'Switch to ' + (audio === 'ja' ? 'the English dub' : 'Japanese with English subtitles'), audio: true });
         items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
@@ -148,11 +150,12 @@
                     Lampa.Storage.set(ANIME_AUDIO, audio === 'ja' ? 'en' : 'ja');
                     return setTimeout(function () { choose(movie, target, params, results, back, mbps); }, 50);
                 }
-                if (a.all) return openList(params);
+                if (a.all) { rubyWarm.cancel(); return openList(params); }
+                rubyWarm.keep(a.choice.best);
                 Lampa.Storage.set(LAST_RES, a.choice.res);
                 play(movie, target, a.choice.best);
             },
-            onBack: function () { Lampa.Controller.toggle(back); }
+            onBack: function () { rubyWarm.cancel(); Lampa.Controller.toggle(back); }
         });
     }
 
@@ -180,9 +183,14 @@
             idle = document.querySelector('.modal') ? 0 : idle + 1;
             if (idle >= 3) { clearInterval(check); rubyFacts.stop(); done(); }
         }, 700);
+        Lampa.Torrent.start(prepare(release, movie), movie);
+    }
+
+    // the release as Lampa's torrent flow sends it to TorrServer (warm.js sends the same)
+    function prepare(release, movie) {
         release.poster = movie.img || release.poster;
         release.title = release.title || release.Title;   // what TorrServer lists it as (the parser's field is Title)
-        Lampa.Torrent.start(release, movie);
+        return release;
     }
 
     // Lampa's file list for the release we opened: start the right file instead of showing the list
@@ -198,10 +206,9 @@
 
     function pickFile() {
         if (!pending) return;
-        var target = pending.target, found = null;
-        var videos = pending.files.filter(function (f) { return VIDEO.test(f.element.path || ''); });
-        if (target) found = videos.filter(function (f) { return +f.element.season === target.season && +f.element.episode === target.episode; })[0];
-        else found = videos.sort(function (a, b) { return (b.element.length || 0) - (a.element.length || 0); })[0];
+        var target = pending.target;
+        var el = rubyPick.file(pending.files.map(function (f) { return f.element; }), target);
+        var found = pending.files.filter(function (f) { return f.element === el; })[0];
         if (found && pending.download) {
             rubyDownload.begin(found.element, pending.movie, target);
             rubyFacts.stop();

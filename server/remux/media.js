@@ -69,7 +69,10 @@ const PLAYABLE_VIDEO = new Set(['hevc', 'h264', 'av1', 'vp9']);
 async function load(hash, index, lang) {
     const url = `${cfg.torrserver}/stream/file?link=${encodeURIComponent(hash)}&index=${encodeURIComponent(index)}&play`;
     const none = () => null;
-    const [info, mkvKeys, mp4Keys] = await Promise.all([ffprobe(url), mkv.keyframes(url).catch(none), mp4.keyframes(url).catch(none)]);
+    // how long each read took, for the log (README "Why starting takes longer than a seek")
+    const t0 = Date.now(), took = {}, timed = (k, p) => p.finally(() => { took[k] = (Date.now() - t0) / 1000; });
+    const [info, mkvKeys, mp4Keys] = await Promise.all([timed('probe', ffprobe(url)),
+        timed('mkv', mkv.keyframes(url).catch(none)), timed('mp4', mp4.keyframes(url).catch(none))]);
     const keys = mkvKeys || mp4Keys;
     const streams = info.streams || [];
     const video = streams.find(s => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
@@ -91,6 +94,7 @@ async function load(hash, index, lang) {
     const heuristic = !mp4Keys && video.has_b_frames > 0;
     return {
         hash, index, lang, url, duration, video, audio, subs,
+        took: { probe: took.probe, index: mkvKeys || !mp4Keys ? took.mkv : took.mp4 },
         // audio not in English (e.g. anime in Japanese): the English subtitles come on by themselves
         subsOn: !!audio && !english(audio),
         seekPast: heuristic ? 3 / 23 + 0.011 : 0.001,

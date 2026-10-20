@@ -30,6 +30,7 @@ see "Touch devices and phones".
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
+| `warm.js` | `rubyWarm`: starts the release "Play in" preselected while the question is open |
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
@@ -167,6 +168,22 @@ episode.
      connection (N Mbit/s) is too slow for this". The speed is timed once per session, while the search
      runs, by downloading 4 MB of random bytes from the remux service (`/gst/speedtest`).
    - **Preselected:** the last resolution chosen, unless it's too slow.
+   - **Started while you choose** (`warm.js`, 2026-10-20). A first start waits mostly on TorrServer finding
+     peers: 12-16 s measured on ruby (server/remux/README.md, "Why starting takes longer than a seek"). So
+     the preselected release starts as soon as the question shows:
+     - It does what Enter would: `Torserver.connected`, then `Torserver.hash` (same title and data, so TorrServer
+       lists it the same), then the file list.
+     - It asks the remux for the master of the file step 5 will pick (`rubyPick.file`), with the same language.
+       The probe and the index then run while you choose, and the player's master request finds the
+       session ready.
+     - Another line, "Pick a torrent manually" or Back drops it through the remux, unless the heartbeat shows
+       readers (another viewer, or its own probe still reading: TorrServer disconnects it 30 s after the last).
+     - Without the remux (TVs) it is left to that timeout: nothing tells whether someone else reads it.
+     - Checked 2026-10-20 in the built-in browser (dev server, local remux reading ruby's TorrServer): the
+       master asked for 0.3 s after the question showed (the torrent already loaded) and 4.3 s (cold), the
+       player's master answered from that session, picking 720p instead added the 720p release while the
+       1080p one, still probing, stayed for TorrServer to disconnect, and Back dropped it (heartbeat, then
+       `/gst/remove`).
 5. **Open** the release with Lampa's own flow (`Lampa.Torrent.start`) and, when Lampa's file list comes up
    (`torrent_file` events), start the right file: the episode by season/episode, or a film's largest video
    file. The list is hidden meanwhile. Resume, the episode playlist and "next episode" stay Lampa's.
@@ -306,7 +323,7 @@ Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`)
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Seven small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -324,6 +341,14 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   instead of the master. That playlist has no subtitles, so Safari never reported any and the Subtitles
   button never appeared (the remux service's streams have audio inside the video playlist). It now keeps
   the master when it lists subtitle tracks.
+
+- **Torrent, `files()`:** asks TorrServer for a new torrent's file list at once, then every 2 s (90 s in all,
+  as before). Upstream's first ask came 2 s after the torrent was added, also when TorrServer already had
+  it: every start lost up to 2 s there. Not faster than every 2 s: each ask aborts the one before
+  (`Torserver.files` clears the shared request object) and times out after 2 s.
+- **Torrent, `gstCheck()`:** the remux check (`/gst/echo`) goes on its own request object. On the shared one
+  the file list, now asked for at once, could abort it, and an aborted check sets `gstWork()` false: the
+  player would get TorrServer's plain stream instead of the remux.
 
 ## Player
 

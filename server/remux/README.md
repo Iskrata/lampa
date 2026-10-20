@@ -149,6 +149,13 @@ Measured 2026-10-20 on the home server (scripts run there against its TorrServer
   bytes themselves are few: ffprobe reads ~20 MB of the start, the Cues one piece at the end, segment 0 ~5 MB.
 - **A seek comes after that warm-up.** The file's start and index are already in TorrServer's cache, the
   session (probe, segment plan) exists, and one segment's bytes are needed.
+- **What is done about it:** the browser starts the release "Play in" has selected while the question is
+  open (desktop/README.md, "Play"), so this wait runs while you choose.
+- **In the log** (every line has its time): one line per file started, `master in 14.9 s: probe 10.4 s, index
+  12.6 s, then init and subtitles 2.2 s (peers 9/115, 0.1 MB/s)` (probe and index run side by side, timed
+  from the start), and any segment the player waited over 3 s for, `seg0 in 6.4 s (peers 10/97, 12.5 MB/s)`
+  (the first one, a seek, or the download falling behind). A request that times out adds the peers too;
+  ffprobe's failures say whether it was stopped at 90 s and what it printed.
 - **Why the warm-up is slow:** the home server is behind CGNAT with no IPv6, so TorrServer can only dial out.
   Only peers that accept incoming connections are reachable. It connected to 1-5 of the 120-148 peers it knew
   about.
