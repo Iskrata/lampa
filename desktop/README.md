@@ -30,6 +30,7 @@ see "Touch devices and phones".
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
+| `hdr.js` | HDR films in browsers that can't show HDR video: the video playlist, subtitles as files |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
 
 Torrents play in the browser through `server/remux` (its README): any file becomes HLS on the server, so an
@@ -248,9 +249,21 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   playlist with hls.js and, when it lists no separate audio tracks, gives the browser the video playlist
   instead of the master. That playlist has no subtitles, so Safari never reported any and the Subtitles
   button never appeared (the remux service's streams have audio inside the video playlist). It now keeps
-  the master when it lists subtitle tracks.
+  the master when it lists subtitle tracks, except for HDR the browser can't show (`hdr.js` decides, below).
 
 ## Player
+
+**HDR films (`hdr.js`).** Safari can't play an HDR10 stream behind the remux's master playlist where it can't
+show HDR video: listed as SDR it fails at once ("Media failed to decode"), listed as `VIDEO-RANGE=PQ` it drops
+the only variant and loads nothing. The video playlist on its own plays. Measured 2026-10-19/20 in macOS
+Safari 27 on the MacBook's XDR display and in the iOS 27 simulator, both reporting `(video-dynamic-range:
+high)` false, first with *Gladiator* (2000, HDR10 x265, the release a friend's iPhone on iOS 18.7 failed on),
+then with a synthetic HDR10 file through the whole app. So where that query is false and every variant is
+PQ/HLG, `createParser` loads the video playlist and `hdr.js` hands the master's subtitle tracks to Lampa as
+whole WebVTT files (`Lampa.Player.subtitles`, the remux's `<track>.vtt`), loaded again every 30 s while
+selected: the remux learns a file's own lines as ffmpeg reads ahead. Where the query is true the master stays
+(not tested: no such browser here). Verified in macOS Safari: video playlist played, English on by itself,
+lines on time. Not verified: the 30 s reload, and a real iPhone.
 
 - **Subtitles.** Lampa shows its subtitles button only once the stream reports subtitle tracks, as a small
   speech-bubble icon. It's now a CC icon labelled "Subtitles". In Safari it only appears since the

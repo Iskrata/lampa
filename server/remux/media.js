@@ -98,6 +98,10 @@ async function load(hash, index, lang) {
         bandwidth: Math.round(bitrate * 1.1),
         codecs: [videoCodec(video), audio ? 'mp4a.40.2' : null].filter(Boolean).join(','),
         resolution: video.width && video.height ? `${video.width}x${video.height}` : null,
+        // Safari fails an HDR10 variant listed without it ("Media failed to decode", macOS Safari and the iOS 27
+        // simulator, 2026-10-19); with it, Safari skips the variant where it can't show HDR video, and
+        // desktop/hdr.js plays the media playlist there
+        videoRange: { smpte2084: 'PQ', 'arib-std-b67': 'HLG' }[video.color_transfer] || 'SDR',
         audioArgs: !audio ? [] : aac ? ['-c:a', 'copy'] :
             ['-c:a', 'aac', '-ac', String(channels > 2 ? 6 : 2), '-b:a', channels > 2 ? '384k' : '192k']
     };

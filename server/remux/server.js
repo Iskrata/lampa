@@ -7,6 +7,7 @@
 //                                                     themselves when the audio isn't English)
 //   GET /gst/<hash>/<file>.<lang>/video.m3u8, init.mp4, seg<n>.m4s, <track>.m3u8, <track>-<n>.vtt
 //                                                     (track: sub<k> the file's own, os<lang> from OpenSubtitles)
+//   GET /gst/<hash>/<file>.<lang>/<track>.vtt         -> one whole subtitle track, as far as it is known
 //   GET /gst/<hash>/heartbeat                      -> TorrServer's stats for the player's info panel
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
@@ -72,7 +73,7 @@ function master(s) {
             `DEFAULT=${m.subsOn && k === 0 && t.lang === 'en' ? 'YES' : 'NO'},AUTOSELECT=${first ? 'YES' : 'NO'},FORCED=NO,URI="${base}${t.id}.m3u8"`);
     });
     lines.push(`#EXT-X-STREAM-INF:BANDWIDTH=${m.bandwidth},CODECS="${m.codecs}"` +
-        (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + (tracks.length ? ',SUBTITLES="subs"' : ''));
+        (m.resolution ? `,RESOLUTION=${m.resolution}` : '') + `,VIDEO-RANGE=${m.videoRange}` + (tracks.length ? ',SUBTITLES="subs"' : ''));
     lines.push(`${base}video.m3u8`);
     return lines.join('\n') + '\n';
 }
@@ -155,6 +156,7 @@ async function handle(req, res) {
     if (b === 'init.mp4') return sendFile(res, await s.init());
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) return sendFile(res, await s.segment(+m[1]));
     if ((m = /^(sub\d+|os[a-z]{2})\.m3u8$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, playlist(s, i => `${m[1]}-${i}.vtt`), TYPES.m3u8);
+    if ((m = /^(sub\d+|os[a-z]{2})\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitleFile(m[1]), TYPES.vtt);
     if ((m = /^(sub\d+|os[a-z]{2})-(\d+)\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitle(m[1], +m[2]), TYPES.vtt);
     return send(res, 404, 'not found');
 }

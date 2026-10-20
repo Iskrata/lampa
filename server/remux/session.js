@@ -194,12 +194,25 @@ class Session {
     async subtitle(id, n) {
         this.used = Date.now();
         const from = this.m.bounds[n], to = this.m.bounds[n + 1];
-        let all = [];
+        const passed = () => { const j = this.job; return j && n >= j.start && (j.cur > n || j.ended); };
+        if (/^sub\d+$/.test(id)) await this.until(passed, WAIT_MS).catch(() => {});
+        const cues = (await this.allCues(id)).filter(c => c.end > from && c.start < to);
+        return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' + vtt(cues);
+    }
+
+    // WebVTT for one whole track, as far as it is known: for a player given subtitles as a file instead of in
+    // the HLS master (desktop/hdr.js). The file's own come in as ffmpeg reads ahead, and the fits improve, so
+    // that player asks again now and then.
+    async subtitleFile(id) {
+        this.used = Date.now();
+        return 'WEBVTT\n\n' + vtt(await this.allCues(id));
+    }
+
+    async allCues(id) {
         const own = /^sub(\d+)$/.exec(id);
+        let all;
         if (own) {
             const k = +own[1];
-            const passed = () => { const j = this.job; return j && n >= j.start && (j.cur > n || j.ended); };
-            await this.until(passed, WAIT_MS).catch(() => {});
             this.readCues(k);
             if (k === 0 && this.english) this.checkCaptions();
             all = k === 0 && this.english && this.better ? this.better : [...this.cues[k].values()];
@@ -209,9 +222,7 @@ class Session {
         } else {
             all = await this.osCues(id.slice(2));
         }
-        const cues = all.filter(c => c.end > from && c.start < to).sort((a, b) => a.start - b.start);
-        return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' +
-            cues.map(c => `${vttTime(c.start)} --> ${vttTime(c.end)}\n${c.text}\n`).join('\n');
+        return all.slice().sort((a, b) => a.start - b.start);
     }
 
     // the torrent file (name, size, the title's TMDB id): what OpenSubtitles is searched by
@@ -334,6 +345,10 @@ class Session {
         }, 3000);
         rm(true);
     }
+}
+
+function vtt(cues) {
+    return cues.map(c => `${vttTime(c.start)} --> ${vttTime(c.end)}\n${c.text}\n`).join('\n');
 }
 
 function vttTime(t) {

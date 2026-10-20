@@ -119,6 +119,11 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
   files, start at its `-ss`, and are shifted like the audio. A subtitle segment waits until the video is
   past it, so its cues are in.
 
+**HDR.** The master's `VIDEO-RANGE` is `PQ` or `HLG` from the video's `color_transfer` (`SDR` otherwise),
+which Apple's HLS spec asks for. Browsers that can't show HDR video then skip the variant, so the player uses
+the video playlist and `/<track>.vtt` (each subtitle track whole, as far as known) there (desktop/README.md,
+"HDR films").
+
 ## Why starting takes longer than a seek
 
 Measured 2026-10-20 on the home server (scripts run there against its TorrServer and this service's modules),
