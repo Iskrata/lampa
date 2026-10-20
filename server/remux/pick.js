@@ -11,6 +11,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
 const cfg = require('./config');
 const swarms = require('./swarm');
 const releases = require('./releases');
@@ -22,6 +23,9 @@ vm.runInNewContext(fs.readFileSync(RULES, 'utf8'), box, { filename: RULES });
 const rules = box.window.rubyPick;
 
 const TMDB_KEEP_MS = 6 * 3600e3, SEARCH_KEEP_MS = 10 * 60000, SEARCH_MS = 30000, PER_RES = 10;
+// link-only releases' hashes: Jackett answers in 0.2-0.8 s each (85 at once for Matchbox, 2026-10-20); the
+// pick waits at most HASH_WAIT_MS for them, the rest are cached for the next pick
+const HASH_WAIT_MS = 2500, HASH_AT_ONCE = 16, HASH_KEEP = 20000;
 
 function cached(map, key, keepMs, make) {
     const c = map.get(key);
@@ -66,10 +70,71 @@ function search(movie, kind) {
     });
 }
 
+// a Jackett download link fetched with the key: the .torrent file, or (LimeTorrents, TorrentGalaxyClone) a
+// redirect to the release's magnet
+function jackettGet(u, key) {
+    return fetch(u + (u.includes('?') ? '&' : '?') + 'jackett_apikey=' + encodeURIComponent(key), { redirect: 'manual', signal: AbortSignal.timeout(SEARCH_MS) });
+}
+const withoutKey = l => l.replace(/([?&])jackett_apikey=[^&]*&?/, '$1').replace(/[?&]$/, '');
+
+// the info-hash of a .torrent file: sha1 of its bencoded info dictionary, as it is in the file
+function infoHash(b) {
+    let i = 0;
+    const skip = () => {   // past one bencoded value
+        const c = b[i];
+        if (c === 0x69) { i = b.indexOf(0x65, i) + 1; return; }                 // i<n>e
+        if (c === 0x6c || c === 0x64) { i++; while (b[i] !== 0x65) { if (i >= b.length) throw new Error('cut'); skip(); } i++; return; }
+        const colon = b.indexOf(0x3a, i), n = +b.slice(i, colon).toString();    // <n>:<bytes>
+        if (colon < 0 || !(n >= 0)) throw new Error('not bencode');
+        i = colon + 1 + n;
+    };
+    if (b[i++] !== 0x64) return '';
+    while (i < b.length && b[i] !== 0x65) {
+        const colon = b.indexOf(0x3a, i), n = +b.slice(i, colon).toString(), name = b.slice(colon + 1, colon + 1 + n).toString();
+        i = colon + 1 + n;
+        const start = i;
+        skip();
+        if (name === 'info') return crypto.createHash('sha1').update(b.slice(start, i)).digest('hex');
+    }
+    return '';
+}
+
+// Releases with only a .torrent link (LimeTorrents, TorrentGalaxyClone) have no hash in Jackett's results, so
+// the trackers couldn't be asked about them and a failed one was never matched: on 2026-10-20 LimeTorrents'
+// "Matchbox The Movie 2026 1080p WEB DL HEVC x265 5 1 BONE" (3079 seeders, b317b439, which the trackers say
+// has 4) failed with no peers and was offered first again, and its twin by name was another torrent (d9576d60).
+// Fetched through Jackett once per link (keyless) and kept; sets r.InfoHash. -> how many it found in time
+const linkHashes = new Map();   // keyless link -> hash ('' when the answer had none)
+let hashing = 0;
+const hashQueue = [];
+function linkHash(link, key) {
+    const k = withoutKey(link);
+    if (linkHashes.has(k)) return linkHashes.get(k);
+    const p = new Promise(go => { hashing < HASH_AT_ONCE ? (hashing++, go()) : hashQueue.push(go); }).then(async () => {
+        const r = await jackettGet(k, key);
+        const loc = r.headers.get('location') || '';
+        if (loc) return ((/btih:([0-9a-f]{40})/i.exec(loc) || [])[1] || '').toLowerCase();
+        if (!r.ok) throw new Error(`Jackett answered ${r.status}`);
+        return infoHash(Buffer.from(await r.arrayBuffer()));
+    }).finally(() => { const next = hashQueue.shift(); next ? next() : hashing--; });
+    linkHashes.set(k, p);
+    p.then(h => { linkHashes.set(k, Promise.resolve(h)); if (linkHashes.size > HASH_KEEP) linkHashes.delete(linkHashes.keys().next().value); },
+        e => { linkHashes.delete(k); console.error(`link hash: ${e.message}`); });
+    return p;
+}
+async function resolveLinks(found) {
+    // only our Jackett's links: the key is added to them
+    const key = jackettKey(), todo = found.filter(r => r.Link && r.Link.startsWith(cfg.jackett + '/') && !rules.hashOf(r));
+    let got = 0;
+    await Promise.race([
+        Promise.all(todo.map(r => linkHash(r.Link, key).then(h => { if (h) r.InfoHash = h, got++; }, () => {}))),
+        new Promise(go => setTimeout(go, HASH_WAIT_MS))]);
+    return { asked: todo.length, got };
+}
+
 // a Jackett download link without its key: TorrServer (on this machine) fetches it through link() below
 function keyless(l) {
-    return l && /[?&]jackett_apikey=/.test(l) ?
-        `http://127.0.0.1:${cfg.port}/gst/link?u=${encodeURIComponent(l.replace(/([?&])jackett_apikey=[^&]*&?/, '$1').replace(/[?&]$/, ''))}` : l;
+    return l && /[?&]jackett_apikey=/.test(l) ? `http://127.0.0.1:${cfg.port}/gst/link?u=${encodeURIComponent(withoutKey(l))}` : l;
 }
 
 // a release as a browser gets it: what Lampa's torrent flow and the lists read, and no Jackett key
@@ -89,10 +154,12 @@ async function pick(q) {
     const movie = await details(kind, tmdb);
     // copies: alive() writes the real seeders into them, and the search stays cached for the next ask
     const found = (await search(movie, kind)).map(r => Object.assign({}, r));
+    const links = await resolveLinks(found);
     const known = rules.twins(found);
     const alive = rules.alive(found, await swarms.report(known.hashes), known);
-    const mem = releases.of(tmdb, kind), id = r => rules.hashOf(r);
-    const usable = alive.filter(r => !mem.failed.has(id(r)));
+    const mem = releases.of(tmdb, kind, rules.key), id = r => rules.hashOf(r);
+    // a release still without a hash (its link not resolved in time) is matched by name
+    const usable = alive.filter(r => id(r) ? !mem.failed.has(id(r)) : !mem.failedNames.has(rules.key(r.Title)));
     const audio = rules.anime(movie) ? (q.get('lang') === 'ja' ? 'ja' : 'en') : null;
     const best = rules.best(usable, movie, target, audio);
     const choices = [2160, 1080, 720].filter(res => best.groups[res]).map(res => {
@@ -103,7 +170,8 @@ async function pick(q) {
             .map(r => handOut(r, mem.played.has(id(r)))) };
     });
     const took = Date.now() - t0;
-    console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found, ` +
+    console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found ` +
+        `(${links.got}/${links.asked} link-only hashed), ` +
         `${found.length - alive.length} dead, ${alive.length - usable.length} failed before, ` +
         choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s`);
     return { audio: best.audio, choices, found: found.length, took };
@@ -113,7 +181,7 @@ async function pick(q) {
 async function link(u, res) {
     const key = jackettKey();
     if (!u || !u.startsWith(cfg.jackett + '/') || !key) { res.writeHead(404); return res.end(); }
-    const r = await fetch(u + (u.includes('?') ? '&' : '?') + 'jackett_apikey=' + encodeURIComponent(key), { redirect: 'manual', signal: AbortSignal.timeout(SEARCH_MS) });
+    const r = await jackettGet(u, key);
     // some indexers (TorrentGalaxyClone) answer with a redirect to a magnet link, which TorrServer follows
     if (r.status >= 300 && r.status < 400) { res.writeHead(r.status, { Location: r.headers.get('location') }); return res.end(); }
     res.writeHead(r.status, { 'Content-Type': r.headers.get('content-type') || 'application/x-bittorrent' });

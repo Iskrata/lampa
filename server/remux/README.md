@@ -26,7 +26,7 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
 | `GET /gst/pick?tmdb=<id>&kind=movie\|tv[&season=&episode=][&lang=ja]` | the releases to play, ranked: `{ audio, choices: [{ res, label, releases }], found, took }` ("Picking a release" below) |
-| `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow): never offered again |
+| `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow): never offered again (by hash; by `title` where a listing's hash isn't known) |
 | `GET /gst/link?u=<Jackett .torrent link without its key>` | that link fetched from Jackett with the key, for TorrServer |
 | `GET /gst/jackett/api/v2.0/indexers/<x>/results?...` | Lampa's own Jackett search, with the key added here and removed from the answer (every download link becomes a `/gst/link` one); other Jackett paths 404 |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
@@ -255,7 +255,13 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
    title, `Category[]` 2000 (films) or 5000 (TV), plus 5070 for anime. Jackett ignores the other parameters
    Lampa sends (`title`, `year`, `genres`), so the results are the same. Cached 10 minutes, so the player's
    Quality menu and the next episode don't search again.
-3. **The swarm** (`swarm.js`): the trackers' real seeder counts, and releases seen dead left out.
+3. **The swarm** (`swarm.js`): the trackers' real seeder counts, and releases seen dead left out. That needs
+   each release's info-hash. LimeTorrents and TorrentGalaxyClone give only a `.torrent` link, so `pick.js`
+   fetches each such link from Jackett once (16 at a time) and keeps its hash (in memory, the last 20,000
+   links). Jackett answers with a redirect to the magnet (both indexers, 2026-10-20), or with the file,
+   whose hash is the sha1 of its bencoded `info`. The pick waits at most 2.5 s for these; a link not done
+   by then takes a twin's hash (same name and size on another indexer) as before, and is ready for the
+   next pick.
 4. **The ranking:** `desktop/pick.js` itself, run here in a `vm` sandbox (`rubyPick.alive`, `rubyPick.best`:
    English, this title, this episode, enough seeders, ranked by picture quality). The home server's copy
    is `desktop-pick.js` next to `server.js`, copied in by `lampa-setup.ps1`; in the repo it's
@@ -267,7 +273,8 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
    - **Failed:** `swarm.js` saw it dead, or a player switched away from it and said so
      (`/gst/pick/failed`: no peers within 45 s, or too slow). It is never offered again, for any title:
      a torrent that sends nothing does so whatever it was opened for. A later "played" (picked by hand
-     from the list) clears it.
+     from the list) clears it. Matched by hash; a release whose hash isn't known (its link not resolved
+     in time, no twin) is matched by the failed release's name (`rubyPick.key`), which the report sends.
 6. **The answer:** each resolution's releases, best first, at most 10, one listing per torrent (several
    indexers list the same one). Each is what Lampa's torrent flow reads (`Title`, `Size`, `Seeders`,
    `MagnetUri` or `Link`, `InfoHash`, `played`). Jackett's `.torrent` links carry its key
@@ -288,6 +295,24 @@ report was made for the real failure, with the same result: `317 found, 19 dead,
 720p 2`. The pick took 1.0 s there with a real tracker scrape (19 releases had 0 seeders on the trackers),
 29 ms cached. A `/gst/link` link fetched on the home server answered 302 to the release's magnet (a
 TorrentGalaxyClone listing), and no link in the answer carried the key.
+
+**Releases with only a link** (2026-10-20). Play on *Matchbox the Movie* (movie 1148365) at 17:34 UTC put
+first in 1080p LimeTorrents' "Matchbox The Movie 2026 1080p WEB DL HEVC x265 5 1 BONE" with 3079 seeders. It
+was `b317b439`, which the trackers say has 4 seeders; it produced no file list in 45 s, the browser switched
+and reported it (`b317b439 failed (nopeers)`), and the next picks still said "0 failed before" and offered it
+first. Jackett gave it no hash, so neither the scrape nor the failed mark could reach it, and its twin by name
+was another torrent (Knaben's `d9576d60`, same name and size). Checked on the home server the same day with
+this code and the old in a copy next to the service (its own Jackett, a copy of `releases.json`), each run a
+fresh process:
+
+| title | results (link-only) | old: pick cold / cached | new: pick cold / cached | what changed |
+|---|---|---|---|---|
+| Matchbox the Movie | 185 (85) | 0.9 s / 0 ms, 0 failed before | 1.3 s / 0 ms, 85/85 hashed, 1 failed before | BONE `b317b439` gone; the 1080p BONE offered is `d9576d60` with the trackers' 3087; LimeTorrents' 2160p "WEB DV HDR H 265" 116 → 191 seeders (`839e6500`), 1080p "WEB H 264" 309 → 605; two 720p listings found to be torrents already listed |
+| Vikings S6E1 | 317 (84) | 1.8 s / 0 ms | 1.7 s / 0 ms, 84/84 hashed | one more release dead on the trackers |
+
+From the Mac through the home server's `/gst/link`, Matchbox's 85 links answered in 0.27-0.77 s each, all 85
+at once in 0.81 s, every one a 302 to a magnet. The `.torrent` path was checked on Big Buck Bunny's file
+(`dd8255ec…`, as its magnet says).
 
 **Measured 2026-10-20** (local copy on the Mac, the home server's Jackett over the tailnet; the Mac blocks
 UDP, so each scrape waited its 1 s timeout): Vikings S6E1 317 results, the pick 1.9 s cold, 1.0 s with the

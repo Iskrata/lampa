@@ -66,17 +66,19 @@ function failed(hash, why, title, name) {
     return true;
 }
 
-// { played: Set, failed: Set } of hashes: played for this title, failed for any; whichever happened last counts
-function of(tmdb, kind) {
-    const last = {};   // hash -> { ok, fail } latest across titles
+// { played: Set, failed: Set } of hashes: played for this title, failed for any; whichever happened last counts.
+// failedNames: the failed ones' release names through nameKey, for a release whose hash isn't known (pick.js)
+function of(tmdb, kind, nameKey) {
+    const last = {};   // hash -> { ok, fail, title } latest across titles
     for (const t of Object.values(titles)) for (const [h, r] of Object.entries(t)) {
         const l = last[h] = last[h] || { ok: 0, fail: 0 };
         l.ok = Math.max(l.ok, r.ok || 0); l.fail = Math.max(l.fail, r.fail || 0);
+        if (r.title) l.title = r.title;
     }
-    const played = new Set(), bad = new Set();
-    for (const [h, l] of Object.entries(last)) if (l.fail > l.ok) bad.add(h);
+    const played = new Set(), bad = new Set(), names = new Set();
+    for (const [h, l] of Object.entries(last)) if (l.fail > l.ok) { bad.add(h); if (l.title && nameKey) names.add(nameKey(l.title)); }
     for (const [h, r] of Object.entries(titles[titleKey(tmdb, kind)] || {})) if ((r.ok || 0) > last[h].fail) played.add(h);
-    return { played, failed: bad };
+    return { played, failed: bad, failedNames: names };
 }
 
 module.exports = { watching, sent, failed, of };
