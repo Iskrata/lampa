@@ -1,7 +1,8 @@
 // One playing torrent file: segments are produced by one ffmpeg at a time, from the segment the player
 // asks for. A request for a segment that is already written is served from disk; one just ahead of ffmpeg
 // waits for it; anything else (a seek) restarts ffmpeg there. ffmpeg is held back (by not reading its
-// output) once it is AHEAD segments past the player, so a paused film doesn't download to the end.
+// output) once it is AHEAD segments past the player, so a paused film doesn't download to the end, or
+// past a subtitle segment the player waits for, whichever is further.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,7 @@ class Session {
         this.job = null;
         this.delay = null;
         this.lastReq = 0;
+        this.subWant = 0;   // ffmpeg may run until this segment for a subtitle request (flow)
         this.used = Date.now();
         this.waiters = [];
         this.cues = media.subs.map(() => new Map());   // per subtitle: "start|text" -> cue
@@ -91,6 +93,7 @@ class Session {
 
     start(n) {
         this.stop();
+        this.subWant = 0;
         const m = this.m, j = { start: n, cur: n, frags: [], ended: false, paused: false };
         const subFiles = m.subs.map((_, k) => path.join(this.dir, `sub${k}-${n}.vtt`));
         j.subFiles = subFiles;
@@ -147,13 +150,16 @@ class Session {
         this.notify();
     }
 
-    // hold ffmpeg back when far ahead of the player, let it go again when the player catches up
+    // hold ffmpeg back when far ahead of the player, let it go again when the player catches up or waits for
+    // subtitles further on. Safari reads subtitle segments minutes ahead of the video and stops loading
+    // anything, video too, after two of them time out (its 10 s): held at the video's limit, a subtitle
+    // segment past it never came (TYSON S01E01 on 2026-10-20: sub0-34 twice, then nothing for 90 s)
     flow() {
         const j = this.job;
         if (!j || j.ended) return;
         const ahead = j.cur - this.lastReq;
-        if (!j.paused && ahead > AHEAD) { j.paused = true; j.proc.stdout.pause(); }
-        else if (j.paused && ahead < AHEAD - 10) { j.paused = false; j.proc.stdout.resume(); }
+        if (!j.paused && ahead > AHEAD && j.cur > this.subWant) { j.paused = true; j.proc.stdout.pause(); }
+        else if (j.paused && (ahead < AHEAD - 10 || j.cur <= this.subWant)) { j.paused = false; j.proc.stdout.resume(); }
     }
 
     prune() {
@@ -206,8 +212,13 @@ class Session {
     async subtitle(id, n) {
         this.used = Date.now();
         const from = this.m.bounds[n], to = this.m.bounds[n + 1];
-        const passed = () => { const j = this.job; return j && n >= j.start && (j.cur > n || j.ended); };
-        if (/^sub\d+$/.test(id)) await this.until(passed, WAIT_MS).catch(() => {});
+        // only the running ffmpeg writes them: none, or one from a later segment (a seek), never will
+        const passed = () => { const j = this.job; return !j || n < j.start || j.cur > n || j.ended; };
+        if (/^sub\d+$/.test(id) && !passed()) {
+            // just past ffmpeg: let it on; far past it is a seek, and the video request restarts ffmpeg there
+            if (n <= this.job.cur + JUMP) { this.subWant = Math.max(this.subWant, n + 1); this.flow(); }
+            await this.until(passed, WAIT_MS).catch(() => {});
+        }
         const cues = (await this.allCues(id)).filter(c => c.end > from && c.start < to);
         return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' + vtt(cues);
     }

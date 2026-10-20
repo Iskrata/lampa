@@ -7,7 +7,9 @@ starts in Safari: Lampa's player just spins. This service repackages what TorrSe
 - **Audio:** English, converted to AAC.
 - **Subtitles:** English, Bulgarian and Russian, in that order: the file's own text subtitles as WebVTT, and
   from OpenSubtitles in a language the file has none in, or in place of English TV captions (ALL CAPS)
-  ("Subtitles from OpenSubtitles" below).
+  ("Subtitles from OpenSubtitles" below). A "forced" track (only the lines for speech in another
+  language) is left out where the language has a full one: TYSON S01 (TBK) lists English Forced, English,
+  English SDH, and the player showed the Forced one, empty (2026-10-20).
 
 Safari plays it natively (so AirPlay works), Chrome plays it through Lampa's hls.js, and seeking works
 everywhere.
@@ -103,7 +105,13 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
 - **A segment ahead:** a request just ahead of ffmpeg waits for it.
 - **A seek:** anything else restarts ffmpeg there.
 - **Throttling:** when ffmpeg gets 30 segments ahead of the player, its output stops being read. It then
-  stops reading from TorrServer, so a paused film doesn't download to the end.
+  stops reading from TorrServer, so a paused film doesn't download to the end. A subtitle segment the
+  player waits for, just past ffmpeg, lets it on to there: Safari reads subtitles minutes ahead of the
+  video, and after two subtitle requests time out (its limit is 10 s) it stops loading anything, video too.
+  Held 30 segments ahead, the next subtitle segment never came: TYSON S01E01 froze for a viewer on
+  2026-10-20 (access log: `sub0-34.vtt` 499 after 10.2 s twice, then no request for 90 s; reproduced with
+  a script against a local test file, `sub0-32` timing out without the change, up to `sub0-49` served with
+  it; the iOS 27 simulator's Safari played, seeked and showed the full English track with it).
 
 **Facts this depends on** (measured 2026-10-14 with ffmpeg 8.1):
 - **ffmpeg seeks early.** For inputs with B-frames, ffmpeg seeks 3/23 s before `-ss`

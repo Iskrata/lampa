@@ -18,6 +18,7 @@ const SUB_LANGS = ['en', 'bg', 'ru'];
 const inLang = (s, lang) => (LANGS[lang] || LANGS.en).test((s.tags && s.tags.language) || '') || (LANGS[lang] || LANGS.en).test((s.tags && s.tags.title) || '');
 const english = s => inLang(s, 'en');
 const subLang = s => SUB_LANGS.find(l => inLang(s, l));
+const forced = s => !!(s.disposition && s.disposition.forced) || /forced/i.test((s.tags && s.tags.title) || '');
 const commentary = s => /comment/i.test((s.tags && s.tags.title) || '') || (s.disposition && s.disposition.comment);
 
 function ffprobe(url) {
@@ -79,9 +80,12 @@ async function load(hash, index, lang) {
     if (!video) throw new Error('no video stream');
     if (!PLAYABLE_VIDEO.has(video.codec_name)) throw new Error('video codec not playable in a browser: ' + video.codec_name);
     const audio = pickAudio(streams, lang);
-    // English first (subtitle 0 is the one OpenSubtitles' are lined up with), then Bulgarian, Russian
-    const subs = streams.filter(s => s.codec_type === 'subtitle' && TEXT_SUBS.has(s.codec_name) && subLang(s))
-        .map(s => Object.assign({ lang: subLang(s) }, s))
+    // English first (subtitle 0 is the one OpenSubtitles' are lined up with), then Bulgarian, Russian.
+    // A "forced" track has only the lines for speech in another language: left out where the language has a
+    // full one (TYSON S01 by TBK lists English Forced first, and the player showed it: empty, 2026-10-20)
+    const text = streams.filter(s => s.codec_type === 'subtitle' && TEXT_SUBS.has(s.codec_name) && subLang(s))
+        .map(s => Object.assign({ lang: subLang(s) }, s));
+    const subs = text.filter(s => !forced(s) || !text.some(f => f.lang === s.lang && !forced(f)))
         .sort((x, y) => SUB_LANGS.indexOf(x.lang) - SUB_LANGS.indexOf(y.lang));
     const duration = parseFloat(info.format.duration) || 0;
     if (!duration) throw new Error('unknown duration');
