@@ -41,6 +41,8 @@ Node 18.15+ (no dependencies; `fs.statfs`), plus ffmpeg and ffprobe 8.x. Environ
 | `REMUX_CACHE` | `<tmp>/lampa-remux`, emptied at start |
 | `REMUX_SUBS` | `<tmp>/lampa-remux-subs`: subtitles downloaded from OpenSubtitles, kept across restarts |
 | `REMUX_DOWNLOADS` | `<tmp>/lampa-remux-downloads`: downloads (below), kept across restarts |
+| `REMUX_SWARM` | `<tmp>/lampa-remux-swarm.json`: releases seen dead (below), kept across restarts |
+| `REMUX_TRACKERS` | `tracker.opentrackr.org:1337,open.stealth.si:80,tracker.torrent.eu.org:451,open.demonii.com:1337`: UDP trackers asked for real seeder counts |
 | `OPENSUBTITLES_ENV` | `../opensubtitles.env` (next to the app folder): private `KEY=value` lines `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USER`, `OPENSUBTITLES_PASSWORD` (the same names work as environment variables). Without a key, no OpenSubtitles |
 | `REMUX_DEBUG` | set it to log every fragment's time and segment |
 
@@ -176,6 +178,36 @@ against the home server's TorrServer, in the built-in browser: "Connecting to th
 then 0 % → 4 % → 60 % → 99 % within 3 s, and 100 % once segment 0 was written. In that test the time
 after 99 % was the Mac reading from the home server over the tailnet (~1 MB/s). On the home server this service
 reads TorrServer over localhost.
+
+## Dead swarms (`swarm.js`)
+
+What Lampa's lists show and what the player switches on (desktop/README.md, "Dead swarms").
+
+- **Real seeder counts.** `GET /gst/swarm?hash=<h>,<h>…` scrapes the public trackers in `REMUX_TRACKERS` (BEP 15
+  over UDP, up to 70 hashes a packet) and answers `{ seeders: { hash: n | null }, dead: [{ hash, title, size }] }`.
+  `n` is the highest count among the trackers that know the hash. A tracker answers 0/0/0 for a hash it has
+  never seen, so `null` means unknown, and the list keeps the indexer's number. Counts are cached 15 minutes.
+  Why: indexers' counts go stale. On 2026-10-20 LimeTorrents listed Spider-Man No Way Home's WiKi release
+  (x265 10-bit, TrueHD, 16.5 GB) with 19 seeders, and the trackers had 2–5. From the home server the four
+  trackers answered in 0.1–0.65 s (exodus.desync.com didn't, so it's not in the list), so a tracker that
+  never answers costs at most 1 s. This Mac's network blocked outbound UDP that day, so only the home server
+  could be tested. Measured through this service: 4 hashes in 0.86 s cold and 0.19 s cached, 221 releases
+  in 1.66 s. A random hash gives `null`. The service's own TorrServer announcing a hash makes it known with
+  0 seeders.
+- **Dead.** A torrent is dead when a request has waited on its data (the probe or a segment) for 25 s and
+  TorrServer's byte count (`bytes_read_useful_data`) hasn't changed in that time. Warm-up behind CGNAT takes
+  12–16 s ("Why starting takes longer than a seek"), hence 25 s. Sampled every 5 s. A player retrying within
+  5 s keeps the wait going: Lampa gives up on a master after 20 s and asks again (Caddy's 499s in the
+  Vikings case below). Before marking, a tracker must answer, so this server's own outage never counts. Dead
+  releases are kept 7 days in `REMUX_SWARM`, for everyone. The heartbeat adds `Swarm: { dead, stalled }`.
+  - The count compared is "changed", not "grew": a torrent closed for being idle and added again starts
+    at 0. The first version compared "grew". It called WiKi dead while it downloaded 2.6 → 11.7 MB, because
+    its count from an earlier try was higher.
+  - Cases: WiKi on 2026-10-20 at 10:02 (2 seeders connected, 0 bytes after the first 44 MB). Vikings
+    (`bbbc0a68…`, 2026-10-20 at 00:57): three master requests got 499 after 20 s, then a 500 when ffprobe gave
+    up at 90 s. In the tests on 2026-10-20 (a test copy of this service on the home server), a random
+    hash (nobody seeds it) was marked dead 25 s after its probe began waiting. WiKi, alive again at about
+    3 Mbit/s, never was (`stalled` stayed under 5 s for 3 minutes): that's "too slow", the player's call.
 
 ## Downloads (`download.js`)
 

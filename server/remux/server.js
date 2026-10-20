@@ -13,6 +13,8 @@
 //                                                     (startup.js)
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
+//   GET /gst/swarm?hash=<hash>,<hash>...           -> real seeder counts from trackers, and the releases seen dead
+//                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled })
 //   POST /gst/download, GET /gst/downloads, GET /gst/download/<id>/<name>.mp4, POST /gst/download/<id>/cancel
 //                                                  -> a file made into an MP4 to keep (download.js)
 'use strict';
@@ -25,6 +27,7 @@ const startup = require('./startup');
 const cfg = require('./config');
 const { post: torrserver, describe } = require('./torrserver');
 const downloads = require('./download');
+const swarms = require('./swarm');   // (swarm() below is the log's peers line)
 
 const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000, SLOW_MS = 3000;
 const sec = ms => (ms / 1000).toFixed(1) + ' s';
@@ -126,12 +129,19 @@ function sendFile(res, file) {
     fs.createReadStream(file).pipe(res);
 }
 
+// waiting for the torrent's data (the probe, a segment): swarm.js tells a dead swarm by such waits
+async function fed(hash, p) {
+    const end = swarms.waiting(hash.toLowerCase());
+    try { return await p; } finally { end(); }
+}
+
 async function handle(req, res) {
     const url = new URL(req.url, 'http://x');
     const parts = url.pathname.replace(/^.*?\/gst\//, '').split('/').map(decodeURIComponent);
     const [hash, a, b] = parts;
 
     if (hash === 'speedtest') return speedtest(res, url.searchParams.get('mb'));
+    if (hash === 'swarm') return send(res, 200, JSON.stringify(await swarms.report(url.searchParams.get('hash') || '')), 'application/json');
     if (hash === 'echo') return send(res, 200, '{"remux":true}', 'application/json');   // Lampa parses it as JSON
     if (hash === 'remove') {
         const h = url.searchParams.get('hash') || '';
@@ -148,11 +158,11 @@ async function handle(req, res) {
         for (const p of forHash(hash)) p.then(s => { s.used = Date.now(); }, () => {});
         const [cache, torrent] = await Promise.all([torrserver('/cache', { action: 'get', hash }), torrserver('/torrents', { action: 'get', hash })]);
         return send(res, 200, JSON.stringify(Object.assign({ Readers: [], Pieces: {} }, cache,
-            { Torrent: torrent || {}, Startup: startup.report(hash, url.searchParams.get('index'), cache, torrent) })), 'application/json');
+            { Torrent: torrent || {}, Startup: startup.report(hash, url.searchParams.get('index'), cache, torrent), Swarm: swarms.state(hash.toLowerCase()) })), 'application/json');
     }
     if (a === 'master.m3u8') {
         const t0 = Date.now(), index = url.searchParams.get('index') || '1', st = startup.begin(hash, index);
-        const s = st.session = await session(hash, index, lang(url.searchParams.get('lang')));
+        const s = st.session = await fed(hash, session(hash, index, lang(url.searchParams.get('lang'))));
         const loaded = Date.now();
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
         // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
@@ -171,9 +181,9 @@ async function handle(req, res) {
     if (t) await describe(s, hash, t[2], t[1] === 'm' ? 'movie' : 'tv');
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
-    if (b === 'init.mp4') return sendFile(res, await s.init());
+    if (b === 'init.mp4') return sendFile(res, await fed(hash, s.init()));
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) {
-        const t0 = Date.now(), file = await s.segment(+m[1]);
+        const t0 = Date.now(), file = await fed(hash, s.segment(+m[1]));
         sendFile(res, file);
         // the player waited for this one (the first segment, a seek, or the download falling behind)
         if (Date.now() - t0 > SLOW_MS) console.log(`${hash.slice(0, 8)}:${s.m.index} seg${m[1]} in ${sec(Date.now() - t0)} (${await swarm(hash)})`);

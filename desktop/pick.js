@@ -1,6 +1,7 @@
 // Choosing a torrent without a list (desktop/README.md, "Play"): from the parser's results, keep English
 // releases of this title that will stream, group them by resolution, and rank each group. Pure functions,
-// no Lampa: rubyPick.choices(results, movie, target) -> [{ res, label, best, count }] best resolution first.
+// no Lampa: rubyPick.choices(results, movie, target) -> [{ res, label, best, count }] best resolution first;
+// rubyPick.ranked(...) -> { <res>: [releases, best first] }.
 // target: { season, episode } for a series, else null.
 (function () {
     var MIN_SEEDERS = { 2160: 15, 1080: 5, 720: 3 };
@@ -162,9 +163,9 @@
         return movie.original_language === 'ja' && g.indexOf(16) >= 0;
     }
 
-    // audio: for anime, 'en' (dubbed) or 'ja' (Japanese, English subtitles); else leave out
-    function choices(results, movie, target, audio) {
-        var groups = {};
+    // { <res>: [releases, best first] } of the releases kept (swarm.js switches to the next of the same res)
+    function ranked(results, movie, target, audio) {
+        var groups = {}, out = {};
         (results || []).forEach(function (r) {
             var t = r.Title || '', res = resolution(t);
             if (!res || !r.Size || (r.Seeders || 0) < MIN_SEEDERS[res]) return;
@@ -174,9 +175,17 @@
             var g = groups[res] = groups[res] || [];
             g.push({ r: r, score: score(r, res, movie, target, audio) });
         });
+        Object.keys(groups).forEach(function (res) {
+            out[res] = groups[res].sort(function (a, b) { return b.score - a.score; }).map(function (x) { return x.r; });
+        });
+        return out;
+    }
+
+    // audio: for anime, 'en' (dubbed) or 'ja' (Japanese, English subtitles); else leave out
+    function choices(results, movie, target, audio) {
+        var groups = ranked(results, movie, target, audio);
         return [2160, 1080, 720].filter(function (res) { return groups[res]; }).map(function (res) {
-            var g = groups[res].sort(function (a, b) { return b.score - a.score; });
-            return { res: res, label: LABEL[res], best: g[0].r, count: g.length };
+            return { res: res, label: LABEL[res], best: groups[res][0], count: groups[res].length };
         });
     }
 
@@ -203,5 +212,5 @@
     // a release's average bitrate in Mbit/s
     function bitrate(r, movie, target) { return (r.Size || 0) * 8 / 1e6 / seconds(r.Title || '', movie, target); }
 
-    window.rubyPick = { choices: choices, anime: anime, bitrate: bitrate, describe: describe, english: english, seasons: seasons, episode: episode, file: file };
+    window.rubyPick = { choices: choices, ranked: ranked, resolution: resolution, anime: anime, bitrate: bitrate, describe: describe, english: english, seasons: seasons, episode: episode, file: file };
 })();

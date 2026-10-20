@@ -390,6 +390,8 @@
     window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); },
         qualities: qualities, switchTo: switchTo, episode: function (show, target) { start(show, target); },
         play: function (card) { start(card); } };
+    // release(movie, target, release): open that release and start the same file (swarm.js, when one fails)
+    rubyPlay.release = function (movie, target, release) { play(movie, target, release); };
 
     var timer = setInterval(function () {
         if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;

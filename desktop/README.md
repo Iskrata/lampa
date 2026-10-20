@@ -37,6 +37,7 @@ see "Touch devices and phones".
 | `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
 | `play.js` | Play without a torrent list or a question: picks the release for this screen and connection, and the file; episodes play on click |
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
+| `swarm.js` | real seeder counts in every torrent list, dead releases left out; switches to the next release of the same resolution when the playing one stops sending or is too slow ("Dead swarms") |
 | `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
 | `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
@@ -364,6 +365,50 @@ of one season's stills (names showed only on focus) with a "More" tile that open
 
 Checked 2026-10-20 in the dev server: Breaking Bad shows Seasons 1-5, Season 1's 7 episodes with S1 E3's
 bar at 95 %; Season 3 loads its 13; a click on S1 E2 started Play's search with the loading screen.
+
+## Dead swarms
+
+`swarm.js`, through the remux service's `swarm.js` (server/remux/README.md, "Dead swarms"). The user asked
+for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the release picked by hand
+(WiKi, 16.5 GB) had 2 seeders connected that sent nothing after its first 44 MB.
+
+- **Lists.** Every torrent search goes through `Lampa.Parser.get`, Play's and the manual list's alike, and
+  the wrapper changes the results before either sees them:
+  - Seeders become the trackers' real count. A release without a hash (a `.torrent` link, as
+    LimeTorrents gives) takes its twin's: the same name (letters and digits) and size within 2 % on an
+    indexer that gives the hash. WiKi's LimeTorrents line went from 19 to 5.
+  - Releases are left out when the trackers know them with 0 seeders, or when Ruby saw them dead in the
+    last 7 days (by hash, or by name and size for those without one).
+  - Play's minimums (15 / 5 / 3) apply to the real count. WiKi (5 real) still shows in the manual list
+    with its true number.
+  - Without an answer within 2.5 s, the results stay as they were.
+  - Measured 2026-10-20 in the built-in browser (dev server, its remux traffic tunnelled to a test copy on
+    the home server): Spider-Man No Way Home, 221 releases, 16 left out, the check 1.66 s, the whole
+    search 2.4 s.
+- **Switching.** The release Lampa opens (Play's choice, or a pick from the list through
+  `Lampa.Torrent.start`) is watched. When it fails, it switches to the next of the same resolution in
+  Play's ranking of the same search (`rubyPick.ranked`). That skips what was tried, by name and by hash
+  (one torrent is listed under several names), and anything this device can't decode (compat.js). It
+  says so ("This release stopped sending: switching to Blu-ray · H.264 · 220 seeders") and goes on at the
+  same moment. Its timecode is set by hand, whatever Settings → Player → timecode says. At most 3 switches.
+  - **No peers:** no file list 45 s after the release was opened, while Lampa's loading window is still
+    up (Lampa itself gives up at 90 s).
+  - **Dead:** the heartbeat says `Swarm.dead` and the video hasn't moved for 5 s.
+  - **Too slow:** the video has waited 30 s (60 s before it ever played), not paused, while the torrent
+    downloads slower than the release's bitrate. If the torrent keeps up, the wait is this device's own
+    connection, and another release wouldn't help: no switch.
+  - Switching closes the player, then Lampa's file list through its Back (which drops the old torrent),
+    then opens the next release with Play's flow (`rubyPlay.play`), which picks the same file.
+- **Checked 2026-10-20** in the built-in browser (Chromium), against the home server:
+  - No peers: a made-up 1080p release with a random hash switched at 45 s to the YTS Blu-ray (1323
+    seeders), which played.
+  - Dead: YTS at 0:25, the heartbeat faked to say dead and the video frozen with `playbackRate` 0. Switched
+    to RARBN (220 seeders), on at 0:26, 31 s after the freeze.
+  - Too slow: WiKi (14.8 Mbit/s needed, about 3 had) played to 0:41 and stalled, then switched to YTS at
+    0:41. That run's next switch, YTS → RARBN, was the test's own leftover fake; RARBN went on at 0:42.
+  - Afterwards TorrServer held none of the test torrents.
+  - Not checked: Safari (WebDriver needs "Allow remote automation" in Safari's Developer settings),
+    a real phone, TV.
 
 ## Where you are in a series
 

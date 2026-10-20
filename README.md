@@ -52,6 +52,10 @@ screen with the title's logo. The player's Quality button switches resolution wh
 TV offers 4K. Nothing good found: it says so, instead of showing a list of torrents. Click an episode and it
 plays that episode; Play on a series continues where you left off.
 
+**No dead torrents.** With the remux server, torrent lists show the trackers' real seeder counts (indexers'
+go stale) and leave out releases nobody seeds. If the release playing stops sending or can't keep up, it
+switches to the next one of the same resolution and carries on at the same moment.
+
 **Any file plays in the browser.** With the small server in [`server/remux`](server/remux/README.md) next
 to TorrServer, every torrent plays as HLS: 4K HEVC MKVs with Atmos audio play in Safari and Chrome,
 with seeking, English subtitles (on by default, with a labelled Subtitles button), back/forward buttons and arrow-key seeking and AirPlay to an Apple TV. The video isn't

@@ -14,6 +14,11 @@ module.exports = {
     subs: process.env.REMUX_SUBS || path.join(os.tmpdir(), 'lampa-remux-subs'),
     // films made into MP4s to keep (download.js): kept across restarts
     downloads: process.env.REMUX_DOWNLOADS || path.join(os.tmpdir(), 'lampa-remux-downloads'),
+    // releases seen dead (swarm.js): kept across restarts
+    swarm: process.env.REMUX_SWARM || path.join(os.tmpdir(), 'lampa-remux-swarm.json'),
+    // public UDP trackers asked for real seeder counts (swarm.js), host:port separated by commas
+    trackers: (process.env.REMUX_TRACKERS || 'tracker.opentrackr.org:1337,open.stealth.si:80,tracker.torrent.eu.org:451,open.demonii.com:1337')
+        .split(',').map(s => s.trim()).filter(Boolean),
     // private KEY=value file with OPENSUBTITLES_API_KEY / _USER / _PASSWORD (or set them in the environment)
     opensubtitlesEnv: process.env.OPENSUBTITLES_ENV || path.join(__dirname, '..', 'opensubtitles.env')
 };
