@@ -25,6 +25,7 @@ see "Touch devices and phones".
 | `nav.js` | the Netflix-style top bar and profile menu |
 | `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
 | `facts.js` | `rubyFacts`: the loading card while a title starts |
+| `progress.js` | how far it is, on that card: a percentage and a bar |
 | `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
@@ -175,6 +176,20 @@ loading layer and its empty "loading torrent" window (`Torrent.loading()`, a lar
 are hidden while the card shows; error windows aren't. Before, the window sat behind the card with its
 spinner showing through the card ("this loading screen is ugly", 2026-10-18). Checked in the built-in browser:
 both loaders hidden under the card, Cancel closing each through its own Back handler.
+
+**How far it is** (`progress.js`, asked for 2026-10-20): next to the step, real numbers only, with a red bar
+along the card's bottom edge. The bar never goes back within one start. The numbers depend on the step:
+- **Connecting:** how many peers TorrServer has. The torrent's hash comes from wrapping
+  `Lampa.Torserver.hash`.
+- **Starting through the remux:** the percentage of the file's opening bytes TorrServer holds, with the
+  download speed. It comes from the remux heartbeat's `Startup` (server/remux/README.md "Loading progress").
+  The file is the `index` in the player's URL: Lampa also asks for the torrent's other files' masters.
+- **Before any byte arrives:** "Finding peers · N connected". This wait is most of a start on the home
+  server (server/remux/README.md "Why starting takes longer than a seek").
+- **TorrServer without the remux:** Lampa's own preload percentage (`Lampa.Loading.setProgress`). Its
+  loading screen showed it before the card hid that screen.
+
+Checked 2026-10-20 in the built-in browser with Big Buck Bunny from cold; numbers in server/remux/README.md.
 
 **Stuck paused under the facts** (reported 2026-10-17, after Continue on an episode: the facts stayed
 until the player's play button was clicked). `play.js` `untilPlaying`: a video paused for 1.5 s before it

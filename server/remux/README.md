@@ -72,6 +72,7 @@ The waiting segment 27 was handed on. Caddy answered the player's retry with it 
 | `session.js` | one playing file: runs ffmpeg from the segment asked for, writes segments, follows seeks |
 | `mp4.js` | splits ffmpeg's fragmented MP4 into the init segment and fragments, and fixes their times |
 | `server.js` | the HTTP side |
+| `startup.js` | how far a file is from playing, for the loading card (below, "Loading progress") |
 
 **Segments are cut at keyframes, planned before anything plays.** A seekable playlist has to list every
 segment's length up front. `mkv.js` reads the Cues, about 700 KB at the end of a 20 GB file, giving every
@@ -144,6 +145,23 @@ Measured 2026-10-20 on the home server (scripts run there against its TorrServer
 - **Why the warm-up is slow:** the home server is behind CGNAT with no IPv6, so TorrServer can only dial out.
   Only peers that accept incoming connections are reachable. It connected to 1-5 of the 120-148 peers it knew
   about.
+
+## Loading progress
+
+`/gst/<hash>/heartbeat?index=<file>` adds `Startup: { pct }` (`startup.js`), which the loading card shows as a
+percentage and a bar (desktop/progress.js). Lampa's own heartbeat (no `index`) is unchanged. `pct` is the share
+of the bytes starting needs that TorrServer already holds: the first 20 MB of the file (ffprobe's
+`-probesize`) until the probe is done, then up to the end of segment 0 (bitrate × its length). The count
+comes from TorrServer's `/cache` piece map (`PiecesLength`, each piece's `Size` / `Completed`), from where the
+file starts in the torrent, so bytes already cached count. It stays at 99 until segment 0 is written, then 100.
+It doesn't count the Cues piece at the end of a Matroska file (one piece).
+
+Checked 2026-10-20: `report()` on a made-up piece map (a film starting inside piece 3; 13 pieces of 1 MiB
+done = 49 %, plus half a piece = 52 %). End to end with Big Buck Bunny from cold, this service on the Mac
+against the home server's TorrServer, in the built-in browser: "Connecting to the torrent… 1 peer, 3 peers",
+then 0 % → 4 % → 60 % → 99 % within 3 s, and 100 % once segment 0 was written. In that test the time
+after 99 % was the Mac reading from the home server over the tailnet (~1 MB/s). On the home server this service
+reads TorrServer over localhost.
 
 ## Subtitles from OpenSubtitles (`opensubs.js`)
 

@@ -8,7 +8,9 @@
 //   GET /gst/<hash>/<file>.<lang>/video.m3u8, init.mp4, seg<n>.m4s, <track>.m3u8, <track>-<n>.vtt
 //                                                     (track: sub<k> the file's own, os<lang> from OpenSubtitles)
 //   GET /gst/<hash>/<file>.<lang>/<track>.vtt         -> one whole subtitle track, as far as it is known
-//   GET /gst/<hash>/heartbeat                      -> TorrServer's stats for the player's info panel
+//   GET /gst/<hash>/heartbeat[?index=<file>]       -> TorrServer's stats for the player's info panel, plus with
+//                                                     index Startup: { pct }, how far that file is from playing
+//                                                     (startup.js)
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
 'use strict';
@@ -17,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const media = require('./media');
 const { Session } = require('./session');
+const startup = require('./startup');
 const cfg = require('./config');
 
 const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000;
@@ -137,10 +140,12 @@ async function handle(req, res) {
     if (a === 'heartbeat') {
         for (const p of forHash(hash)) p.then(s => { s.used = Date.now(); }, () => {});
         const [cache, torrent] = await Promise.all([torrserver('/cache', { action: 'get', hash }), torrserver('/torrents', { action: 'get', hash })]);
-        return send(res, 200, JSON.stringify(Object.assign({ Readers: [], Pieces: {} }, cache, { Torrent: torrent || {} })), 'application/json');
+        return send(res, 200, JSON.stringify(Object.assign({ Readers: [], Pieces: {} }, cache,
+            { Torrent: torrent || {}, Startup: startup.report(hash, url.searchParams.get('index'), cache, torrent) })), 'application/json');
     }
     if (a === 'master.m3u8') {
-        const s = await session(hash, url.searchParams.get('index') || '1', lang(url.searchParams.get('lang')));
+        const index = url.searchParams.get('index') || '1', st = startup.begin(hash, index);
+        const s = st.session = await session(hash, index, lang(url.searchParams.get('lang')));
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
         // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
         await Promise.all([s.init(), s.ready()]);   // ready before the player asks for it
