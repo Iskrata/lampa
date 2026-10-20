@@ -11,12 +11,13 @@ const ROOT = path.join(__dirname, '..'), PORT = +(process.env.DEV_PORT || 8095),
 const UP = process.env.LAMPA_UPSTREAM || 'ruby', REMUX = +(process.env.REMUX_PORT || 8092);
 const TYPES = { html: 'text/html', js: 'application/javascript', css: 'text/css', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', woff2: 'font/woff2', ico: 'image/x-icon' };
 
-function proxy(req, res, host, port, p) {
+function proxy(req, res, host, port, p, slow) {
     const up = http.request({ host, port, path: p, method: req.method, headers: Object.assign({}, req.headers, { host: host + ':' + port }) }, r => {
         res.writeHead(r.statusCode, r.headers); r.pipe(res);
     });
     up.on('error', e => { if (!res.headersSent) res.writeHead(502); res.end(String(e)); });
-    up.setTimeout(3000, () => up.destroy(new Error('upstream timeout')));
+    // the remux's answers wait for the torrent (a master for ffprobe, a segment for ffmpeg): no limit, as Caddy
+    if (!slow) up.setTimeout(3000, () => up.destroy(new Error('upstream timeout')));
     req.pipe(up);
 }
 
@@ -30,7 +31,7 @@ http.createServer((req, res) => {
         if (!(name in SYNC)) { res.writeHead(404); return res.end(); }
         res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(SYNC[name]);
     }
-    if (u.startsWith('/ts/gst/')) return proxy(req, res, '127.0.0.1', REMUX, u.slice(3));
+    if (u.startsWith('/ts/gst/')) return proxy(req, res, '127.0.0.1', REMUX, u.slice(3), true);
     if (u.startsWith('/ts/')) return proxy(req, res, UP, 8090, u.slice(3));
     if (/^\/(jackett|jr|imdb|plugins|lampa-init\.js|lampa-imdb\.js)/.test(u)) return proxy(req, res, UP, 80, u);
     let p = decodeURIComponent(u.split('?')[0]);

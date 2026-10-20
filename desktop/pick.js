@@ -169,6 +169,8 @@
             var t = r.Title || '', res = resolution(t);
             if (!res || !r.Size || (r.Seeders || 0) < MIN_SEEDERS[res]) return;
             if (JUNK.test(t.replace(/[._]/g, ' ')) || !english(t, audio) || !sameTitle(t, movie) || !fits(t, movie, target)) return;
+            // video this device can't decode (compat.js): it would never start
+            if (window.rubyCompat && !window.rubyCompat.playable(t)) return;
             var g = groups[res] = groups[res] || [];
             g.push({ r: r, score: score(r, res, movie, target, audio) });
         });

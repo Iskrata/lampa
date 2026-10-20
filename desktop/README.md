@@ -33,7 +33,7 @@ see "Touch devices and phones".
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
-| `hdr.js` | HDR films in browsers that can't show HDR video: the video playlist, subtitles as files |
+| `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
 
 Torrents play in the browser through `server/remux` (its README): any file becomes HLS on the server, so an
@@ -323,21 +323,46 @@ Five small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   playlist with hls.js and, when it lists no separate audio tracks, gives the browser the video playlist
   instead of the master. That playlist has no subtitles, so Safari never reported any and the Subtitles
   button never appeared (the remux service's streams have audio inside the video playlist). It now keeps
-  the master when it lists subtitle tracks, except for HDR the browser can't show (`hdr.js` decides, below).
+  the master when it lists subtitle tracks.
 
 ## Player
 
-**HDR films (`hdr.js`).** Safari can't play an HDR10 stream behind the remux's master playlist where it can't
-show HDR video: listed as SDR it fails at once ("Media failed to decode"), listed as `VIDEO-RANGE=PQ` it drops
-the only variant and loads nothing. The video playlist on its own plays. Measured 2026-10-19/20 in macOS
-Safari 27 on the MacBook's XDR display and in the iOS 27 simulator, both reporting `(video-dynamic-range:
-high)` false, first with *Gladiator* (2000, HDR10 x265, the release a friend's iPhone on iOS 18.7 failed on),
-then with a synthetic HDR10 file through the whole app. So where that query is false and every variant is
-PQ/HLG, `createParser` loads the video playlist and `hdr.js` hands the master's subtitle tracks to Lampa as
-whole WebVTT files (`Lampa.Player.subtitles`, the remux's `<track>.vtt`), loaded again every 30 s while
-selected: the remux learns a file's own lines as ffmpeg reads ahead. Where the query is true the master stays
-(not tested: no such browser here). Verified in macOS Safari: video playlist played, English on by itself,
-lines on time. Not verified: the 30 s reload, and a real iPhone.
+**Playable on every device, or a clear error (`compat.js`).** Asked for on 2026-10-20 after *Gladiator*
+(2000, HDR10 x265) loaded forever on a friend's iPhone (iOS 18.7). The remux copies the video as it is, so
+whether it plays is up to the device's decoder. `rubyCompat.decodes(codecs)` asks the decoder the player will
+use: hls.js's (`MediaSource.isTypeSupported`) where Lampa uses hls.js (Chrome 121+, Android, no native HLS,
+or Settings → Player → HLS "hls.js"), else the browser's own (`canPlayType`), as `HlsStream.shouldUseProgram`
+decides.
+- **Picking:** `rubyPick.ranked` leaves out releases whose name says a codec this device can't decode (HEVC,
+  HEVC 10-bit/HDR/DV, AV1), and XviD/DivX/VC-1/MPEG-2 everywhere. Untagged names count as H.264.
+- **Starting:** `Lampa.PlayerVideo.url` is wrapped. A remux master is read before the player gets it:
+  - the remux refused the file (500): Lampa's error screen with the remux's reason ("video codec not
+    playable in a browser: mpeg4");
+  - its `CODECS` video can't be decoded here: "This release is HEVC 10-bit video, which this browser can't
+    play. Pick an H.264 (x264) release.";
+  - no answer in 75 s: the reason from the heartbeat (0 peers, barely downloading, still reading);
+  - HDR (`VIDEO-RANGE` PQ/HLG) where `(video-dynamic-range: high)` is false: the video playlist alone, and
+    the master's subtitle tracks handed to Lampa as whole WebVTT files (`Lampa.Player.subtitles`, the remux's
+    `<track>.vtt`), loaded again every 30 s while selected (the remux learns a file's own lines as ffmpeg
+    reads ahead). Safari can't play an HDR10 stream behind the master there: marked SDR it fails at once
+    ("Media failed to decode"), marked PQ it drops the only variant and loads nothing; the video playlist
+    alone plays. Measured 2026-10-19/20 in macOS Safari 27 (XDR display) and the iOS 27 simulator, both
+    with that query false. Where it's true the master stays (no such browser here to test).
+  - This has to happen before Lampa's own reading of the master (`createParser`): that uses hls.js, which
+    can't run on an iPhone (no MediaSource), so there Lampa handed Safari the master and it loaded forever
+    (iOS 27 simulator, 2026-10-20). A first version hooked `createParser` and passed on macOS only.
+- **Waiting:** while the player is open, a video that hasn't started 20 s after the remux holds its first
+  segment (heartbeat `Startup.pct` 100), or after 120 s at all, or that stops for 90 s while not paused, ends
+  in Lampa's error screen with the reason: the device didn't play it (and the codec), 0 peers, barely
+  downloading, or this device's connection. `swarm.js` switches releases sooner when the torrent is the
+  cause (60 s / 30 s), so this is what's left when it can't.
+- **A decode error** from the video itself is reworded with the codec: "This browser couldn't play this
+  release's HEVC 10-bit video. Pick an H.264 (x264) release."
+- **Verified 2026-10-20:** iOS 27 simulator, a synthetic 2-minute HDR10 x265 MKV with English subtitles
+  through the remux and the whole app: the video playlist played, English on by itself and on time (before:
+  readyState 0 forever). macOS Safari 27: the same. Chromium made to answer like a phone without HEVC: the
+  HEVC error at once. An MPEG-4 Part 2 file: the remux's reason. Not verified: a real iPhone or Android phone,
+  the 30 s subtitle reload.
 
 - **Subtitles.** Lampa shows its subtitles button only once the stream reports subtitle tracks, as a small
   speech-bubble icon. It's now a CC icon labelled "Subtitles". In Safari it only appears since the

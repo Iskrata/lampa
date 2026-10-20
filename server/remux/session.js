@@ -201,7 +201,7 @@ class Session {
     }
 
     // WebVTT for one whole track, as far as it is known: for a player given subtitles as a file instead of in
-    // the HLS master (desktop/hdr.js). The file's own come in as ffmpeg reads ahead, and the fits improve, so
+    // the HLS master (desktop/compat.js). The file's own come in as ffmpeg reads ahead, and the fits improve, so
     // that player asks again now and then.
     async subtitleFile(id) {
         this.used = Date.now();

@@ -130,7 +130,7 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
 **HDR.** The master's `VIDEO-RANGE` is `PQ` or `HLG` from the video's `color_transfer` (`SDR` otherwise),
 which Apple's HLS spec asks for. Browsers that can't show HDR video then skip the variant, so the player uses
 the video playlist and `/<track>.vtt` (each subtitle track whole, as far as known) there (desktop/README.md,
-"HDR films").
+"Playable on every device").
 
 ## Why starting takes longer than a seek
 
