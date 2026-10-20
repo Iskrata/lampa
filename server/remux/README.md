@@ -26,6 +26,7 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/pick?tmdb=<id>&kind=movie\|tv[&season=&episode=][&lang=ja]` | the releases to play, ranked: `{ audio, choices: [{ res, label, releases }], found, took }` ("Picking a release" below) |
 | `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow): never offered again |
 | `GET /gst/link?u=<Jackett .torrent link without its key>` | that link fetched from Jackett with the key, for TorrServer |
+| `GET /gst/jackett/api/v2.0/indexers/<x>/results?...` | Lampa's own Jackett search, with the key added here and removed from the answer (every download link becomes a `/gst/link` one); other Jackett paths 404 |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
 | `POST /gst/download` `{hash, index, lang, tmdb, kind, season, episode, name}` | start a download (below); the job |
 | `GET /gst/downloads` | every job: `{id, state, progress, size, subs, url, …}`, state `queued` / `fetching` / `subtitles` / `finishing` / `ready` / `failed` |

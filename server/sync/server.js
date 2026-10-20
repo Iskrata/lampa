@@ -7,13 +7,15 @@
 //   POST   /profile-<id>.json         { base, by, ops: [...] }   apply changes -> { v, t, stale }
 //                                     { by, create: { keys } }  a new profile's data, only if it has none -> 409
 //   POST   /profiles.json             { upsert: profile } | { add: [profiles] } (only ids it lacks) | { remove: id }
+//   GET    /watching                  who's watching now: every profile whose presence file is fresh, with its current
+//                                     name and picture (desktop/presence.js asks once instead of once per profile)
 // Run: SYNC_PORT=8091 SYNC_DATA=<dir> SYNC_JOURNAL=<dir> SYNC_TRASH=<dir> node server.js
 'use strict';
 const http = require('http'), fs = require('fs'), path = require('path');
 const { apply } = require('./ops');
 
 const SIMPLE = /^(presence|events)-[\w-]+\.json$|^\.probe$/, PROFILE = /^profile-([\w-]+)\.json$/, NAME = /^[\w.-]+$/;
-const MAX_BODY = 4 << 20, JOURNAL_DAYS = 30;
+const MAX_BODY = 4 << 20, JOURNAL_DAYS = 30, FRESH_MS = 3 * 60000;
 
 function handler(opts) {
     const data = opts.data, journal = opts.journal, trash = opts.trash;
@@ -108,6 +110,13 @@ function handler(opts) {
         const n = decodeURIComponent(req.url.split('?')[0].replace(/^\/+/, ''));
         if (!NAME.test(n) || n.endsWith('.tmp')) return send(res, 400, { error: 'bad name' });
         try {
+            if ((req.method === 'GET' || req.method === 'HEAD') && n === 'watching') {
+                const now = Date.now();
+                return send(res, 200, list().map(p => {
+                    const w = read('presence-' + p.id + '.json');
+                    return w && w.at && now - w.at < FRESH_MS ? Object.assign(w, { profile: p.id, name: p.name, color: p.color, img: p.img }) : null;
+                }).filter(Boolean));
+            }
             if (req.method === 'GET' || req.method === 'HEAD') {
                 if (!fs.existsSync(file(n))) return send(res, 404, { error: 'none' });
                 return send(res, 200, fs.readFileSync(file(n), 'utf8'));

@@ -41,6 +41,7 @@ itself. Its old copy of everything else never leaves the browser.
 | `PUT` of a profile or `profiles.json` | **409**: old page code. Its write is refused, and the journal records it |
 | `POST /profile-<id>.json` `{ base, by, ops }` | applies the changes; answers `{ v, t, stale }`. `stale`: someone else changed it since `base`, the version the page had |
 | `POST /profile-<id>.json` `{ by, create: { keys } }` | a new profile's data; **409** if it already has some |
+| `GET /watching` | who's watching now: each profile whose `presence-<id>.json` is under 3 minutes old, with the profile's current name, colour and picture. Presence files are still written by the pages (`desktop/presence.js`) |
 | `POST /profiles.json` `{ upsert }` / `{ add: [...] }` / `{ remove: id }` | one profile added or edited / profiles added only if their id is new / a profile removed. Its file moves to `trash/`, and changes for it then get **404**, so an open tab can't bring it back |
 
 A profile file is `{ t, v, keys, by }`. `v` goes up by one with each change, and `by` is the device, reason,

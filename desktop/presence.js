@@ -1,6 +1,7 @@
 // Who's watching now (desktop/README.md, "Profiles"): the top bar shows the other profiles that are playing
 // something, with a green dot; hover says what, a click opens that title. Each profile writes
-// presence-<id>.json ({ name, color, title, season, episode, id, kind, at }) to the shared ./sync/ folder
+// presence-<id>.json ({ name, color, title, season, episode, id, kind, at }) to the shared ./sync/ folder, and
+// the profile service on the server says who's watching from those (GET ./sync/watching)
 // when playback starts, every minute while it goes on, and { at: 0 } when it stops. Only with ./sync/
 // (store.js): without it there is nobody else to see. Writing runs everywhere (a TV counts as watching);
 // the top-bar part only where nav.js is.
@@ -67,9 +68,20 @@
         });
     }
 
+    // the profile service answers who's watching in one request (server/sync, GET /watching); a plain folder
+    // has each profile's file read instead
     function read(box) {
         if (document.hidden) return;
-        var me = rubyProfiles.current(), others = rubyProfiles.list().filter(function (p) { return !me || p.id !== me.id; });
+        var me = rubyProfiles.current();
+        rubyStore.getAsync('watching').then(function (text) {
+            var all = null;
+            try { all = JSON.parse(text || 'null'); } catch (e) { all = null; }
+            if (!Array.isArray(all)) return readEach(box, me);
+            render(box, all.filter(function (w) { return !me || w.profile !== me.id; }));
+        });
+    }
+    function readEach(box, me) {
+        var others = rubyProfiles.list().filter(function (p) { return !me || p.id !== me.id; });
         Promise.all(others.map(function (p) {
             return rubyStore.getAsync(file(p.id)).then(function (text) {
                 try { var w = JSON.parse(text || 'null'); } catch (e) { w = null; }

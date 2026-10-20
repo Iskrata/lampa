@@ -66,13 +66,18 @@ function search(movie, kind) {
     });
 }
 
+// a Jackett download link without its key: TorrServer (on this machine) fetches it through link() below
+function keyless(l) {
+    return l && /[?&]jackett_apikey=/.test(l) ?
+        `http://127.0.0.1:${cfg.port}/gst/link?u=${encodeURIComponent(l.replace(/([?&])jackett_apikey=[^&]*&?/, '$1').replace(/[?&]$/, ''))}` : l;
+}
+
 // a release as a browser gets it: what Lampa's torrent flow and the lists read, and no Jackett key
 const FIELDS = ['Title', 'Tracker', 'Size', 'Seeders', 'Peers', 'PublishDate', 'MagnetUri', 'InfoHash'];
 function handOut(r, played) {
     const out = {};
     for (const f of FIELDS) if (r[f] != null) out[f] = r[f];
-    if (r.Link) out.Link = /[?&]jackett_apikey=/.test(r.Link) ?
-        `http://127.0.0.1:${cfg.port}/gst/link?u=${encodeURIComponent(r.Link.replace(/([?&])jackett_apikey=[^&]*&?/, '$1').replace(/[?&]$/, ''))}` : r.Link;
+    if (r.Link) out.Link = keyless(r.Link);
     if (played) out.played = true;
     return out;
 }
@@ -115,4 +120,21 @@ async function link(u, res) {
     res.end(Buffer.from(await r.arrayBuffer()));
 }
 
-module.exports = { pick, link, rules };
+// Lampa's own Jackett search (its parser, the manual torrent list) comes here instead of to Jackett (Caddy routes
+// /jackett/api/ here): the key is added here and taken out of the answer, where every download link carries
+// it, so browsers never hold it (asked for 2026-10-20: it was in every browser's settings and in search URLs).
+async function search(path, query, res) {
+    const key = jackettKey();
+    if (!key || !/^\/api\/v2\.0\/indexers\/[\w:.-]+\/results$/.test(path)) { res.writeHead(404); return res.end(); }
+    const q = new URLSearchParams(query);
+    q.set('apikey', key);
+    const r = await fetch(`${cfg.jackett}${path}?${q}`, { signal: AbortSignal.timeout(SEARCH_MS) });
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); } catch (e) { res.writeHead(502); return res.end(); }
+    if (Array.isArray(j.Results)) for (const x of j.Results) if (x.Link) x.Link = keyless(x.Link);
+    res.writeHead(r.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(j).split(key).join('hidden'));
+}
+
+module.exports = { pick, link, search, rules };

@@ -19,6 +19,10 @@
     var OWN = ['favorite', 'file_view', 'online_view', 'online_watched_last', 'torrents_view', 'timetable', 'search_history',
         'recomends_list', 'recomends_scan', 'mine_reactions', 'user_clarifys', 'person_subscribes_id', 'discuss_voited', 'activity'];
     var OWN_PREFIX = ['file_view_', 'trakt', 'ruby_ratings'];
+    // the viewer's settings (settings.js), per profile since 2026-10-20: each person's subtitles and autoplay
+    // on every device, instead of one set per browser shared by whoever uses it
+    var SETTINGS = ['subtitles_start', 'subtitles_lang', 'ruby_anime_audio', 'playlist_next', 'ruby_hero_trailers', 'ruby_trailer_sound'];
+    OWN = OWN.concat(SETTINGS);
     var SHARED = ['trakt_client_id', 'trakt_client_secret'];
     var MAX = 10;
     var NOT_SYNCED = /cache|_log$|debug/;   // per profile, but rebuilt on their own: not worth uploading
@@ -216,7 +220,19 @@
         retry = needRefresh = false;
         rubyStore.getAsync(file()).then(function (text) {
             var s = parse(text);
-            if (!s || (s.v || 0) === state.dataV) return;
+            if (!s) return;
+            // settings this device had before they became per profile, which the profile doesn't have yet: kept,
+            // by sending them, instead of losing them to the server's copy (once per setting and profile)
+            var adopt = SETTINGS.filter(function (k) { return !(k in (s.keys || {})) && ls.getItem(k) !== null && !(k in pending.base); });
+            if (adopt.length) {
+                if (pending.p !== state.current) pending = { p: state.current, base: {} };
+                adopt.forEach(function (k) { pending.base[k] = null; });
+                keep();
+                log('settings kept for this profile', { keys: adopt });
+                retry = true;
+                return flush('settings');
+            }
+            if ((s.v || 0) === state.dataV) return;
             var mine = snapshot().keys;
             if (JSON.stringify(s.keys) === JSON.stringify(mine)) { state.dataV = s.v || 0; return save(); }
             if (dirty() || playing()) { needRefresh = true; return; }

@@ -113,8 +113,22 @@ change and alerts when a profile loses data (the deployment's notes).
 
 Per profile: `favorite`, `file_view*` (progress), `online_view`, `torrents_view`, `timetable`,
 `search_history`, `recomends_*`, `activity` and a few more, every `trakt*` key (the Trakt login and all
-Trakt plugin state), and `ruby_ratings`. Shared: settings, servers, plugins, and `trakt_client_id` /
-`trakt_client_secret`. The list is at the top of `profiles.js`.
+Trakt plugin state), and `ruby_ratings`.
+
+**The viewer's settings are per profile too** (since 2026-10-20): subtitles on/off and language, anime
+audio, autoplaying the next episode, and trailers with or without sound (Settings, `settings.js`). They
+used to belong to the browser, shared by whoever used it. A device that had its own values before this
+change sends them to its profile once, if the profile doesn't have them yet ("settings kept for this
+profile" in the logs), instead of losing them to the server's copy.
+- Checked 2026-10-20 in `tools/dev-server.js`. A device with Bulgarian subtitles and autoplay off kept
+  both and gave them to the profile. A second device then picked the profile and got both.
+
+Shared: servers, plugins, the interface language, and `trakt_client_id` / `trakt_client_secret`. The list
+is at the top of `profiles.js`.
+
+**Who's watching now** comes from the profile service in one request (`GET ./sync/watching`): every
+profile whose presence file is fresh, with its current name and picture. With a plain folder, each
+profile's file is read instead.
 
 **Who's watching now.** With `./sync/`, each profile writes `presence-<id>.json` when playback starts,
 every minute while it goes on, and `{at: 0}` when it stops. The top bar shows the other profiles that wrote
