@@ -24,7 +24,9 @@ function ffprobe(url) {
     return new Promise((resolve, reject) => {
         execFile(cfg.ffprobe, ['-v', 'error', '-probesize', '20000000', '-analyzeduration', '3000000',
             '-show_format', '-show_streams', '-of', 'json', url], { maxBuffer: 16 << 20, timeout: 90000 },
-        (err, out) => err ? reject(new Error('ffprobe: ' + (err.message || err))) : resolve(JSON.parse(out)));
+        // why, not just "Command failed" (2026-10-20: a Vikings torrent that sent nothing for 90 s logged only that)
+        (err, out, stderr) => err ? reject(new Error('ffprobe: ' + (err.killed ? 'no answer in 90 s (the torrent sent too little to read)' :
+            'exit ' + err.code + ': ' + ((stderr || '').trim().split('\n').pop() || err.message)))) : resolve(JSON.parse(out)));
     });
 }
 
