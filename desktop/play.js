@@ -406,8 +406,9 @@
         watchAirplay();
     }
 
+    // episode(show, {season, episode}): play that episode (episodes.js)
     window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); },
-        qualities: qualities, switchTo: switchTo };
+        qualities: qualities, switchTo: switchTo, episode: function (show, target) { start(show, target); } };
 
     var timer = setInterval(function () {
         if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;

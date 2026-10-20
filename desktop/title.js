@@ -23,6 +23,10 @@
         // Lampa's own dim backdrop and TV poster give way to the hero
         'body.ruby-title .activity--active .full-start__background{display:none!important}',
         'body.ruby-title .full-start-new__left,body.ruby-title .full-start-new__reactions,body.ruby-title .button--reaction{display:none!important}',
+        // only Play, My List and the thumbs (simplicity review 2026-10-20): not Lampa's Subscribe bell, "Platforms"
+        // or "⋯" (whose menu held only Recommendations and Facts), for every profile
+        'body.ruby-title .full-start-new__buttons .button--subscribe,body.ruby-title .full-start-new__buttons .button--options,' +
+            'body.ruby-title .full-start-new__buttons .button--plaftorms{display:none!important}',
         'body.ruby-title .full-start-new{position:relative;min-height:calc(88vh - 9em);display:flex;flex-direction:column;justify-content:flex-end;padding:0 3.5% 1.5em;margin-bottom:2.5em}',
         'body.ruby-title .full-start-new__body{align-items:flex-end}',
         'body.ruby-title .full-start-new__right{padding-left:0;max-width:44em}',

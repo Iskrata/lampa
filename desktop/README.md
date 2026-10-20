@@ -26,7 +26,7 @@ see "Touch devices and phones".
 | `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
 | `facts.js` | `rubyFacts`: the full-screen loading screen while a title starts |
 | `progress.js` | how far it is, on that card: a percentage and a bar |
-| `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
+| `mylist.js` | `rubyMyList`: + My List on posters, the billboard and title pages |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
@@ -121,6 +121,12 @@ when it's in. The top bar's My List opens just that list (`component: 'favorite'
 Lampa's all-favourites overview. The button stops its clicks from reaching the card, which would open
 the title. The title page's bookmark button saves with one click too: Lampa's menu of Bookmarks / Like /
 Later / statuses is skipped. The thumbs are the ratings, so Lampa's own "Like" list was a duplicate.
+That button says "+ My List" (a tick once it's in) with its label always shown; Lampa's was an unlabelled
+bookmark named "Favorites" (simplicity review 2026-10-20).
+
+**The title page's buttons** (simplicity review 2026-10-20, for every profile): Play, + My List and the thumbs.
+Lampa's Subscribe bell, "Platforms" and "⋯" are hidden (`title.js`); the "⋯" menu held only Recommendations
+and Interesting Facts. Lampa's emoji reactions were hidden before.
 
 No + on posters on touch devices (phones, iPads). A tap sends iOS Safari a `mouseover` first. When a
 visible element appears during it (the +), Safari treats the tap as a hover and waits for a second tap
@@ -284,6 +290,19 @@ Jackett's key stays out of test browsers):
 Also fixed on the way: after Lampa's "Failed to connect to TorrServer" window, Play's loading card stayed
 up until Cancel. That window closes without `list_close`, so `pending` was never cleared. The card now
 goes once no Lampa window has been open for 2 s.
+
+## Episodes
+
+`episodes.js`: a series' title page lists its episodes as on Netflix: "Episodes", a season picker (a native
+`<select>`: mouse, touch and phones; only seasons that have started airing), and every episode of that season
+with its number, still, name, length, two lines of its overview and a red bar of how much was watched
+(Lampa's timeline, the same key as `resume.js`). Not yet aired: dimmed, "Coming 22 October", no click. A click
+plays it (`rubyPlay.episode`). It opens at the season you're in (`rubyResume.where`). It replaces Lampa's row
+of one season's stills (names showed only on focus) with a "More" tile that opened a separate page
+(simplicity review 2026-10-20). With "Pick torrents for me" off, Lampa's row stays.
+
+Checked 2026-10-20 in the dev server: Breaking Bad shows Seasons 1-5, Season 1's 7 episodes with S1 E3's
+bar at 95 %; Season 3 loads its 13; a click on S1 E2 started Play's search with the loading screen.
 
 ## Where you are in a series
 

@@ -11,7 +11,10 @@
         '.ruby-add .ruby-icon{font-size:1.15em}',
         '.card:hover .ruby-add,.card.focus .ruby-add,.ruby-add.in{opacity:1}',
         '.ruby-add:hover{transform:scale(1.12);border-color:#fff}',
-        '.ruby-hero__btn--list{background:rgba(109,109,110,.7);color:#fff}'
+        '.ruby-hero__btn--list{background:rgba(109,109,110,.7);color:#fff}',
+        // the title page's bookmark: "+ My List" with its label always shown, a tick once it's in
+        '.full-start__button.button--book span{display:inline!important}',
+        '.full-start__button.button--book .ruby-icon{width:1.5em;height:1.5em}'
     ].join('\n');
 
     // what Lampa stores and matches (by id; name/original_name/first_air_date tell it a series)
@@ -25,6 +28,17 @@
         el.title = on ? 'Remove from My List' : 'Add to My List';
         var label = el.querySelector('.ruby-add__label');
         el.innerHTML = rubyIcons.svg(on ? 'check' : 'plus') + (label ? '<span class="ruby-add__label">My List</span>' : '');
+    }
+
+    // the title page's bookmark button, Lampa's "Favorites": "+ My List" / "✓ My List" (simplicity review
+    // 2026-10-20: an unlabelled bookmark icon)
+    function paintBook() {
+        var a = Lampa.Activity.active() || {}, item = a.card || a.movie;
+        var btn = document.querySelector('.activity--active .full-start__button.button--book');
+        if (!btn || !item || !item.id) return;
+        var on = has(item), html = rubyIcons.svg(on ? 'check' : 'plus') + '<span>My List</span>';
+        if (btn.innerHTML !== html) btn.innerHTML = html;
+        btn.title = on ? 'Remove from My List' : 'Add to My List';
     }
 
     // a click on the button must not reach the card (that opens the title) nor start a long-press
@@ -75,10 +89,13 @@
             e.stopImmediatePropagation();
             toggle(item);
             Lampa.Noty.show(has(item) ? 'Added to My List' : 'Removed from My List');
+            paintBook();
         }, true);
+        Lampa.Listener.follow('full', function (e) { if (e.type === 'complite') paintBook(); });
         // added or removed anywhere (here, the title page, another tab of this profile): repaint what's shown
         Lampa.Listener.follow('state:changed', function (e) {
             if (e.target !== 'favorite') return;
+            paintBook();
             [].forEach.call(document.querySelectorAll('.ruby-add, .ruby-hero__btn--list'), function (el) { if (el._rubyItem) paint(el, el._rubyItem); });
         });
     }
