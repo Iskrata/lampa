@@ -9,6 +9,7 @@ const { spawn } = require('child_process');
 const { Splitter } = require('./mp4');
 const { ffmpegArgs, seekTime, SUB_LANGS } = require('./media');
 const opensubs = require('./opensubs');
+const swarm = require('./swarm');
 const cfg = require('./config');
 
 const AHEAD = 30, BEHIND = 40, WAIT_MS = 90000, JUMP = 6, SLACK_S = 0.05;
@@ -71,11 +72,21 @@ class Session {
         this.lastReq = n;
         this.prune();
         if (this.has(n)) { this.flow(); return this.file(n); }
+        // a missing segment behind the one ffmpeg writes was pruned (or another tab is further on): only a new run
+        // makes it again. Waiting for it held ffmpeg back for good (flow() with lastReq far behind), so nothing read
+        // the torrent and swarm.js called a live swarm dead: VisionQuest on 2026-10-20 at 14:29, a new tab asking
+        // seg0 of a run at about seg70 (README "Dead swarms")
         const j = this.job;
-        if (!j || j.ended || n < j.start || n > j.cur + JUMP) this.start(n);
+        if (!j || j.ended || n < j.cur || n > j.cur + JUMP) this.start(n);
         else this.flow();
         await this.until(() => this.has(n), WAIT_MS);
         return this.file(n);
+    }
+
+    // is ffmpeg reading the torrent for segment n now? (a run held back by flow() asks it for nothing: swarm.js)
+    reading(n) {
+        const j = this.job;
+        return !!j && !j.ended && !j.paused && n >= j.start;
     }
 
     start(n) {
@@ -116,6 +127,7 @@ class Session {
         if (this.delay == null) this.delay = j.splitter.delay;   // the same for every run of this file
         if (n > j.cur) { this.write(j, j.cur); j.cur = n; }
         j.frags.push(buf);
+        swarm.progress(this.m.hash.toLowerCase());
         this.flow();
     }
 
@@ -155,7 +167,7 @@ class Session {
     until(test, ms) {
         if (test()) return Promise.resolve();
         return new Promise((resolve, reject) => {
-            const w = { test, resolve, timer: setTimeout(() => { this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout')); }, ms) };
+            const w = { test, resolve, reject, timer: setTimeout(() => { this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout')); }, ms) };
             this.waiters.push(w);
         });
     }
@@ -339,6 +351,9 @@ class Session {
     // On Windows a killed ffmpeg holds its files open for a moment: delete a little later, and retry once
     close() {
         this.stop();
+        // (/gst/remove) requests waiting for its segments get an answer now, not after WAIT_MS
+        for (const w of this.waiters) { clearTimeout(w.timer); w.reject(new Error('closed')); }
+        this.waiters = [];
         const rm = retry => setTimeout(() => {
             try { fs.rmSync(this.dir, { recursive: true, force: true }); }
             catch (e) { if (retry) rm(false); else console.error(`could not delete ${this.dir}: ${e.message}`); }

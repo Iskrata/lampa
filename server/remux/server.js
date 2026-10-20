@@ -137,9 +137,11 @@ function sendFile(res, file) {
     fs.createReadStream(file).pipe(res);
 }
 
-// waiting for the torrent's data (the probe, a segment): swarm.js tells a dead swarm by such waits
-async function fed(hash, p) {
-    const end = swarms.waiting(hash.toLowerCase());
+// waiting for the torrent's data (the probe, a segment): swarm.js tells a dead swarm by such waits. Only while
+// the player still asks (a closed tab's request isn't waiting) and, for a segment, while ffmpeg reads for it
+async function fed(hash, p, res, reading) {
+    const end = swarms.waiting(hash.toLowerCase(), reading);
+    res.on('close', end);
     try { return await p; } finally { end(); }
 }
 
@@ -182,7 +184,7 @@ async function handle(req, res) {
     if (a === 'master.m3u8') {
         const t0 = Date.now(), index = url.searchParams.get('index') || '1', st = startup.begin(hash, index);
         releases.watching(hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
-        const s = st.session = await fed(hash, session(hash, index, lang(url.searchParams.get('lang'))));
+        const s = st.session = await fed(hash, session(hash, index, lang(url.searchParams.get('lang'))), res);
         const loaded = Date.now();
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
         // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
@@ -204,9 +206,9 @@ async function handle(req, res) {
     }
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
-    if (b === 'init.mp4') return sendFile(res, await fed(hash, s.init()));
+    if (b === 'init.mp4') return sendFile(res, await fed(hash, s.init(), res));
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) {
-        const t0 = Date.now(), file = await fed(hash, s.segment(+m[1])), bd = s.m.bounds;
+        const t0 = Date.now(), file = await fed(hash, s.segment(+m[1]), res, () => s.reading(+m[1])), bd = s.m.bounds;
         sendFile(res, file);
         releases.sent(hash, s.m.index, +m[1], (bd[+m[1] + 1] - bd[+m[1]]) || 0);
         // the player waited for this one (the first segment, a seek, or the download falling behind)

@@ -217,6 +217,24 @@ What Lampa's lists show and what the player switches on (desktop/README.md, "Dea
     up at 90 s. In the tests on 2026-10-20 (a test copy of this service on the home server), a random
     hash (nobody seeds it) was marked dead 25 s after its probe began waiting. WiKi, alive again at about
     3 Mbit/s, never was (`stalled` stayed under 5 s for 3 minutes): that's "too slow", the player's call.
+  - **Only a wait on the torrent counts.** A request counts while its connection is open (a closed tab's
+    request doesn't) and, for a segment, while ffmpeg runs unpaused for it (`session.js` `reading()`). Data
+    coming is TorrServer's count changing *or* ffmpeg writing a fragment: for a file TorrServer already holds
+    whole the count stands still (Big Buck Bunny's for minutes while it played, 2026-10-20). `/gst/remove`
+    answers the requests waiting on the session it closes at once, instead of after 90 s.
+  - Why: VisionQuest S01E01 720p SYLiX (`4e5a2c99…`) was marked dead on 2026-10-20 at 14:29:22 UTC with 21/295
+    peers and 237 seeders, minutes after playing 70+ segments to the iOS simulator. A new tab (14:28:50, after
+    Safari was force-quit) asked seg0 of the session whose ffmpeg was near seg70. seg0 had been pruned (40
+    behind), but it was inside the run (`start ≤ n ≤ cur + 6`), so the request waited for ffmpeg to write it,
+    which it never would, and `flow()` paused ffmpeg (70 ahead of the "player" at 0). Nothing read the
+    torrent, the count stood still, and the tab's retries every 4 s kept the wait going: ten seg0 requests
+    timed out at 90 s from 14:30:22 on, with no "ffmpeg from segment 0" in the log. Any seek back more than 40
+    segments into a run did the same. Now a missing segment behind ffmpeg starts a new run there. Reproduced on
+    the Mac (this service with ruby's TorrServer, Big Buck Bunny: segments 0–50, then seg0 four times, aborted
+    after 20 s each): before the fix no new run, `stalled` 140 → 178 s and `waiting` 4 after all four were
+    aborted; after it, "ffmpeg from segment 0" and seg0 in 5–9 s, `stalled` 0. (This Mac can't reach the
+    trackers over UDP, so the mark itself can't happen here; `stalled` past 25 s with a tracker answering is
+    what marks.)
 
 ## Picking a release (`pick.js`, `releases.js`)
 

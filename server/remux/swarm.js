@@ -2,7 +2,8 @@
 //   * seeders: real counts from public trackers (BEP 15 UDP scrape). Indexers' counts go stale: on 2026-10-20
 //     LimeTorrents listed Spider-Man No Way Home's WiKi release with 19 seeders, the trackers had 2-4.
 //   * dead: a torrent that sends nothing while someone waits for it. A request (the probe, a segment) has
-//     waited STALL_MS and TorrServer's bytes haven't grown in that time. Remembered for DEAD_KEEP_MS, for
+//     waited STALL_MS on the torrent (its player still there, ffmpeg reading for it) and neither TorrServer's
+//     bytes nor ffmpeg's output have moved in that time. Remembered for DEAD_KEEP_MS, for
 //     everyone, so the lists hide it (desktop/swarm.js). The WiKi release had 2 seeders connected and sent
 //     0 bytes after its first 44 MB.
 'use strict';
@@ -97,25 +98,36 @@ function deadList() {
 }
 function isDead(h) { return !!dead[h] && Date.now() - dead[h].at <= DEAD_KEEP_MS; }
 
-// requests waiting on a torrent: hash -> { n, since, idleAt, bytes, grewAt }
+// requests waiting on a torrent: hash -> { waits, since, idleAt, bytes, grewAt }. waits: a request's "is the
+// torrent asked for data now?" each (a run held back asks it for nothing, session.js reading())
 const watched = new Map();
 // call when a request starts waiting on the torrent's data; returns the function to call when it's done
-function waiting(hash) {
+function waiting(hash, reading) {
     const now = Date.now();
     let w = watched.get(hash);
-    if (!w) watched.set(hash, w = { n: 0, since: now, idleAt: 0, bytes: -1, grewAt: now });
+    if (!w) watched.set(hash, w = { waits: new Set(), since: now, idleAt: 0, bytes: -1, grewAt: now });
     // a player retrying (hls.js gives up on a segment and asks again) keeps the wait going
     // (TorrServer's byte count starts again at 0 when a torrent closed for being idle is added again)
-    if (w.n === 0 && w.idleAt && now - w.idleAt > GAP_MS) { w.since = now; w.grewAt = now; w.bytes = -1; }
-    w.n++;
+    if (!w.waits.size && w.idleAt && now - w.idleAt > GAP_MS) { w.since = now; w.grewAt = now; w.bytes = -1; }
+    const me = reading || (() => true);
+    w.waits.add(me);
     let ended = false;
-    return () => { if (ended) return; ended = true; if (--w.n === 0) w.idleAt = Date.now(); };
+    return () => { if (ended) return; ended = true; w.waits.delete(me); if (!w.waits.size) w.idleAt = Date.now(); };
+}
+
+// ffmpeg made something from the torrent: its data is coming. TorrServer's count doesn't say so for a file it
+// already holds whole (Big Buck Bunny's count stood still for minutes while ffmpeg read it, 2026-10-20)
+function progress(hash) {
+    const w = watched.get(hash);
+    if (w) w.grewAt = Date.now();
 }
 
 async function sample() {
     const now = Date.now();
     for (const [hash, w] of watched) {
-        if (w.n === 0) { if (now - w.idleAt > 10 * 60000) watched.delete(hash); continue; }
+        if (!w.waits.size) { if (now - w.idleAt > 10 * 60000) watched.delete(hash); continue; }
+        // waiting on this service, not on the torrent: no stall (VisionQuest on 2026-10-20, README "Dead swarms")
+        if (![...w.waits].some(r => r())) { w.grewAt = now; continue; }
         const t = await torrserver('/torrents', { action: 'get', hash });
         if (!t) continue;
         const bytes = t.bytes_read_useful_data || t.loaded_size || 0;
@@ -126,7 +138,7 @@ async function sample() {
         if (!check.answered) continue;
         dead[hash] = { at: now, title: t.title || t.name || '', size: t.torrent_size || 0 };
         console.log(`${hash.slice(0, 8)} dead: nothing downloaded for ${Math.round((now - w.grewAt) / 1000)} s while ` +
-            `${w.n} request(s) waited, ${t.active_peers || 0}/${t.total_peers || 0} peers, trackers say ${check.seeders[hash]} seeders`);
+            `${w.waits.size} request(s) waited, ${t.active_peers || 0}/${t.total_peers || 0} peers, trackers say ${check.seeders[hash]} seeders`);
         save();
         // and for the title it was played for: never offered for it again (releases.js)
         releases.failed(hash, 'dead', null, t.title || t.name);
@@ -140,7 +152,7 @@ setInterval(() => { sample().catch(e => console.error('swarm:', e.message)); }, 
 // the video got Desperate Housewives' S1 pack called "too slow" on 2026-10-20, desktop/swarm.js)
 function state(hash) {
     const w = watched.get(hash), now = Date.now();
-    return { dead: isDead(hash), stalled: w && w.n ? Math.min(now - w.since, now - w.grewAt) : 0, waiting: w ? w.n : 0 };
+    return { dead: isDead(hash), stalled: w && w.waits.size ? Math.min(now - w.since, now - w.grewAt) : 0, waiting: w ? w.waits.size : 0 };
 }
 
 // GET /gst/swarm?hash=<h>,<h>...: { seeders: { hash: n | null }, dead: [{ hash, title, size }] } (also /gst/pick's)
@@ -150,4 +162,4 @@ async function report(list) {
     return { seeders: s.seeders, dead: deadList() };
 }
 
-module.exports = { waiting, state, report };
+module.exports = { waiting, progress, state, report };
