@@ -373,6 +373,10 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
+- **Signed in** once, kept 20 h. A download answered 401 signs in again and is asked once more: on 2026-10-20 a
+  token from 17:55 UTC got "401 invalid token" by 19:43, and every download failed until a restart. A failed
+  download is tried again after 10 min; before, every subtitle request of the player retried it (once a second,
+  `f3647aee:15 bg`).
 - **Lined up** with the file's own captions, which are in step with the video, **by their words**: both are
   transcripts of the same dialogue, so a run of 3 words found in exactly one caption anchors that moment.
   Anchors must move forward in both files (the longest such chain), and only runs of 3+ anchors whose shift

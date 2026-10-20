@@ -189,6 +189,20 @@
         console.log('Ruby swarm', 'watching', c.hash, need ? need.toFixed(1) + ' Mbit/s needed' : '');
     }
 
+    // compat.js, when the server couldn't open the file because the torrent sent too little (its probe's 90 s
+    // ran out, or 75 s of reading): the next release, as for one too slow to play. False when there's none or
+    // the stream isn't this release's: compat.js shows its error then. Before, the player showed the error and
+    // stopped: Desperate Housewives' S1 pack, 1-2 peers for its first 20 s, took over 90 s to open S1E15 on a
+    // Windows PC and 44 s when tried again (2026-10-20), while its other 1080p release was never tried.
+    function unopened(url, why) {
+        var m = /\/gst\/([0-9a-f]{40})\//i.exec(url || ''), c = current;
+        if (!c || !m || c.hash && c.hash !== m[1].toLowerCase() || c.switches >= MAX_SWITCHES || !nextRelease(why)) return false;
+        c.hash = m[1].toLowerCase();
+        switchRelease(why);
+        return true;
+    }
+    window.rubySwarm = { unopened: unopened };
+
     function init() {
         wrapParser();
         wrapStart();

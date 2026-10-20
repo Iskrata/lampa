@@ -180,8 +180,15 @@ async function download(pick) {
     const srtFile = path.join(cfg.subs, `os-${pick.id}.srt`);
     let srt;
     try { srt = fs.readFileSync(srtFile, 'utf8'); } catch (e) {
-        const s = await session();
-        const dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token });
+        let s = await session(), dl;
+        try { dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token }); } catch (e) {
+            // a token OpenSubtitles stopped taking well before its 24 h (another sign-in to the account?): every
+            // download answered "401 invalid token" on 2026-10-20 (19:43 UTC, signed in 17:55) until a restart
+            if (e.status !== 401 || !s.token) throw e;
+            login = null;
+            s = await session();
+            dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token });
+        }
         srt = await (await fetch(dl.link)).text();
         fs.mkdirSync(cfg.subs, { recursive: true });
         fs.writeFileSync(srtFile, srt);

@@ -12,6 +12,7 @@
 (function () {
     var SETTING = 'ruby_autopick';
     var pending = null;     // { target, files: [{element, item}] } while Lampa's file list is coming up
+    var opened = null;      // the title Play last opened a release of (its stream names it, init)
     var push = null;        // Lampa.Activity.push before we wrapped it
 
     function on() { return Lampa.Storage.field(SETTING) !== false; }
@@ -228,6 +229,7 @@
 
     function play(movie, target, release, download) {
         pending = { target: target, files: [], at: Date.now(), movie: movie, download: download };
+        opened = movie;
         if (rubyFacts.open()) rubyFacts.status('Connecting…'); else rubyFacts.start('Connecting…', movie);
         // backed out of Lampa's torrent dialog before anything played: take the facts away. Lampa's window is
         // open from Torrent.start until the player opens; its connection-error window closes without the
@@ -395,12 +397,14 @@
         setting();
         push = Lampa.Activity.push;
         // anime in Japanese: ask the remux service for the Japanese track (and subtitles on) - server/remux.
-        // The title's TMDB id goes along, for subtitles from OpenSubtitles (server/remux/opensubs.js).
+        // The title's TMDB id goes along, for subtitles from OpenSubtitles (server/remux/opensubs.js) and the
+        // server's memory of releases (releases.js). The page's card, else the title Play opened: a start from
+        // Continue watching is on Home, which has none (Desperate Housewives S1E15 went without, 2026-10-20).
         var stream = Lampa.Torserver.stream;
         Lampa.Torserver.stream = function () {
             var u = stream.apply(this, arguments);
             if (!/\/gst\/.*master\.m3u8/.test(u)) return u;
-            var a = Lampa.Activity.active() || {}, card = a.card || a.movie;
+            var a = Lampa.Activity.active() || {}, card = a.card || a.movie || opened;
             if (card && card.id && !/[?&]tmdb=/.test(u))
                 u += '&tmdb=' + card.id + '&kind=' + (card.original_name || card.first_air_date ? 'tv' : 'movie');
             return streamLang ? u + '&lang=' + streamLang : u;

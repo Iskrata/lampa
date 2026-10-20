@@ -273,7 +273,13 @@ class Session {
         const pick = await this.picks[lang], tag = `${this.m.hash.slice(0, 8)}:${this.m.index}`;
         if (!pick) return [];
         if (!this.osLines[lang]) {
-            this.osLines[lang] = opensubs.download(pick).catch(e => { console.error(e.message); delete this.osLines[lang]; return []; });
+            // a failed download is tried again in 10 min, not on the player's next subtitle request (once a second:
+            // f3647aee:15 bg, 2026-10-20)
+            this.osLines[lang] = opensubs.download(pick).catch(e => {
+                console.error(e.message);
+                setTimeout(() => { delete this.osLines[lang]; }, 10 * 60e3).unref();
+                return [];
+            });
             console.log(`${tag} ${lang} subtitles from OpenSubtitles: "${pick.release}"${pick.match ? ' (made for this file)' : ''}`);
         }
         const cues = await this.osLines[lang], map = this.fitMap;

@@ -160,12 +160,25 @@
             Promise.race([fetch(src, { cache: 'no-store' }).then(function (r) {
                 return r.text().then(function (body) { return { ok: r.ok, body: body }; });
             }), late]).then(function (res) {
-                if (res.late) return heartbeat(src).then(function (h) { return { error: 'The server didn\'t open the file in ' + MASTER_MS / 1000 + ' s: ' + why(h, false, false, true) }; });
+                // the torrent's fault (still waiting on it, or the server's probe got too little): swarm.js
+                // switches to the next release instead of the error
+                if (res.late) return heartbeat(src).then(function (h) {
+                    var peers = h && h.Torrent && +h.Torrent.active_peers || 0;
+                    if (h && h.Swarm && h.Swarm.waiting > 0) return { unopened: peers ? 'slow' : 'nopeers', h: h };
+                    return { error: 'The server didn\'t open the file in ' + MASTER_MS / 1000 + ' s: ' + why(h, false, false, true) };
+                });
                 if (res.ok) return readMaster(src, res.body);
+                if (/the torrent sent too little/.test(res.body || '')) return { unopened: 'slow' };
                 return { error: 'The server couldn\'t play this file: ' + (res.body || 'error ' + res.status).slice(0, 200) + '. Pick another release.' };
             }, function () { return { url: src }; }).then(function (o) {
                 if (c && c !== current) return;
                 if (current) current.codecs = o.codecs || '';
+                if (o.unopened) {
+                    console.log('Ruby compat', 'the server couldn\'t open the file:', o.unopened);
+                    if (window.rubySwarm && rubySwarm.unopened(src, o.unopened)) return stopWatching();
+                    return fail(o.h ? 'The server didn\'t open the file in ' + MASTER_MS / 1000 + ' s: ' + why(o.h, false, false, true) :
+                        'The server couldn\'t open the file: the torrent sent too little to read. Pick another release.');
+                }
                 if (o.error) return fail(o.error);
                 url.call(self, o.url || src);
                 if (o.subs && o.subs.length) Lampa.Player.subtitles(o.subs);

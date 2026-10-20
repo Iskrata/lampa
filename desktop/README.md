@@ -456,6 +456,14 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     was switched 3 s into playing. The bitrate needed is per episode (`rubyPick.bitrate` with Play's
     `rubyPlay.target()`): before 2026-10-20 a series started by Play went in without its episode, and a pack
     was worked out as a film (Friends S01-S10, 182 GB over 110 min: "220.6 Mbit/s needed" instead of 2.2).
+  - **Not opened:** the server couldn't open the file because the torrent sent too little: its probe's 90 s ran
+    out (the master's 500 says "the torrent sent too little"), or compat.js read the master for 75 s while the
+    heartbeat says a request still waits on the torrent (`Swarm.waiting`). compat.js asks swarm.js
+    (`rubySwarm.unopened`) for the next release, reported as too slow (no peers when 0 peers); only with none
+    left does it show its error. Before 2026-10-20 that was Lampa's error screen (the TV-static "noise") and a
+    stop: a Windows PC got Desperate Housewives' S1 pack (a0191e41) for S1E15 from Continue watching, the probe
+    had too little in 90 s, and the other 1080p release was never tried. The same file opened in 44 s when tried
+    again from the server that evening (1-2 peers for its first 20 s, then 4-16 Mbit/s).
   - Switching closes the player, then Lampa's file list through its Back (which drops the old torrent),
     then opens the next release with Play's flow (`rubyPlay.play`), which picks the same file.
 - **Checked 2026-10-20** in the built-in browser (Chromium), against the home server:
@@ -584,7 +592,8 @@ decides.
     playable in a browser: mpeg4");
   - its `CODECS` video can't be decoded here: "This release is HEVC 10-bit video, which this browser can't
     play. Pick an H.264 (x264) release.";
-  - no answer in 75 s: the reason from the heartbeat (0 peers, barely downloading, still reading);
+  - no answer in 75 s: the reason from the heartbeat (0 peers, barely downloading, still reading), unless the
+    torrent is the cause and swarm.js has a next release ("Dead swarms", "Not opened");
   - HDR (`VIDEO-RANGE` PQ/HLG) where `(video-dynamic-range: high)` is false: the video playlist alone, and
     the master's subtitle tracks handed to Lampa as whole WebVTT files (`Lampa.Player.subtitles`, the remux's
     `<track>.vtt`), loaded again every 30 s while selected (the remux learns a file's own lines as ffmpeg
@@ -636,7 +645,9 @@ decides.
   `createParser` change above.
 - **Better subtitles.** When a file's English subtitles are TV captions (ALL CAPS) or missing, the remux
   service swaps in ones from OpenSubtitles, lined up with the file (server/remux/README.md, "Subtitles from
-  OpenSubtitles"). `play.js` adds the title's TMDB id to the stream URL for it.
+  OpenSubtitles"). `play.js` adds the title's TMDB id to the stream URL for it: the page's card, else the
+  title Play opened (a start from Continue watching is on Home, which has no card: Desperate Housewives S1E15
+  went without one on 2026-10-20, so no OpenSubtitles and no release memory for it).
 - **Subtitles on by default, in the profile's language.** `player.js` sets Lampa's defaults for Settings →
   Player → Subtitles (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps
   its choice. English, Bulgarian and Russian (what the remux service offers) are at the top of that list, and
