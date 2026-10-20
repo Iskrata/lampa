@@ -811,6 +811,36 @@ What made scrolling laggy in Safari, and what replaced it:
 - **Title hero.** It follows the page scroll by copying Lampa's own transform and CSS transition, so
   there's no `requestAnimationFrame` loop reading styles every frame.
 
+### A start that froze the page, then killed it (the Trakt plugin, 2026-10-20)
+
+Starting Friends S01E01 from the S01-S10 pack (236 files) stalled 20-73 s between compat.js reading the master
+and the player getting it, and some starts ended in "The last page load in this tab failed". Both were one bug,
+in the host's Trakt plugin (`trakttv.js`, served from `/plugins/`, not in this repo): Lampa sends
+`torrent_file` for `list_open` and again for every rendered file, each with the whole list in `e.items`, and
+the plugin handled every one, writing its whole hash cache (~144 K chars) to localStorage once per file each
+time, ~56,000 writes per start. A single-file release makes 2, which is why Matchbox never showed it.
+
+Measured in a visible Chrome 155 (chrome-devtools), tools/dev-server.js with `/ts/gst` forwarded to the
+host's remux through a logging forwarder:
+- first start: the page's main thread did nothing else for 73 s (26.8-99.8 s: no timer fired, no console
+  line, every fetch and XHR, including /sync/ and heartbeats, completed at 99.8 s). The forwarder had the
+  master's 615 bytes delivered in 346 ms. So the "fetch headers fast, body 49 s later" seen in the hidden
+  pane was the page not running, not the network.
+- second start: the renderer died. Its Crashpad dump has PartitionAlloc's out-of-memory keys
+  (`page-allocator-mapped-size` 70 GB) with V8's heap at 12.5 MB; the trace's CPU samples for its last
+  seconds are `localStorage.setItem` ← `persistHashMetaCache` ← `setHashMeta` ← `onTorrentFileList` ←
+  `torrent_file` from Lampa's `list$1`.
+- the connection-pool idea (6 per host over HTTP/1.1, heartbeats and /sync/ holding them) doesn't hold:
+  every request reached the forwarder at once; the heartbeats (Lampa's own each second, compat.js and
+  swarm.js on top) answer in 130-300 ms. The cause is in the page, so the protocol (HTTP/2 on the public
+  host) doesn't change it.
+
+Fixed in the host's copy of the plugin (documented with the host's deployment): once per list, after the
+renders, one write. Same setup after the fix: start to player 1.0 s, master read in 0.1-0.24 s, longest task
+211 ms, two starts in a row, the plugin's cache still filled (234 Friends hashes). Not measured in Safari or
+on the public host; the plugin runs the same code there. `DEV_PLUGINS=folder` in tools/dev-server.js serves
+`/plugins/*` from a local folder, to test a plugin change before it is deployed.
+
 ## Loading screens
 
 `loading.js` replaces Lampa's look while things load, on **every platform** (unlike the rest of this folder:

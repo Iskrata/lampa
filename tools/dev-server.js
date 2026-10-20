@@ -16,7 +16,7 @@ const sync = require('../server/sync/server').handler({ data: SYNC_DIR, journal:
 process.on('exit', () => fs.rmSync(SYNC_TMP, { recursive: true, force: true }));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
 const UP = process.env.LAMPA_UPSTREAM || 'ruby', REMUX = +(process.env.REMUX_PORT || 8092);
-const CONSOLE = process.env.DEV_CONSOLE === '1';
+const CONSOLE = process.env.DEV_CONSOLE === '1', PLUGINS = process.env.DEV_PLUGINS;
 // sends the page's console to /__console (ES5: it runs before everything else, on old browsers too)
 const CONSOLE_JS = '<script>(function(){var t0=Date.now();function send(k,a){try{var s=[].map.call(a,function(x){' +
     'try{return typeof x==="string"?x:JSON.stringify(x)}catch(e){return String(x)}}).join(" ");' +
@@ -61,6 +61,13 @@ http.createServer((req, res) => {
     }
     if (u.startsWith('/ts/gst/')) return proxy(req, res, '127.0.0.1', REMUX, u.slice(3), true);
     if (u.startsWith('/ts/')) return proxy(req, res, UP, 8090, u.slice(3));
+    if (PLUGINS && u.startsWith('/plugins/')) {
+        const f = path.resolve(PLUGINS, decodeURIComponent(u.slice(9).split('?')[0]));
+        if (f.startsWith(path.resolve(PLUGINS)) && fs.existsSync(f) && fs.statSync(f).isFile()) {
+            res.writeHead(200, { 'Content-Type': TYPES[f.split('.').pop()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+            return res.end(fs.readFileSync(f));
+        }
+    }
     if (/^\/(jackett|jr|imdb|plugins|lampa-init\.js|lampa-imdb\.js)/.test(u)) return proxy(req, res, UP, 80, u);
     let p = decodeURIComponent(u.split('?')[0]);
     if (p === '/') p = '/index.html';
