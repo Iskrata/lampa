@@ -112,7 +112,8 @@ const seekTime = (m, start) => start > 0 ? start + m.seekPast : 0;
 
 // ffmpeg arguments: fragmented MP4 to stdout from segment start, plus one WebVTT file per subtitle.
 // Every output starts at time 0 (the MP4 muxer rebases even with -copyts): session.js moves the fragments
-// to their place in the film, and the subtitle cues by seekTime().
+// to their place in the film, and the subtitle cues by seekTime(). With opts.file: the whole film as one
+// plain MP4 file instead (download.js).
 function ffmpegArgs(m, start, opts) {
     const a = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-probesize', '20000000', '-analyzeduration', '3000000'];
     if (start > 0) a.push('-ss', seekTime(m, start).toFixed(3));
@@ -124,8 +125,8 @@ function ffmpegArgs(m, start, opts) {
     if (opts.duration) a.push('-t', String(opts.duration));
     // no chapters/metadata: chapters become an extra track once past the first one, and every run's tracks
     // must match the one init segment
-    a.push('-map_chapters', '-1', '-map_metadata', '-1', '-max_muxing_queue_size', '4096', '-f', 'mp4',
-        '-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1');
+    a.push('-map_chapters', '-1', '-map_metadata', '-1', '-max_muxing_queue_size', '4096', '-f', 'mp4');
+    a.push(...(opts.file ? [opts.file] : ['-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1']));
     (opts.subFiles || []).forEach((file, k) =>
         a.push('-map', `0:${m.subs[k].index}`, '-c:s', 'webvtt', '-flush_packets', '1', '-f', 'webvtt', file));
     return a;

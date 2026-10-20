@@ -13,6 +13,8 @@
 //                                                     (startup.js)
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
+//   POST /gst/download, GET /gst/downloads, GET /gst/download/<id>/<name>.mp4, POST /gst/download/<id>/cancel
+//                                                  -> a file made into an MP4 to keep (download.js)
 'use strict';
 const http = require('http');
 const fs = require('fs');
@@ -21,6 +23,8 @@ const media = require('./media');
 const { Session } = require('./session');
 const startup = require('./startup');
 const cfg = require('./config');
+const { post: torrserver, describe } = require('./torrserver');
+const downloads = require('./download');
 
 const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000;
 const sessions = new Map();   // "<hash>:<file>" -> Promise<Session>
@@ -42,19 +46,6 @@ function session(hash, index, lang) {
 
 function forHash(hash) {
     return [...sessions.keys()].filter(k => k.startsWith(hash + ':')).map(k => sessions.get(k));
-}
-
-function torrserver(route, body) {
-    return fetch(cfg.torrserver + route, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } })
-        .then(r => r.ok ? r.json() : null).catch(() => null);
-}
-
-// the title, for subtitles from OpenSubtitles: the torrent file's name says the episode
-async function describe(s, hash, tmdb, kind) {
-    if (!tmdb || s.source) return;
-    const t = await torrserver('/torrents', { action: 'get', hash });
-    const f = ((t && t.file_stats) || []).find(x => String(x.id) === String(s.m.index)) || {};
-    s.describe({ tmdb, kind: kind === 'movie' ? 'movie' : 'tv', name: f.path || '', size: f.length || 0 });
 }
 
 const LANG_NAMES = { en: 'English', bg: 'Bulgarian', ru: 'Russian' };
@@ -132,9 +123,11 @@ async function handle(req, res) {
         const h = url.searchParams.get('hash') || '';
         for (const p of forHash(h)) p.then(s => s.close(), () => {});
         for (const k of [...sessions.keys()]) if (k.startsWith(h + ':')) sessions.delete(k);
-        await torrserver('/torrents', { action: 'drop', hash: h });
+        // a download still reading it keeps it (Lampa drops the torrent when its file list or player closes)
+        if (!downloads.reading(h)) await torrserver('/torrents', { action: 'drop', hash: h });
         return send(res, 200, 'ok');
     }
+    if (hash === 'download' || hash === 'downloads') return downloads.handle(req, res, parts, send);
     if (!/^[0-9a-f]{40}$/i.test(hash || '')) return send(res, 404, 'not found');
 
     if (a === 'heartbeat') {
@@ -180,6 +173,7 @@ process.on('unhandledRejection', e => console.error('unhandled:', e && e.message
 
 fs.rmSync(cfg.cache, { recursive: true, force: true });
 fs.mkdirSync(cfg.cache, { recursive: true });
+downloads.start(hash => forHash(hash).length > 0);
 const waiting = new Set();   // responses not started yet (most wait for ffmpeg to write a segment)
 const server = http.createServer((req, res) => {
     waiting.add(res);
