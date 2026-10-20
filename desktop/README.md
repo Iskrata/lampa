@@ -157,7 +157,20 @@ Anything that would open a title's torrent list runs `play.js` instead: the titl
 source is removed, so Play no longer offers a choice of sources), the billboard's Play, and a click on an
 episode.
 
-1. **Search** the way Lampa's Torrents button does (`parse_lang`), through Lampa's parsers.
+1. **Ask the server** (since 2026-10-20): `GET <TorrServer>/gst/pick?tmdb=&kind=[&season=&episode=][&lang=ja]`
+   answers with every resolution's releases, ranked (server/remux/README.md "Picking a release"). The
+   server searches Jackett with its own key, keeps real seeders and drops dead releases (`swarm.js`),
+   ranks with this same `pick.js` (steps 2-3, run there in Node), leaves out releases that failed before
+   and puts first those that played for this title. So every device, the TV included, gets the same
+   releases in the same order. This device then leaves out video it can't decode (`compat.js`) and
+   picks the resolution (step 4).
+   **Fallback:** when the server doesn't answer within 45 s, answers an error (a plain TorrServer, a
+   remux without a Jackett key: 503) or isn't there, Play does what it did before: it searches the way
+   Lampa's Torrents button does (`parse_lang`) through Lampa's parsers, and ranks here.
+   Measured 2026-10-20 in the dev server (a local remux searching the home server's Jackett):
+   Inception, the server's answer in 1.0-1.1 s (Chromium and Safari 27.0.1) and the 4K Blu-ray HDR10/DV
+   x265 (50 seeders) started on a 3456 px screen. With the remux unable to search (no key, 503), the
+   fallback started the same release in 1.4 s, its link straight to Jackett with the key in it.
 2. **Keep** (`pick.js`) releases that:
    - name a resolution (4K, 1080p, 720p) and have enough seeders (15 / 5 / 3);
    - aren't CAM/TS/screener/3D;
@@ -381,6 +394,7 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
 
 - **Lists.** Every torrent search goes through `Lampa.Parser.get`, Play's and the manual list's alike, and
   the wrapper changes the results before either sees them:
+  - The filtering is `rubyPick.alive` (pick.js), which the server's `/gst/pick` runs too.
   - Seeders become the trackers' real count. A release without a hash (a `.torrent` link, as
     LimeTorrents gives) takes its twin's: the same name (letters and digits) and size within 2 % on an
     indexer that gives the hash. WiKi's LimeTorrents line went from 19 to 5.
@@ -394,7 +408,9 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     search 2.4 s.
 - **Switching.** The release Lampa opens (Play's choice, or a pick from the list through
   `Lampa.Torrent.start`) is watched. When it fails, it switches to the next of the same resolution in
-  Play's ranking of the same search (`rubyPick.ranked`). That skips what was tried, by name and by hash
+  Play's ranking (the server's, or this browser's: `rubyPlay.ranked`), or, for a release picked from the
+  list, the ranking of that search (`rubyPick.ranked`). A switch for no peers or too slow is reported to
+  the server (`POST /gst/pick/failed`), which never offers that release again; a dead one it saw itself. That skips what was tried, by name and by hash
   (one torrent is listed under several names), and anything this device can't decode (compat.js). It
   says so ("This release stopped sending: switching to Blu-ray · H.264 · 220 seeders") and goes on at the
   same moment. Its timecode is set by hand, whatever Settings → Player → timecode says. At most 3 switches.

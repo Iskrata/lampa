@@ -23,6 +23,9 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/<hash>/<file>.<lang>/video.m3u8`, `init.mp4`, `seg<n>.m4s` | the stream |
 | `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
+| `GET /gst/pick?tmdb=<id>&kind=movie\|tv[&season=&episode=][&lang=ja]` | the releases to play, ranked: `{ audio, choices: [{ res, label, releases }], found, took }` ("Picking a release" below) |
+| `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow): never offered again |
+| `GET /gst/link?u=<Jackett .torrent link without its key>` | that link fetched from Jackett with the key, for TorrServer |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
 | `POST /gst/download` `{hash, index, lang, tmdb, kind, season, episode, name}` | start a download (below); the job |
 | `GET /gst/downloads` | every job: `{id, state, progress, size, subs, url, …}`, state `queued` / `fetching` / `subtitles` / `finishing` / `ready` / `failed` |
@@ -42,6 +45,10 @@ Node 18.15+ (no dependencies; `fs.statfs`), plus ffmpeg and ffprobe 8.x. Environ
 | `REMUX_SUBS` | `<tmp>/lampa-remux-subs`: subtitles downloaded from OpenSubtitles, kept across restarts |
 | `REMUX_DOWNLOADS` | `<tmp>/lampa-remux-downloads`: downloads (below), kept across restarts |
 | `REMUX_SWARM` | `<tmp>/lampa-remux-swarm.json`: releases seen dead (below), kept across restarts |
+| `REMUX_RELEASES` | `<tmp>/lampa-remux-releases.json`: releases that played or failed, per title (below), kept across restarts |
+| `JACKETT_URL` | `http://127.0.0.1:9117/jackett`: the Jackett `/gst/pick` searches |
+| `JACKETT_KEY` / `JACKETT_CONFIG` | Jackett's API key, or the path of Jackett's `ServerConfig.json` to read it from (the home server: `C:\jackett\data\ServerConfig.json`). Without either, `/gst/pick` answers 503 and browsers search themselves |
+| `TMDB_KEY` | Lampa's own public TMDB key (app.min.js `key()`): the title's names, dates and runtimes |
 | `REMUX_TRACKERS` | `tracker.opentrackr.org:1337,open.stealth.si:80,tracker.torrent.eu.org:451,open.demonii.com:1337`: UDP trackers asked for real seeder counts |
 | `OPENSUBTITLES_ENV` | `../opensubtitles.env` (next to the app folder): private `KEY=value` lines `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USER`, `OPENSUBTITLES_PASSWORD` (the same names work as environment variables). Without a key, no OpenSubtitles |
 | `REMUX_DEBUG` | set it to log every fragment's time and segment |
@@ -82,6 +89,7 @@ The waiting segment 27 was handed on. Caddy answered the player's retry with it 
 | `startup.js` | how far a file is from playing, for the loading card (below, "Loading progress") |
 | `download.js` | a file made into one MP4 to keep (below, "Downloads") |
 | `torrserver.js` | what the service asks TorrServer besides the stream (a torrent's files, drop) |
+| `pick.js` / `releases.js` | which release to play (`/gst/pick`), and what played or failed (below, "Picking a release") |
 
 **Segments are cut at keyframes, planned before anything plays.** A seekable playlist has to list every
 segment's length up front. `mkv.js` reads the Cues, about 700 KB at the end of a 20 GB file, giving every
@@ -208,6 +216,56 @@ What Lampa's lists show and what the player switches on (desktop/README.md, "Dea
     up at 90 s. In the tests on 2026-10-20 (a test copy of this service on the home server), a random
     hash (nobody seeds it) was marked dead 25 s after its probe began waiting. WiKi, alive again at about
     3 Mbit/s, never was (`stalled` stayed under 5 s for 3 minutes): that's "too slow", the player's call.
+
+## Picking a release (`pick.js`, `releases.js`)
+
+Which torrent Play starts used to be decided by each browser (desktop/README.md "Play"); since 2026-10-20 it
+is decided here, so every device, the TV included, gets the same releases in the same order, and the
+browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episode=][&lang=ja]`:
+
+1. **The title** from TMDB (`tv/<id>` or `movie/<id>`, cached 6 h): names, dates, runtimes, seasons, genres.
+2. **The search** Lampa's own parser makes (app.min.js `jackett()` with `parse_lang` "df"): the original
+   title, `Category[]` 2000 (films) or 5000 (TV), plus 5070 for anime. Jackett ignores the other parameters
+   Lampa sends (`title`, `year`, `genres`), so the results are the same. Cached 10 minutes, so the player's
+   Quality menu and the next episode don't search again.
+3. **The swarm** (`swarm.js`): the trackers' real seeder counts, and releases seen dead left out.
+4. **The ranking:** `desktop/pick.js` itself, run here in a `vm` sandbox (`rubyPick.alive`, `rubyPick.best`:
+   English, this title, this episode, enough seeders, ranked by picture quality). The home server's copy
+   is `desktop-pick.js` next to `server.js`, copied in by `lampa-setup.ps1`; in the repo it's
+   `../../desktop/pick.js`. So the browser's fallback and the server can't drift apart.
+5. **Memory** (`releases.js`, `REMUX_RELEASES`):
+   - **Played:** this service sent 120 s of the release's video for that title, counting each segment
+     once. The title comes from the master's `tmdb`/`kind`, or the `.t<id>` / `.m<id>` in a segment's
+     path. A played release comes first in its resolution for that title.
+   - **Failed:** `swarm.js` saw it dead, or a player switched away from it and said so
+     (`/gst/pick/failed`: no peers within 45 s, or too slow). It is never offered again, for any title:
+     a torrent that sends nothing does so whatever it was opened for. A later "played" (picked by hand
+     from the list) clears it.
+6. **The answer:** each resolution's releases, best first, at most 10, one listing per torrent (several
+   indexers list the same one). Each is what Lampa's torrent flow reads (`Title`, `Size`, `Seeders`,
+   `MagnetUri` or `Link`, `InfoHash`, `played`). Jackett's `.torrent` links carry its key
+   (`jackett_apikey=`), so they are handed out as `http://127.0.0.1:<port>/gst/link?u=<the link without
+   the key>`. TorrServer, on the same machine, fetches that, and this service fetches Jackett's link with
+   the key and passes on the file or the redirect to a magnet. It only fetches links under `JACKETT_URL`.
+
+What stays with the device: the resolution (screen and measured speed) and video it can't decode
+(`compat.js`), so the answer lists every resolution.
+
+**The concrete case.** On 2026-10-20 at 00:57 `bbbc0a68…` (Vikings S06, NF WEB-DL H.265, G66) sent nothing
+for 90 s: three masters got 499 after 20 s, then ffprobe failed. It was opened from Vikings: Athelstan's
+Journal's page (tv 65491), and is Vikings S06 (tv 44217). Checked 2026-10-20 with a local copy of this
+service against the home server's Jackett: Vikings S6E1 offered it second at 1080p (35 seeders, three
+listings). After `POST /gst/pick/failed?hash=bbbc0a68…&tmdb=65491&kind=tv&why=dead`, all three listings were
+gone for tv 44217 too. The same failure was recorded on the home server after deploying (below).
+
+**Measured 2026-10-20** (local copy on the Mac, the home server's Jackett over the tailnet; the Mac blocks
+UDP, so each scrape waited its 1 s timeout): Vikings S6E1 317 results, the pick 1.9 s cold, 1.0 s with the
+search cached; Inception 206 results, 1.8 s; Cyberpunk: Edgerunners 392, 2.1 s; Frieren (anime) 253, 4.3 s,
+`lang=ja` → audio `ja`. Played: Big Buck Bunny played through the dev server was recorded
+(`dd8255ec played 122 s of m10378`) 43 s after its master (13:29:20 → 13:30:03 UTC), the player having
+buffered ahead. A release
+marked played in `REMUX_RELEASES` (GalaxyTV 720p of Vikings S6) moved ahead of the BluRay one ranked
+above it.
 
 ## Downloads (`download.js`)
 

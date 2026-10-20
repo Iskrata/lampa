@@ -1,6 +1,7 @@
 // Play without choosing a torrent (desktop/README.md, "Play"). Whatever opens a title's torrent list
 // (Play on a title page, the billboard's Play, an episode) instead:
-//   1. searches like Lampa does, keeps English releases that will stream (pick.js)
+//   1. asks the remux service which releases to play (server/remux/pick.js: the same answer on every device),
+//      else searches like Lampa does and keeps English releases that will stream (pick.js)
 //   2. plays the best of them for this screen and connection without asking (the player's Quality menu
 //      switches); nothing found shows a calm message, never Lampa's torrent list
 //   3. opens the chosen release with Lampa's own torrent flow and picks the file itself: the episode asked
@@ -61,20 +62,66 @@
 
         var go = function (target) {
             var timed = speed();
-            Lampa.Parser.get(params, function (data) {
-                if (stopped) return;
+            var ready = function (list) {
                 timed.then(function (mbps) {
                     if (stopped) return;
                     Lampa.Loading.stop();
-                    choose(movie, target, params, data.Results, back, mbps, download);
+                    choose(movie, target, list, back, mbps, download);
                 });
-            }, function () {
+            };
+            // the server's pick (the same for every device); a plain TorrServer, or a remux that can't search,
+            // gets this browser's own search
+            serverPick(movie, series ? 'tv' : 'movie', target).then(function (list) {
                 if (stopped) return;
-                Lampa.Loading.stop();
-                unavailable(movie, back, 'Couldn\'t look for it just now. Try again in a minute.');
+                if (list) return ready(list);
+                Lampa.Parser.get(params, function (data) {
+                    if (!stopped) ready(fromResults(data.Results, movie, target));
+                }, function () {
+                    if (stopped) return;
+                    Lampa.Loading.stop();
+                    unavailable(movie, back, 'Couldn\'t look for it just now. Try again in a minute.');
+                });
             });
         };
         if (series && !target) nextEpisode(movie, go); else go(series ? target : null);
+    }
+
+    // What can play, best resolution first: { audio, groups: { <res>: [releases, best first] },
+    // list: [{ res, label, best }] }
+    function listOf(audio, groups) {
+        var list = [2160, 1080, 720].filter(function (res) { return groups[res] && groups[res].length; }).map(function (res) {
+            return { res: res, label: rubyPick.LABEL[res], best: groups[res][0] };
+        });
+        return { audio: audio, groups: groups, list: list };
+    }
+    // ... from this browser's search (pick.js)
+    function fromResults(results, movie, target) {
+        var b = rubyPick.best(results, movie, target, animeAudio(movie));
+        return listOf(b.audio, b.groups);
+    }
+    // ... from the remux service (server/remux/pick.js: the search, the swarm and what played or failed, ranked
+    // by pick.js there too), without video this device can't decode (compat.js). null: no answer, use our own.
+    var PICK_MS = 45000;
+    function serverPick(movie, kind, target) {
+        if (!Lampa.Torserver.url() || !movie.id) return Promise.resolve(null);
+        var u = Lampa.Torserver.url() + '/gst/pick?tmdb=' + movie.id + '&kind=' + kind +
+            (target ? '&season=' + target.season + '&episode=' + target.episode : '') +
+            (Lampa.Storage.get(ANIME_AUDIO, 'en') === 'ja' ? '&lang=ja' : '');
+        var t0 = Date.now(), timeout = new Promise(function (r) { setTimeout(function () { r(null); }, PICK_MS); });
+        var asked = fetch(u, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (p) {
+            if (!p || !p.choices) return null;
+            var groups = {};
+            p.choices.forEach(function (c) {
+                var ok = c.releases.filter(function (r) { return !window.rubyCompat || rubyCompat.playable(r.Title); });
+                if (ok.length) groups[c.res] = ok;
+            });
+            console.log('Ruby play', 'server pick in', Date.now() - t0, 'ms:', p.choices.map(function (c) { return c.label + ' ' + c.releases.length; }).join(', ') || 'nothing');
+            return listOf(p.audio, groups);
+        }, function () { return null; });
+        return Promise.race([asked, timeout]).then(function (x) {
+            if (!x) console.log('Ruby play', 'no server pick, searching here');
+            return x;
+        });
     }
 
     // This browser's speed to the server (Mbit/s), timed once per session with the remux service's
@@ -104,7 +151,7 @@
     // What plays (simplicity review 2026-10-20: Play no longer asks "Play in"): the screen's resolution, 4K only
     // where the screen has 2560+ physical pixels across, and no more than this connection carries with headroom
     // (else it keeps stopping to buffer); the lowest found when even that is too much. prefer.res (the player's
-    // Quality menu) wins when that resolution was found. list: best resolution first (rubyPick.choices).
+    // Quality menu) wins when that resolution was found. list: best resolution first (listOf).
     var prefer = null, current = null;
     // AirPlay: a device that once switched to 4K for its TV (player.js) starts in 4K whenever an AirPlay screen
     // is around (the user's call 2026-10-20). Kept per device, not per profile.
@@ -125,12 +172,8 @@
         return list.filter(function (c) { return (big || c.res < 2160) && fits(c); })[0] || list[list.length - 1];
     }
 
-    function choose(movie, target, params, results, back, mbps, download) {
-        var audio = animeAudio(movie), list = rubyPick.choices(results, movie, target, audio);
-        if (!list.length && audio) {    // anime with none in the chosen audio: the other one rather than nothing
-            var other = audio === 'ja' ? 'en' : 'ja', alt = rubyPick.choices(results, movie, target, other);
-            if (alt.length) { audio = other; list = alt; }
-        }
+    function choose(movie, target, found, back, mbps, download) {
+        var list = found.list, audio = found.audio;
         streamLang = audio === 'ja' ? 'ja' : null;
         if (!list.length) return unavailable(movie, back, download ? 'There\'s no good English copy of it to download yet.' :
             'There\'s no good English copy of it yet. Try again in a few days.');
@@ -141,7 +184,7 @@
             return play(movie, target, (res(1080) || res(720) || list[0]).best, true);
         }
         var c = autoPick(list, movie, target, mbps);
-        current = { movie: movie, list: list, res: c.res, audio: audio };
+        current = { movie: movie, list: list, groups: found.groups, res: c.res, audio: audio };
         play(movie, target, c.best);
     }
 
@@ -392,6 +435,9 @@
         play: function (card) { start(card); } };
     // release(movie, target, release): open that release and start the same file (swarm.js, when one fails)
     rubyPlay.release = function (movie, target, release) { play(movie, target, release); };
+    // ranked(movie): { <res>: [releases, best first] } Play chose from for this title, else null (swarm.js
+    // switches to the next of these)
+    rubyPlay.ranked = function (movie) { return current && movie && current.movie.id === movie.id ? current.groups : null; };
 
     var timer = setInterval(function () {
         if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;

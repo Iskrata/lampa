@@ -1,8 +1,11 @@
 // Choosing a torrent without a list (desktop/README.md, "Play"): from the parser's results, keep English
 // releases of this title that will stream, group them by resolution, and rank each group. Pure functions,
-// no Lampa: rubyPick.choices(results, movie, target) -> [{ res, label, best, count }] best resolution first;
-// rubyPick.ranked(...) -> { <res>: [releases, best first] }.
-// target: { season, episode } for a series, else null.
+// no Lampa: rubyPick.ranked(results, movie, target, audio) -> { <res>: [releases, best first] };
+// rubyPick.best(...) the same with anime's other audio when the one asked has nothing; rubyPick.alive(results, swarm) the swarm's real
+// seeders in, dead releases out. target: { season, episode } for a series, else null; audio: for anime 'en'
+// (dubbed) or 'ja' (Japanese, English subtitles), else null.
+// The remux service runs this same file in Node (server/remux/pick.js, /gst/pick), so every device gets the
+// same choice: keep it free of browser APIs (window.rubyCompat is only there in a browser).
 (function () {
     var MIN_SEEDERS = { 2160: 15, 1080: 5, 720: 3 };
     var LABEL = { 2160: '4K', 1080: '1080p', 720: '720p' };
@@ -181,14 +184,6 @@
         return out;
     }
 
-    // audio: for anime, 'en' (dubbed) or 'ja' (Japanese, English subtitles); else leave out
-    function choices(results, movie, target, audio) {
-        var groups = ranked(results, movie, target, audio);
-        return [2160, 1080, 720].filter(function (res) { return groups[res]; }).map(function (res) {
-            return { res: res, label: LABEL[res], best: groups[res][0], count: groups[res].length };
-        });
-    }
-
     // what a release is, in a few words: "Blu-ray · HEVC 10-bit"
     function describe(t) {
         var src = /\bremux\b/i.test(t) ? 'Blu-ray remux' : /\bblu[ .-]?ray\b|\bbdrip\b|\bbrrip\b|\bbd\b/i.test(t) ? 'Blu-ray' :
@@ -212,5 +207,55 @@
     // a release's average bitrate in Mbit/s
     function bitrate(r, movie, target) { return (r.Size || 0) * 8 / 1e6 / seconds(r.Title || '', movie, target); }
 
-    window.rubyPick = { choices: choices, ranked: ranked, resolution: resolution, anime: anime, bitrate: bitrate, describe: describe, english: english, seasons: seasons, episode: episode, file: file };
+    // ranked() in the audio asked for; anime with none in it: the other audio rather than nothing.
+    // -> { audio, groups }
+    function best(results, movie, target, audio) {
+        var groups = ranked(results, movie, target, audio);
+        if (!Object.keys(groups).length && audio) {
+            var other = audio === 'ja' ? 'en' : 'ja', alt = ranked(results, movie, target, other);
+            if (Object.keys(alt).length) return { audio: other, groups: alt };
+        }
+        return { audio: audio, groups: groups };
+    }
+
+    // ---- the swarm (desktop/swarm.js, server/remux/swarm.js): real seeders and releases seen dead
+    function hashOf(r) {
+        var h = r.InfoHash || (/btih:([0-9a-f]{40})/i.exec(r.MagnetUri || r.Link || '') || [])[1];
+        return h && /^[0-9a-f]{40}$/i.test(h) ? h.toLowerCase() : '';
+    }
+    // the same release on another indexer: "Spider Man No Way Home 2021 1080p ... WiKi" = "Spider-Man.No.Way.Home.2021.1080p....-WiKi"
+    function key(t) { return (t || '').toLowerCase().replace(/^www\.\S+\s+-\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+    function same(a, b) { return !a.size || !b.size || Math.abs(a.size - b.size) / Math.max(a.size, b.size) < 0.02; }
+
+    // A release without a hash (a .torrent link) takes its twin's: the same name and size on an indexer that
+    // gives one. -> { hashes: [every hash to ask the swarm about], twins: { key: { hash, size } } }
+    function twins(results) {
+        var t = {};
+        results.forEach(function (r) { var h = hashOf(r); if (h) t[key(r.Title)] = { hash: h, size: r.Size }; });
+        var hashes = Object.keys(t).map(function (k) { return t[k].hash; });
+        results.forEach(function (r) { var h = hashOf(r); if (h && hashes.indexOf(h) < 0) hashes.push(h); });
+        return { hashes: hashes, twins: t };
+    }
+
+    // swarm: the remux's /gst/swarm answer { seeders: { hash: n | null }, dead: [{ hash, title, size }] }.
+    // Leaves out releases nobody seeds (0 on the trackers) or seen dead; the rest get the trackers' count, and
+    // a release without a hash its twin's (InfoHash).
+    function alive(results, swarm, known) {
+        known = known || twins(results);
+        var dead = {}, deadKeys = [];
+        (swarm.dead || []).forEach(function (d) { dead[d.hash] = true; deadKeys.push({ key: key(d.title), size: d.size }); });
+        return results.filter(function (r) {
+            var k = key(r.Title), twin = known.twins[k], h = hashOf(r) || (twin && same(twin, { size: r.Size }) ? twin.hash : '');
+            if (h ? dead[h] : deadKeys.some(function (d) { return d.key === k && same(d, { size: r.Size }); })) return false;
+            var n = h && swarm.seeders ? swarm.seeders[h] : null;
+            if (n === 0) return false;
+            if (n != null) r.Seeders = n;
+            if (h && !r.InfoHash) r.InfoHash = h;
+            return true;
+        });
+    }
+
+    window.rubyPick = { ranked: ranked, best: best, resolution: resolution, anime: anime, bitrate: bitrate, describe: describe,
+        english: english, seasons: seasons, episode: episode, file: file, LABEL: LABEL,
+        hashOf: hashOf, key: key, twins: twins, alive: alive };
 })();

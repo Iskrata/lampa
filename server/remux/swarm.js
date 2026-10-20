@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const cfg = require('./config');
 const { post: torrserver } = require('./torrserver');
+const releases = require('./releases');
 
 // trackers that answer do so in 0.1-0.65 s (measured from the home server, 2026-10-20); one that never does costs this
 const SCRAPE_MS = 1000, SCRAPE_KEEP_MS = 15 * 60000, PER_PACKET = 70;
@@ -127,6 +128,8 @@ async function sample() {
         console.log(`${hash.slice(0, 8)} dead: nothing downloaded for ${Math.round((now - w.grewAt) / 1000)} s while ` +
             `${w.n} request(s) waited, ${t.active_peers || 0}/${t.total_peers || 0} peers, trackers say ${check.seeders[hash]} seeders`);
         save();
+        // and for the title it was played for: never offered for it again (releases.js)
+        releases.failed(hash, 'dead', null, t.title || t.name);
     }
 }
 setInterval(() => { sample().catch(e => console.error('swarm:', e.message)); }, SAMPLE_MS).unref();
@@ -137,9 +140,9 @@ function state(hash) {
     return { dead: isDead(hash), stalled: w && w.n ? Math.min(now - w.since, now - w.grewAt) : 0 };
 }
 
-// GET /gst/swarm?hash=<h>,<h>...: { seeders: { hash: n | null }, dead: [{ hash, title, size }] }
+// GET /gst/swarm?hash=<h>,<h>...: { seeders: { hash: n | null }, dead: [{ hash, title, size }] } (also /gst/pick's)
 async function report(list) {
-    const hashes = [...new Set(list.split(',').map(h => h.trim().toLowerCase()).filter(h => /^[0-9a-f]{40}$/.test(h)))];
+    const hashes = [...new Set((Array.isArray(list) ? list : list.split(',')).map(h => h.trim().toLowerCase()).filter(h => /^[0-9a-f]{40}$/.test(h)))];
     const s = hashes.length ? await seeders(hashes) : { seeders: {} };
     return { seeders: s.seeders, dead: deadList() };
 }

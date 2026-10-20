@@ -15,6 +15,10 @@
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
 //   GET /gst/swarm?hash=<hash>,<hash>...           -> real seeder counts from trackers, and the releases seen dead
 //                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled })
+//   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja] -> the releases to play, ranked, per
+//                                                     resolution (pick.js); GET /gst/link?u=: a .torrent link of theirs
+//   POST /gst/pick/failed?hash=&tmdb=&kind=&why=   -> a player gave up on a release: not offered again
+//                                                     (releases.js)
 //   POST /gst/download, GET /gst/downloads, GET /gst/download/<id>/<name>.mp4, POST /gst/download/<id>/cancel
 //                                                  -> a file made into an MP4 to keep (download.js)
 'use strict';
@@ -28,6 +32,8 @@ const cfg = require('./config');
 const { post: torrserver, describe } = require('./torrserver');
 const downloads = require('./download');
 const swarms = require('./swarm');   // (swarm() below is the log's peers line)
+const picks = require('./pick');
+const releases = require('./releases');
 
 const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000, SLOW_MS = 3000;
 const sec = ms => (ms / 1000).toFixed(1) + ' s';
@@ -142,6 +148,15 @@ async function handle(req, res) {
 
     if (hash === 'speedtest') return speedtest(res, url.searchParams.get('mb'));
     if (hash === 'swarm') return send(res, 200, JSON.stringify(await swarms.report(url.searchParams.get('hash') || '')), 'application/json');
+    if (hash === 'pick' && a === 'failed' && req.method === 'POST') {
+        const q = url.searchParams, h = q.get('hash') || '';
+        if (!/^[0-9a-f]{40}$/i.test(h) || !/^\d+$/.test(q.get('tmdb') || '')) return send(res, 400, 'hash and tmdb needed');
+        releases.failed(h, (q.get('why') || 'failed').slice(0, 20), { tmdb: q.get('tmdb'), kind: q.get('kind') }, (q.get('title') || '').slice(0, 300));
+        return send(res, 200, 'ok');
+    }
+    if (hash === 'pick') return picks.pick(url.searchParams).then(p => send(res, 200, JSON.stringify(p), 'application/json'),
+        e => { console.error('pick:', e.message); send(res, e.status || 500, JSON.stringify({ error: e.message }), 'application/json'); });
+    if (hash === 'link') return picks.link(url.searchParams.get('u'), res);
     if (hash === 'echo') return send(res, 200, '{"remux":true}', 'application/json');   // Lampa parses it as JSON
     if (hash === 'remove') {
         const h = url.searchParams.get('hash') || '';
@@ -162,6 +177,7 @@ async function handle(req, res) {
     }
     if (a === 'master.m3u8') {
         const t0 = Date.now(), index = url.searchParams.get('index') || '1', st = startup.begin(hash, index);
+        releases.watching(hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
         const s = st.session = await fed(hash, session(hash, index, lang(url.searchParams.get('lang'))));
         const loaded = Date.now();
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
@@ -178,13 +194,17 @@ async function handle(req, res) {
     const [file, l, title] = (a || '').split('.');
     const s = await session(hash, file, lang(l));
     const t = /^([mt])(\d+)$/.exec(title || '');
-    if (t) await describe(s, hash, t[2], t[1] === 'm' ? 'movie' : 'tv');
+    if (t) {
+        releases.watching(hash, t[2], t[1] === 'm' ? 'movie' : 'tv');
+        await describe(s, hash, t[2], t[1] === 'm' ? 'movie' : 'tv');
+    }
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
     if (b === 'init.mp4') return sendFile(res, await fed(hash, s.init()));
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) {
-        const t0 = Date.now(), file = await fed(hash, s.segment(+m[1]));
+        const t0 = Date.now(), file = await fed(hash, s.segment(+m[1])), bd = s.m.bounds;
         sendFile(res, file);
+        releases.sent(hash, s.m.index, +m[1], (bd[+m[1] + 1] - bd[+m[1]]) || 0);
         // the player waited for this one (the first segment, a seek, or the download falling behind)
         if (Date.now() - t0 > SLOW_MS) console.log(`${hash.slice(0, 8)}:${s.m.index} seg${m[1]} in ${sec(Date.now() - t0)} (${await swarm(hash)})`);
         return;

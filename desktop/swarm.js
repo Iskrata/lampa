@@ -18,15 +18,8 @@
     // a plain TorrServer answers /gst/ with an error at once: the lists stay as they are
     function remux() { return !!Lampa.Torserver.url(); }
 
-    function hashOf(r) {
-        var h = r.InfoHash || (/btih:([0-9a-f]{40})/i.exec(r.MagnetUri || r.Link || '') || [])[1];
-        return h && /^[0-9a-f]{40}$/i.test(h) ? h.toLowerCase() : '';
-    }
     // what was tried: the name and the hash (the same torrent is listed by several indexers under other names)
-    function marks(r) { var h = hashOf(r); return [key(r.Title || r.title)].concat(h ? [h] : []); }
-    // the same release on another indexer: "Spider Man No Way Home 2021 1080p ... WiKi" = "Spider-Man.No.Way.Home.2021.1080p....-WiKi"
-    function key(t) { return (t || '').toLowerCase().replace(/^www\.\S+\s+-\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
-    function same(a, b) { return !a.size || !b.size || Math.abs(a.size - b.size) / Math.max(a.size, b.size) < 0.02; }
+    function marks(r) { var h = rubyPick.hashOf(r); return [rubyPick.key(r.Title || r.title)].concat(h ? [h] : []); }
 
     function ask(path) {
         var timeout = new Promise(function (r) { setTimeout(function () { r(null); }, ASK_MS); });
@@ -34,26 +27,13 @@
             .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; }), timeout]);
     }
 
-    // real seeders in, dead releases out. A release without a hash (a .torrent link) takes its twin's: the
-    // same name and size on an indexer that gives one.
+    // real seeders in, dead releases out (rubyPick.alive)
     function check(results) {
-        var twins = {};
-        results.forEach(function (r) { var h = hashOf(r); if (h) twins[key(r.Title)] = { hash: h, size: r.Size }; });
-        var hashes = Object.keys(twins).map(function (k) { return twins[k].hash; });
-        results.forEach(function (r) { var h = hashOf(r); if (h && hashes.indexOf(h) < 0) hashes.push(h); });
-        if (!hashes.length) return Promise.resolve(results);
-        return ask('swarm?hash=' + hashes.join(',')).then(function (s) {
+        var known = rubyPick.twins(results);
+        if (!known.hashes.length) return Promise.resolve(results);
+        return ask('swarm?hash=' + known.hashes.join(',')).then(function (s) {
             if (!s) return results;
-            var dead = {}, deadKeys = [];
-            (s.dead || []).forEach(function (d) { dead[d.hash] = true; deadKeys.push({ key: key(d.title), size: d.size }); });
-            var kept = results.filter(function (r) {
-                var k = key(r.Title), twin = twins[k], h = hashOf(r) || (twin && same(twin, { size: r.Size }) ? twin.hash : '');
-                if (h ? dead[h] : deadKeys.some(function (d) { return d.key === k && same(d, { size: r.Size }); })) return false;
-                var n = h && s.seeders ? s.seeders[h] : null;
-                if (n === 0) return false;
-                if (n != null) r.Seeders = n;
-                return true;
-            });
+            var kept = rubyPick.alive(results, s, known);
             if (kept.length < results.length) console.log('Ruby swarm', 'left out', results.length - kept.length, 'dead releases of', results.length);
             return kept;
         });
@@ -97,14 +77,25 @@
         });
     }
 
-    // the next release of the same resolution: Play's ranking of the last search, without the ones tried
+    // the next release of the same resolution: Play's ranking (the server's or this browser's), else the
+    // ranking of the last search (a release picked from the list), without the ones tried
     function nextRelease() {
         var c = current, movie = c.movie || {};
-        if (!last || !last.movie || last.movie.id !== movie.id || !window.rubyPick) return null;
         var res = rubyPick.resolution(c.release.Title || c.release.title || '');
-        var audio = window.rubyPlay && rubyPlay.audio ? rubyPlay.audio(movie) : null;
-        var list = (rubyPick.ranked(last.results, movie, c.target, audio)[res] || []);
-        return list.filter(function (r) { return !marks(r).some(function (m) { return c.tried.indexOf(m) >= 0; }); })[0] || null;
+        var groups = rubyPlay.ranked(movie);
+        if (!groups && last && last.movie && last.movie.id === movie.id)
+            groups = rubyPick.ranked(last.results, movie, c.target, rubyPlay.audio ? rubyPlay.audio(movie) : null);
+        return ((groups || {})[res] || []).filter(function (r) { return !marks(r).some(function (m) { return c.tried.indexOf(m) >= 0; }); })[0] || null;
+    }
+
+    // the server remembers it for the title: never offered for it again (server/remux/releases.js). A dead one
+    // it saw itself.
+    function report(c, why) {
+        var h = c.hash || rubyPick.hashOf(c.release), movie = c.movie || {};
+        if (!h || !movie.id || why === 'dead') return;
+        fetch(Lampa.Torserver.url() + '/gst/pick/failed?hash=' + h + '&tmdb=' + movie.id + '&kind=' +
+            (movie.original_name || movie.name && !movie.title ? 'tv' : 'movie') + '&why=' + why +
+            '&title=' + encodeURIComponent(c.release.Title || c.release.title || ''), { method: 'POST' }).catch(function () {});
     }
 
     function stop() { clearInterval(watch); watch = 0; }
@@ -115,6 +106,7 @@
         var v = Lampa.PlayerVideo.video(), at = v && v.currentTime > 5 ? v.currentTime : c && c.at || 0;
         var what = why === 'dead' ? 'This release stopped sending' : why === 'nopeers' ? 'Nobody is sharing this release' : 'This release is too slow to play';
         console.log('Ruby swarm', why, c && c.hash, 'at', Math.round(at), 'next:', next && next.Title);
+        if (c) report(c, why);
         if (!next) return Lampa.Noty.show(what + ', and there is no other ' + (c ? rubyPick.resolution(c.release.Title || '') + 'p' : '') + ' release to switch to');
         carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + 1 };
         Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
