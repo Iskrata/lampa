@@ -24,7 +24,7 @@ see "Touch devices and phones".
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu |
 | `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
-| `facts-data.js` / `facts.js` | `rubyFacts`: "Did you know?" while a title loads |
+| `facts.js` | `rubyFacts`: the loading card while a title starts |
 | `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
@@ -96,6 +96,12 @@ Lampa's all-favourites overview. The button stops its clicks from reaching the c
 the title. The title page's bookmark button saves with one click too: Lampa's menu of Bookmarks / Like /
 Later / statuses is skipped. The thumbs are the ratings, so Lampa's own "Like" list was a duplicate.
 
+No + on posters on touch devices (phones, iPads). A tap sends iOS Safari a `mouseover` first. When a
+visible element appears during it (the +), Safari treats the tap as a hover and waits for a second tap
+before the click. Titles took two taps to open (reported 2026-10-20). `glass.js` and `title.js` skip
+mouseover on touch devices for the same reason. This rests on WebKit's documented behaviour; it wasn't
+checked on a device that day because the simulator wouldn't take input.
+
 ## Play
 
 Anything that would open a title's torrent list runs `play.js` instead: the title page's Play (the Trailers
@@ -158,15 +164,15 @@ the capture phase, before the card's own handler, which upstream only toggled "w
 aired yet keep upstream behaviour.
 
 **While it loads** (`facts.js`): from Play until the picture moves, except while the "Play in" question is
-open, a card at the top of the screen shows a fun fact about films and TV every 12 s, from `facts-data.js` (110+
-facts). Each browser sees all of them before any repeats (`ruby_facts_seen`). Facts about the title itself
-(cast, budget) were tried and dropped: the user wanted fun facts.
+open, a card at the top of the screen says what's happening. It used to show a film trivia fact every 12 s
+("Did you know?", from `facts-data.js`); the user turned the trivia off for the whole app on 2026-10-20, and
+the facts file is gone (in git history before that date).
 
-The card is the only loading indicator: under the fact, a spinner, the step ("Finding the best release…",
+The card is the only loading indicator: a spinner, the step ("Finding the best release…",
 "Connecting to the torrent…", "Starting playback…") and Cancel, which does what Back does. Lampa's own
 loading layer and its empty "loading torrent" window (`Torrent.loading()`, a large modal with a spinner)
 are hidden while the card shows; error windows aren't. Before, the window sat behind the card with its
-spinner behind the fact ("this loading screen is ugly", 2026-10-18). Checked in the built-in browser:
+spinner showing through the card ("this loading screen is ugly", 2026-10-18). Checked in the built-in browser:
 both loaders hidden under the card, Cancel closing each through its own Back handler.
 
 **Stuck paused under the facts** (reported 2026-10-17, after Continue on an episode: the facts stayed

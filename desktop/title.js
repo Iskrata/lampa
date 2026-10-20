@@ -85,6 +85,7 @@
         // on window: desktop.js stops wheel events at the document (stopImmediatePropagation)
         window.addEventListener('wheel', function () { lastWheel = Date.now(); clearTimeout(warmTimer); }, { capture: true, passive: true });
         document.addEventListener('mouseover', function (e) {
+            if (rubyDesktop.touch()) return;   // a tap opens the title: nothing to warm up (mylist.js onPoster)
             var it = itemOf(e.target);
             if (!it) return;
             if (warmItem && warmItem.id === it.id) { warmUntil = Infinity; return; }

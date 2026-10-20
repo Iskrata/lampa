@@ -151,6 +151,7 @@
     function track() {
         // hovering or keyboard-focusing a card; debounce so sweeping the mouse across a row stays calm
         document.addEventListener('mouseover', function (e) {
+            if (rubyDesktop.touch()) return;   // a tap's fake mouseover: the focus observer below covers it
             var card = e.target.closest && e.target.closest('.card');
             if (!card) return;
             clearTimeout(pending);

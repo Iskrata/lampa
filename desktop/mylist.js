@@ -35,8 +35,11 @@
         paint(el, item);
     }
 
-    // the + on a poster, added the first time it is pointed at
+    // the + on a poster, added the first time it is pointed at. Not on touch devices: a tap sends iOS Safari a
+    // mouseover first, and a button appearing in it made Safari take the tap as a hover and wait for a second
+    // one to open the title (reported 2026-10-20). There the title page's My List button does it.
     function onPoster(e) {
+        if (rubyDesktop.touch()) return;
         var c = e.target.closest && e.target.closest('.card');
         if (!c || !c.card_data || c.querySelector('.ruby-add')) return;
         var view = c.querySelector('.card__view');
