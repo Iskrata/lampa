@@ -89,6 +89,7 @@
     // what to tell the viewer about a codec this device can't decode
     function codecName(codecs) {
         var c = (codecs || '').split(',')[0];
+        if (/^avc[13]/.test(c)) return NAMES.h264;
         if (/^(hvc1|hev1)\.2/.test(c)) return NAMES.hevc10;
         if (/^(hvc1|hev1)/.test(c)) return NAMES.hevc;
         if (/^av01/.test(c)) return NAMES.av1;
@@ -189,7 +190,7 @@
         return /^avc1/.test(codecs || '') || !codecs ? 'Pick another release.' : 'Pick an H.264 (x264) release.';
     }
 
-    function why(h, played, ready, opening) {
+    function why(h, played, ready, opening, loading) {
         var t = (h && h.Torrent) || {}, peers = +t.active_peers || 0, speed = (t.download_speed || 0) * 8 / 1e6;
         var codecs = current && current.codecs;
         if (!played && ready) return 'the server has sent its start, but this ' + device() + ' didn\'t play it' +
@@ -198,6 +199,7 @@
         if (h && speed < 0.5) return 'the torrent is barely downloading (' + peers + ' peers, ' + speed.toFixed(1) + ' Mbit/s). Pick another release.';
         if (!h && /\/gst\//.test(current && current.url || '')) return 'the server isn\'t answering. Try again in a minute.';
         if (opening) return 'it is still reading the torrent (' + peers + ' peers, ' + speed.toFixed(1) + ' Mbit/s). Try again, or pick another release.';
+        if (!played && loading) return 'this ' + device() + ' is loading it too slowly: its connection is too slow for this release. Try a smaller one (720p).';
         if (!played) return 'it is downloading, but this ' + device() + ' didn\'t start it' +
             (codecs ? ' (' + codecName(codecs) + ' video)' : '') + '. ' + pickOther(codecs);
         return 'the server has it, so this ' + device() + '\'s connection is too slow for this release. Try a smaller one (720p or 1080p).';
@@ -223,11 +225,15 @@
                 c.idleSince = idle ? c.idleSince || Date.now() : 0;
                 if (idle && Date.now() - c.idleSince >= IDLE_MS)
                     return fail('The video didn\'t start: this ' + device() + ' didn\'t load it. Press play, or close the player and start it again.');
+                // "sent but not played" only for a video with no picture at all (readyState under 2, as on the
+                // iPhone that loaded nothing): one that has data is loading, slowly (the iOS simulator on a shared
+                // link was called "didn't play it" 25 s in and played 2 s later, 2026-10-20)
+                var blank = ready && v.readyState < 2;
                 if (!c.played) {
-                    if (ready && !c.readySince) c.readySince = Date.now();
-                    if (!(ready && Date.now() - c.readySince >= START_READY_MS) && stuck < START_MS) return;
+                    c.readySince = blank ? c.readySince || Date.now() : 0;
+                    if (!(blank && Date.now() - c.readySince >= START_READY_MS) && stuck < START_MS) return;
                 }
-                fail((c.played ? 'Playback stopped: ' : 'The video didn\'t start: ') + why(h, c.played, ready));
+                fail((c.played ? 'Playback stopped: ' : 'The video didn\'t start: ') + why(h, c.played, blank, false, v.readyState >= 2));
             });
         }, POLL_MS);
     }

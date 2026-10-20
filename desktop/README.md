@@ -601,7 +601,12 @@ decides.
   downloading, or this device's connection. `swarm.js` switches releases sooner when the torrent is the
   cause (60 s / 30 s), so this is what's left when it can't.
   The heartbeat is asked with the stream's file index: only then does the remux report `Startup`; without it
-  (before 2026-10-20) the 20 s rule never applied.
+  (before 2026-10-20) the 20 s rule never applied. The 20 s rule is for a video with no picture at all
+  (`readyState` under 2): one that has data is loading slowly, and after 120 s it says the connection is too
+  slow. Checked the same day: an H.264 episode on the iOS simulator over a shared link got "this device didn't
+  play it (avc1.64001F video)" 25 s in and played 2 s later, behind the error, because play.js's "paused before
+  it played, playing again" restarted it; play.js now stops at the player's error screen, and codecs are named
+  ("H.264").
   A player that has had its stream for 30 s and asked the remux for nothing (no `Swarm.waiting`, no start)
   ends in "this device didn't load it. Press play, or close the player and start it again."
 - **A start Safari refused.** Safari lets a `<video>` load and play only from a tap on it, or once a tap

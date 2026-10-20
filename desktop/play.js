@@ -413,6 +413,8 @@
         Lampa.Listener.follow('torrent_file', files);
         Lampa.Player.listener.follow('start', function () { done(); untilPlaying(); });
         Lampa.Player.listener.follow('destroy', stopWatching);
+        // the player's error screen is up (compat.js gave up): don't play the video again behind it
+        Lampa.PlayerVideo.listener.follow('error', function (e) { if (e && e.fatal) stopWatching(); });
         // a pause right after a key or click is the user's (untilPlaying leaves that alone)
         var touched = function () { lastInput = Date.now(); };
         document.addEventListener('keydown', touched, true);
