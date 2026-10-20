@@ -84,6 +84,7 @@
 
     function openTorrents(item) {
         var c = rubyDesktop.card(item);
+        c.genres = c.genres || [];   // Lampa's Jackett query maps genre names; trending items have only genre_ids
         Lampa.Activity.push({ url: '', title: Lang('Torrents'), component: 'torrents', search: c.title, search_one: c.title,
             search_two: c.original_title, movie: c, page: 1 });
     }

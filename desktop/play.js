@@ -23,8 +23,6 @@
             df: orig, df_year: orig + ' ' + year, df_lg: orig + ' ' + title, df_lg_year: orig + ' ' + title + ' ' + year,
             lg: title, lg_year: title + ' ' + year, lg_df: title + ' ' + orig, lg_df_year: title + ' ' + orig + ' ' + year
         };
-        // Jackett's query reads movie.genres (names); a card from a list only has genre_ids
-        if (!movie.genres) movie.genres = [];
         return { url: '', title: Lampa.Lang.translate('title_torrents'), component: 'torrents',
             search: combos[Lampa.Storage.field('parse_lang')] || orig, search_one: title, search_two: orig, movie: movie, page: 1 };
     }
@@ -56,6 +54,9 @@
         var series = !!(movie.original_name || movie.name && !movie.title);
         var back = Lampa.Controller.enabled().name, stopped = false;
         params = params || searchParams(movie);
+        // Jackett's query reads movie.genres (names); a card from a list (the hero's trending picks) has only
+        // genre_ids, and callers that pass their own params skip searchParams
+        if (!params.movie.genres) params.movie.genres = [];
         rubyFacts.start('Finding the best release…');
         Lampa.Loading.start(function () { stopped = true; rubyFacts.stop(); Lampa.Loading.stop(); Lampa.Controller.toggle(back); });
         Lampa.Loading.setText('Finding the best release…');
