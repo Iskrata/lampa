@@ -1,15 +1,15 @@
 // Play without choosing a torrent (desktop/README.md, "Play"). Whatever opens a title's torrent list
 // (Play on a title page, the billboard's Play, an episode) instead:
 //   1. searches like Lampa does, keeps English releases that will stream (pick.js)
-//   2. asks only for the resolution: 4K / 1080p / 720p (all of them, whatever the screen), each with its best release,
-//      warning when this connection is too slow for it; "Pick a torrent manually" opens Lampa's list
+//   2. plays the best of them for this screen and connection without asking (the player's Quality menu
+//      switches); nothing found shows a calm message, never Lampa's torrent list
 //   3. opens the chosen release with Lampa's own torrent flow and picks the file itself: the episode asked
 //      for, or the film. Progress, the episode playlist and "next episode" stay Lampa's.
 // Also: Play no longer offers trailers (the Trailers button is removed, so Play goes straight here), and
 // clicking an episode plays it (upstream it only toggled "watched"). A series' Play continues where you
 // are (resume.js). Runs everywhere (TV too); Settings → Interface → "Pick torrents for me" turns it off.
 (function () {
-    var SETTING = 'ruby_autopick', LAST_RES = 'ruby_pick_res';
+    var SETTING = 'ruby_autopick';
     var pending = null;     // { target, files: [{element, item}] } while Lampa's file list is coming up
     var push = null;        // Lampa.Activity.push before we wrapped it
 
@@ -26,8 +26,6 @@
         return { url: '', title: Lampa.Lang.translate('title_torrents'), component: 'torrents',
             search: combos[Lampa.Storage.field('parse_lang')] || orig, search_one: title, search_two: orig, movie: movie, page: 1 };
     }
-
-    function openList(params) { params.ruby_list = true; push.call(Lampa.Activity, params); }
 
     // A show's seasons as TMDB numbers them. Not Lampa.Api.seasons: for season 1 it splits a show at any
     // 90-day gap in air dates into made-up seasons and renumbers the episodes (app.min.js splitEpisodesIntoSeasons),
@@ -48,8 +46,6 @@
         rubyResume.where(card, function (r) { done({ season: r.season, episode: r.episode }); });
     }
 
-    function sizeText(bytes) { return (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + ' GB'; }
-
     // download: the same search and pick (1080p, no question), then the file is made into an MP4 to keep
     // instead of played (download.js)
     function start(movie, target, params, download) {
@@ -59,9 +55,9 @@
         // Jackett's query reads movie.genres (names); a card from a list (the hero's trending picks) has only
         // genre_ids, and callers that pass their own params skip searchParams
         if (!params.movie.genres) params.movie.genres = [];
-        rubyFacts.start('Finding the best release…');
+        rubyFacts.start('Getting it ready…', movie);
         Lampa.Loading.start(function () { stopped = true; rubyFacts.stop(); Lampa.Loading.stop(); Lampa.Controller.toggle(back); });
-        Lampa.Loading.setText('Finding the best release…');
+        Lampa.Loading.setText('Getting it ready…');
 
         var go = function (target) {
             var timed = speed();
@@ -74,9 +70,8 @@
                 });
             }, function () {
                 if (stopped) return;
-                rubyFacts.stop();
                 Lampa.Loading.stop();
-                openList(params);
+                unavailable(movie, back, 'Couldn\'t look for it just now. Try again in a minute.');
             });
         };
         if (series && !target) nextEpisode(movie, go); else go(series ? target : null);
@@ -106,60 +101,79 @@
     var ANIME_AUDIO = 'ruby_anime_audio', streamLang = null;
     function animeAudio(movie) { return rubyPick.anime(movie) ? (Lampa.Storage.get(ANIME_AUDIO, 'en') === 'ja' ? 'ja' : 'en') : null; }
 
+    // What plays (simplicity review 2026-10-20: Play no longer asks "Play in"): the screen's resolution, 4K only
+    // where the screen has 2560+ physical pixels across, and no more than this connection carries with headroom
+    // (else it keeps stopping to buffer); the lowest found when even that is too much. prefer.res (the player's
+    // Quality menu) wins when that resolution was found. list: best resolution first (rubyPick.choices).
+    var prefer = null, current = null;
+    function autoPick(list, movie, target, mbps) {
+        var want = prefer && prefer.res;
+        prefer = null;
+        var exact = list.filter(function (c) { return c.res === want; })[0];
+        if (exact) return exact;
+        var big = screen.width * (window.devicePixelRatio || 1) >= 2560;
+        var fits = function (c) { return !mbps || rubyPick.bitrate(c.best, movie, target) * 1.3 <= mbps; };
+        return list.filter(function (c) { return (big || c.res < 2160) && fits(c); })[0] || list[list.length - 1];
+    }
+
     function choose(movie, target, params, results, back, mbps, download) {
-        rubyFacts.stop();     // not over the question; back once a release is chosen
-        var audio = animeAudio(movie);
+        var audio = animeAudio(movie), list = rubyPick.choices(results, movie, target, audio);
+        if (!list.length && audio) {    // anime with none in the chosen audio: the other one rather than nothing
+            var other = audio === 'ja' ? 'en' : 'ja', alt = rubyPick.choices(results, movie, target, other);
+            if (alt.length) { audio = other; list = alt; }
+        }
         streamLang = audio === 'ja' ? 'ja' : null;
-        var list = rubyPick.choices(results, movie, target, audio);
-        // Lampa's own list plays what's picked in it, so a download has no manual pick
-        if (!list.length && download) return Lampa.Noty.show('No English release with enough seeders to download');
+        if (!list.length) return unavailable(movie, back, download ? 'There\'s no good English copy of it to download yet.' :
+            'There\'s no good English copy of it yet. Try again in a few days.');
         // a download asks nothing: 1080p fits a phone (4K files are 10-20 GB), else 720p, else what there is
         // (the user's call, 2026-10-20)
         if (download) {
-            var res = function (r) { return list.filter(function (c) { return c.res === r; })[0]; };
+            var res = function (r) { return list.filter(function (x) { return x.res === r; })[0]; };
             return play(movie, target, (res(1080) || res(720) || list[0]).best, true);
         }
-        if (!list.length && !audio) {   // (anime: still show the sheet, to switch the audio)
-            Lampa.Noty.show('No English release with enough seeders: showing all torrents');
-            return openList(params);
-        }
-        var last = +Lampa.Storage.get(LAST_RES, 1080);
-        var items = list.map(function (c) {
-            var kind = rubyPick.describe(c.best.Title || '');
-            var line = (kind ? kind + ' · ' : '') + sizeText(c.best.Size) + ' · ' + c.best.Seeders + ' seeders';
-            // the release's bitrate, with headroom, against this connection: it would keep stopping to buffer
-            var need = rubyPick.bitrate(c.best, movie, target) * 1.3, slow = mbps && mbps < need;
-            if (slow) line = 'Your connection (' + Math.round(mbps) + ' Mbit/s) is too slow for this · ' + line;
-            return { title: c.label, subtitle: line, choice: c, slow: slow };
-        });
-        // preselect the last resolution chosen, unless this connection can't carry it
-        var pre = items.filter(function (i) { return i.choice.res === last && !i.slow; })[0] ||
-            items.filter(function (i) { return !i.slow; })[0] || items[0];
-        if (pre) pre.selected = true;
-        // TorrServer starts on it while the question is open (warm.js)
-        if (pre) rubyWarm.start(prepare(pre.choice.best, movie), movie, target);
-        if (audio) items.push({ title: audio === 'ja' ? 'Audio: Japanese · English subtitles' : 'Audio: English dub',
-            subtitle: 'Switch to ' + (audio === 'ja' ? 'the English dub' : 'Japanese with English subtitles'), audio: true });
-        items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
+        var c = autoPick(list, movie, target, mbps);
+        current = { movie: movie, list: list, res: c.res, audio: audio };
+        play(movie, target, c.best);
+    }
+
+    // Nothing to play: a calm message in the middle of the screen, never Lampa's raw torrent list (it showed
+    // other shows' torrents for Link Click, simplicity review 2026-10-20). The list stays reachable with
+    // Settings → Interface → "Pick torrents for me" off.
+    function unavailable(movie, back, why) {
+        rubyFacts.stop();
+        var items = [{ title: why, separator: true }];
+        if (window.rubyMyList && !rubyMyList.has(movie)) items.push({ title: 'Add to My List', subtitle: 'To find it again later', add: true });
+        items.push({ title: 'OK' });
         centred();
         Lampa.Select.show({
-            title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + 'Play in',
+            title: 'Can\'t play this right now',
             items: items,
             onSelect: function (a) {
-                if (a.audio) {
-                    Lampa.Storage.set(ANIME_AUDIO, audio === 'ja' ? 'en' : 'ja');
-                    return setTimeout(function () { choose(movie, target, params, results, back, mbps); }, 50);
-                }
-                if (a.all) { rubyWarm.cancel(); return openList(params); }
-                rubyWarm.keep(a.choice.best);
-                Lampa.Storage.set(LAST_RES, a.choice.res);
-                play(movie, target, a.choice.best);
+                if (a.add) { rubyMyList.toggle(movie); Lampa.Noty.show('Added to My List'); }
+                Lampa.Controller.toggle(back);
             },
-            onBack: function () { rubyWarm.cancel(); Lampa.Controller.toggle(back); }
+            onBack: function () { Lampa.Controller.toggle(back); }
         });
     }
 
-    // "Play in" as a popup in the middle of the screen (computers), not Lampa's side panel: its own Select,
+    // the player's Quality menu (player.js): what was found for the title playing, and starting another of
+    // those where it is now (Lampa keeps a film's place by its title and an episode's by its number, not by
+    // the release, and goes back to it on its own)
+    function qualities() {
+        if (!current || !Lampa.Player.opened()) return null;
+        return { list: current.list.map(function (c) { return { res: c.res, label: c.label, on: c.res === current.res }; }), audio: current.audio };
+    }
+    function switchTo(opt) {
+        if (!current) return;
+        var movie = current.movie;
+        if (opt.audio) Lampa.Storage.set(ANIME_AUDIO, opt.audio);
+        prefer = opt.res ? { res: opt.res } : null;
+        Lampa.Player.close();
+        // a series starts the episode it's on (resume.js), which may be a later one than first played
+        setTimeout(function () { start(movie); }, 300);
+    }
+
+    // Play's messages as a popup in the middle of the screen (computers), not Lampa's side panel: its own Select,
     // restyled while this one is open (keys and remote work as before); back to normal once it closes
     function centred() {
         if (!window.rubyDesktop || !rubyDesktop.active || !rubyDesktop.active()) return;
@@ -174,7 +188,7 @@
 
     function play(movie, target, release, download) {
         pending = { target: target, files: [], at: Date.now(), movie: movie, download: download };
-        rubyFacts.start('Connecting to the torrent…');
+        if (rubyFacts.open()) rubyFacts.status('Connecting…'); else rubyFacts.start('Connecting…', movie);
         // backed out of Lampa's torrent dialog before anything played: take the facts away. Lampa's window is
         // open from Torrent.start until the player opens; its connection-error window closes without the
         // list_close that clears `pending`, so the window alone tells (the card stayed up after one, 2026-10-20)
@@ -186,7 +200,7 @@
         Lampa.Torrent.start(prepare(release, movie), movie);
     }
 
-    // the release as Lampa's torrent flow sends it to TorrServer (warm.js sends the same)
+    // the release as Lampa's torrent flow sends it to TorrServer
     function prepare(release, movie) {
         release.poster = movie.img || release.poster;
         release.title = release.title || release.Title;   // what TorrServer lists it as (the parser's field is Title)
@@ -239,7 +253,7 @@
     function stopWatching() { clearInterval(watching); untraced(); rubyFacts.stop(); }
     function untilPlaying() {
         var since = Date.now(), pausedSince = 0, retried = false, userPaused = false, traced = null;
-        rubyFacts.status('Starting playback…');
+        rubyFacts.status('Starting…');
         clearInterval(watching);
         untraced();
         watching = setInterval(function () {
@@ -381,7 +395,8 @@
         episodeClicks();
     }
 
-    window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); } };
+    window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); },
+        qualities: qualities, switchTo: switchTo };
 
     var timer = setInterval(function () {
         if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;

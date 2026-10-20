@@ -2,8 +2,8 @@
 // play.js. rubyResume.where(show) reads the progress Lampa already saves per episode (Lampa.Timeline,
 // file_view, which profiles.js keeps per profile) and says what to play next: the episode last watched if
 // it isn't finished, else the one after it, else S1 E1. Without any progress here, the profile's Trakt
-// progress (rubyTrakt.showProgress) stands in. A series' title page shows it: the Play button says
-// "Continue S2 E5" / "Play S2 E6", and a line under the ratings says "S2 E5 · 23 min left". That line takes
+// progress (rubyTrakt.showProgress) stands in. A title page shows it: the Play button says "Resume" or
+// "Play", and a line under the ratings says "S2 E5 · 23 min left" or "Next: S2 E6" (films: "1 h 2 min left"). That line takes
 // the place of the Trakt plugin's watched status ("Unwatched"), whose menu still opens on click. play.js's
 // Play starts the same episode. Runs everywhere play.js does (TV too).
 (function () {
@@ -92,15 +92,17 @@
 
     function se(ep) { return 'S' + ep.season + ' E' + ep.episode; }
 
-    function label(r) { return (r.state === 'continue' ? 'Continue ' : 'Play ') + se(r); }
+    // "Play" or "Resume", as on Netflix; which episode goes on the line under the ratings (simplicity review
+    // 2026-10-20: the button said "Watch" on films, "Play S1 E1" / "Continue S2 E5" on series)
+    function label(r) { return r.state === 'continue' ? 'Resume' : 'Play'; }
 
     function status(r) {
         if (r.state === 'continue') {
-            var mins = Math.round(r.left / 60);
-            return se(r) + ' · ' + (mins >= 1 ? mins + ' min left' : r.percent + '% watched') +
+            var mins = Math.round(r.left / 60), left = mins >= 60 ? Math.floor(mins / 60) + ' h ' + (mins % 60) + ' min left' : mins + ' min left';
+            return (r.season ? se(r) + ' · ' : '') + (mins >= 1 ? left : r.percent + '% watched') +
                 '<span class="ruby-resume__bar"><i style="width:' + r.percent + '%"></i></span>';
         }
-        if (r.state === 'next') return 'Last watched ' + se(r.last);
+        if (r.state === 'next') return 'Next: ' + se(r);
         if (r.state === 'done') return 'Watched all ' + r.count + ' episodes';
         return '';
     }
@@ -140,6 +142,13 @@
         if (el.parentNode !== host) host.appendChild(el);
     }
 
+    // a film's place: Lampa keeps it under the original title (app.min.js Torserver.parse hash_string)
+    function film(card) {
+        var v = Lampa.Timeline.view(Lampa.Utils.hash(card.original_title || card.title || ''));
+        if (!v || !v.percent || v.percent >= FINISHED) return { state: 'start' };
+        return { state: 'continue', percent: v.percent, left: Math.max(0, (v.duration || (card.runtime || 0) * 60) - (v.time || 0)) };
+    }
+
     var observer = null;
     function render(root, card) {
         if (!window.rubyPlay || !rubyPlay.on()) return;   // Play opens Lampa's own torrent list then
@@ -153,7 +162,8 @@
             if (right) observer.observe(right, { childList: true });
         }
         var mine = page;
-        where(card, function (r) {
+        var find = isShow(card) ? where : function (c, done) { done(film(c)); };
+        find(card, function (r) {
             if (page !== mine || !document.body.contains(root)) return;
             mine.result = r;
             var btn = root.querySelector('.full-start-new__buttons .button--play span');
@@ -174,17 +184,18 @@
         document.head.appendChild(s);
     }
 
-    function isShow(obj) { return obj && obj.method === 'tv'; }
+    function isShow(card) { return !!(card && (card.original_name || card.first_air_date || card.number_of_seasons)); }
+    function isTitle(obj) { return obj && (obj.method === 'tv' || obj.method === 'movie'); }
 
     function init() {
         css();
         Lampa.Listener.follow('full', function (e) {
-            if (e.type === 'complite' && isShow(e.object) && e.data && e.data.movie && e.object.activity)
+            if (e.type === 'complite' && isTitle(e.object) && e.data && e.data.movie && e.object.activity)
                 render(e.object.activity.render(true), e.data.movie);
         });
         // back to a series page that was already built
         Lampa.Listener.follow('activity', function (e) {
-            if (e.type !== 'start' || e.component !== 'full' || !isShow(e.object) || !e.object.activity) return;
+            if (e.type !== 'start' || e.component !== 'full' || !isTitle(e.object) || !e.object.activity) return;
             var root = e.object.activity.render(true);
             root = root.jquery ? root[0] : root;
             if (root && root.querySelector('.full-start-new')) render(root, page && page.root === root ? page.card : e.object.card);

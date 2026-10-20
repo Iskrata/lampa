@@ -67,6 +67,8 @@
         host.appendChild(layer);
         host.appendChild(mute);
         var frame = null, timer = 0, playing = false, muted = true, current = null, unmutedAt = 0, revealAt = CONTROLS_S;
+        // never under the loading screen (facts.js): once Play is pressed the trailer goes
+        var visible = function () { return !document.body.classList.contains('ruby-facts-on') && opts.visible(); };
 
         function yt(func, args) {
             if (frame && frame.contentWindow) frame.contentWindow.postMessage(JSON.stringify({ event: 'command', func: func, args: args || [] }), '*');
@@ -89,9 +91,9 @@
             if (frame) { var f = frame; frame = null; setTimeout(function () { f.remove(); }, 1000); }
         }
         function play(item) {
-            if (!on() || !opts.visible()) return;
+            if (!on() || !visible()) return;
             video(item, function (v) {
-                if (!v || current !== item || !opts.visible()) return;
+                if (!v || current !== item || !visible()) return;
                 var cc = v.lang !== 'en';
                 frame = document.createElement('iframe');
                 frame.allow = 'autoplay; encrypted-media';
@@ -144,7 +146,7 @@
         });
         var watch = setInterval(function () {
             if (!document.body.contains(host)) { clearInterval(watch); stop(); return; }
-            if ((frame || timer) && !opts.visible()) stop();
+            if ((frame || timer) && !visible()) stop();
         }, 400);
         // the speaker button may be moved elsewhere (title.js puts it above the page content)
         return {

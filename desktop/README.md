@@ -24,16 +24,15 @@ see "Touch devices and phones".
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu |
 | `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
-| `facts.js` | `rubyFacts`: the loading card while a title starts |
+| `facts.js` | `rubyFacts`: the full-screen loading screen while a title starts |
 | `progress.js` | how far it is, on that card: a percentage and a bar |
 | `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
-| `warm.js` | `rubyWarm`: starts the release "Play in" preselected while the question is open |
-| `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
+| `play.js` | Play without a torrent list or a question: picks the release for this screen and connection, and the file; episodes play on click |
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
-| `player.js` | the player's labelled Subtitles button and an AirPlay button |
+| `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
 | `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
 
@@ -167,30 +166,29 @@ episode.
    - **English:** DUBBED and dual-audio releases rank higher; untagged anime releases are usually Japanese.
    - **Japanese:** JAPANESE releases pass the language filter. The stream asks the remux service for the
      Japanese track with English subtitles on (`&lang=ja`, added in `Lampa.Torserver.stream`).
-4. **Ask** "Play in", a popup in the middle of the screen on computers (Lampa's own side sheet, restyled while
-   it's open, so keys and remote still work): one line per resolution with its best release's seeders and size, then "Pick a torrent
-   manually" (Lampa's list). Every resolution found is offered, whatever the screen (until 2026-10-20 they
-   stopped at the screen's: 1080p under 2560 physical px and on phones; the user wanted 4K always there):
-   - **Connection:** a release whose bitrate × 1.3 is more than this connection carries says "Your
-     connection (N Mbit/s) is too slow for this". The speed is timed once per session, while the search
-     runs, by downloading 4 MB of random bytes from the remux service (`/gst/speedtest`).
-   - **Preselected:** the last resolution chosen, unless it's too slow.
-   - **Started while you choose** (`warm.js`, 2026-10-20). A first start waits mostly on TorrServer finding
-     peers: 12-16 s measured on ruby (server/remux/README.md, "Why starting takes longer than a seek"). So
-     the preselected release starts as soon as the question shows:
-     - It does what Enter would: `Torserver.connected`, then `Torserver.hash` (same title and data, so TorrServer
-       lists it the same), then the file list.
-     - It asks the remux for the master of the file step 5 will pick (`rubyPick.file`), with the same language.
-       The probe and the index then run while you choose, and the player's master request finds the
-       session ready.
-     - Another line, "Pick a torrent manually" or Back drops it through the remux, unless the heartbeat shows
-       readers (another viewer, or its own probe still reading: TorrServer disconnects it 30 s after the last).
-     - Without the remux (TVs) it is left to that timeout: nothing tells whether someone else reads it.
-     - Checked 2026-10-20 in the built-in browser (dev server, local remux reading ruby's TorrServer): the
-       master asked for 0.3 s after the question showed (the torrent already loaded) and 4.3 s (cold), the
-       player's master answered from that session, picking 720p instead added the 720p release while the
-       1080p one, still probing, stayed for TorrServer to disconnect, and Back dropped it (heartbeat, then
-       `/gst/remove`).
+4. **Pick** without asking (simplicity review 2026-10-20: friends shouldn't have to know what HEVC, seeders
+   or 27 GB mean; until then a "Play in" popup offered every resolution with its release's details):
+   - **Screen:** 4K only where the screen has 2560+ physical pixels across (`screen.width × devicePixelRatio`),
+     else 1080p at most. 4K on a 1080p screen looks barely better and costs 2-3× the bandwidth (Inception:
+     27 GB ≈ 24 Mbit/s against 12 GB ≈ 11 Mbit/s), fewer seeders (50 against 105) and HEVC decoding.
+   - **Connection:** no release whose bitrate × 1.3 is more than this connection carries; when even the lowest
+     is, the lowest. The speed is timed once per session, while the search runs, by downloading 4 MB of random
+     bytes from the remux service (`/gst/speedtest`).
+   - **Anime:** the audio remembered per profile; when that audio has nothing, the other one rather than nothing.
+   - **Nothing found** (or the search failed): "Can't play this right now" in the middle of the screen, with
+     Add to My List. Before, Lampa's raw torrent list opened (Link Click's showed The Simpsons and South Park
+     torrents). That list stays reachable with "Pick torrents for me" off.
+   - **Quality while watching:** the player's Quality button (`player.js`) lists the resolutions found and, for
+     anime, the audio; a choice closes the player and plays that release, where it was: Lampa keeps a film's
+     place under its original title and an episode's under its numbers (`Torserver.parse` `hash_string`), not
+     per release, and goes back to it on its own (`player_timecode` "Proceed").
+   Checked 2026-10-20 in the dev server with stubbed search results (ruby unreachable that day): Retina
+   (3456 px), 50 Mbit/s → 4K; a 1920 px screen → 1080p; 10 Mbit/s → 720p; only other titles' releases → the
+   message; Quality → 1080p closed the player and started the 1080p release. Not checked: that it resumes at
+   the same place (the stand-in video never played).
+   The release starts at once, so nothing is left to warm up while a question is open (`warm.js`, which
+   started the preselected release while "Play in" showed, measured 0.3-4.3 s to the master that day, was
+   removed with the question).
 5. **Open** the release with Lampa's own flow (`Lampa.Torrent.start`) and, when Lampa's file list comes up
    (`torrent_file` events), start the right file: the episode by season/episode, or a film's largest video
    file. The list is hidden meanwhile. Resume, the episode playlist and "next episode" stay Lampa's.
@@ -206,26 +204,26 @@ use the real numbers. The click is caught in
 the capture phase, before the card's own handler, which upstream only toggled "watched". Episodes not
 aired yet keep upstream behaviour.
 
-**While it loads** (`facts.js`): from Play until the picture moves, except while the "Play in" question is
-open, a card at the top of the screen says what's happening. It used to show a film trivia fact every 12 s
+**While it loads** (`facts.js`): from Play until the picture moves, the whole screen goes black: the
+title's backdrop dimmed, its logo (its name until the logo loads), a large red spinner, the step in plain
+words and Cancel. Until 2026-10-20 this was a small card at the top while the trailer played on behind it
+(in the simplicity review Play looked like it did nothing; trailers now stop while it shows, `trailer.js`). It used to show a film trivia fact every 12 s
 ("Did you know?", from `facts-data.js`); the user turned the trivia off for the whole app on 2026-10-20, and
 the facts file is gone (in git history before that date).
 
-The card is the only loading indicator: a spinner, the step ("Finding the best release…",
-"Connecting to the torrent…", "Starting playback…") and Cancel, which does what Back does. Lampa's own
+The screen is the only loading indicator: the step ("Getting it ready…", "Connecting…", "Starting…") and
+Cancel, which does what Back does. Lampa's own
 loading layer and its empty "loading torrent" window (`Torrent.loading()`, a large modal with a spinner)
 are hidden while the card shows; error windows aren't. Before, the window sat behind the card with its
 spinner showing through the card ("this loading screen is ugly", 2026-10-18). Checked in the built-in browser:
 both loaders hidden under the card, Cancel closing each through its own Back handler.
 
-**How far it is** (`progress.js`, asked for 2026-10-20): next to the step, real numbers only, with a red bar
-along the card's bottom edge. The bar never goes back within one start. The numbers depend on the step:
-- **Connecting:** how many peers TorrServer has. The torrent's hash comes from wrapping
-  `Lampa.Torserver.hash`.
-- **Starting through the remux:** the percentage of the file's opening bytes TorrServer holds, with the
-  download speed. It comes from the remux heartbeat's `Startup` (server/remux/README.md "Loading progress").
+**How far it is** (`progress.js`, asked for 2026-10-20): a percentage under a red bar, real numbers only
+(peers and MB/s were shown too until the simplicity review the same day). The bar never goes back within one start. The numbers depend on the step:
+- **Connecting:** the bar waits at 0. The torrent's hash comes from wrapping `Lampa.Torserver.hash`.
+- **Starting through the remux:** the percentage of the file's opening bytes TorrServer holds. It comes from the remux heartbeat's `Startup` (server/remux/README.md "Loading progress").
   The file is the `index` in the player's URL: Lampa also asks for the torrent's other files' masters.
-- **Before any byte arrives:** "Finding peers · N connected". This wait is most of a start on the home
+- **Before any byte arrives:** the bar at 0. This wait is most of a start on the home
   server (server/remux/README.md "Why starting takes longer than a seek").
 - **TorrServer without the remux:** Lampa's own preload percentage (`Lampa.Loading.setProgress`). Its
   loading screen showed it before the card hid that screen.
@@ -306,11 +304,12 @@ per profile by `profiles.js`). The hash is Lampa's own `Utils.hash(season + epis
 - **Trakt:** with no progress here and Trakt connected, `/shows/:id/progress/watched` stands in: its
   `next_episode`, and its `last_episode` for the line. Asked at most once a minute per show.
 
-The series page shows it:
-- **Play button:** "Continue S2 E5", "Play S2 E6" or "Play S1 E1". The label stays when another button has the focus
+The title page shows it (films too, from their saved place):
+- **Play button:** "Resume" or "Play", as on Netflix (until 2026-10-20: "Continue S2 E5", "Play S2 E6", and
+  "Watch" on films). The label stays when another button has the focus
   (Lampa shows a title-page button's label only while it's focused; `title.js`).
-- **Line under the ratings:** "S2 E5 · 26 min left" and a progress bar, "Last watched S1 E3", or "Watched
-  all 62 episodes". Time left is the saved duration minus the saved time, else TMDB's runtime.
+- **Line under the ratings:** "S2 E5 · 26 min left" and a progress bar, "Next: S1 E4" (was "Last watched
+  S1 E3"; the user wanted the next one shown), or "Watched all 62 episodes". Films: "1 h 44 min left". Time left is the saved duration minus the saved time, else TMDB's runtime.
 - **Trakt plugin's watched status ("Unwatched"):** the line goes inside it, and the plugin's own text is
   hidden, so the two can't disagree. A click still opens the plugin's Trakt menu. A mutation observer puts
   the line back each time the plugin rebuilds its status. With nothing watched, the plugin's text stays.
@@ -326,6 +325,8 @@ Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`)
   episode: 4}`. S1 E4 saved at 12 % with the page open turned it into "Continue S1 E4" / "43 min left".
 - Breaking Bad, S5 E16 finished: "Play S1 E1", "Watched all 62 episodes".
 - Game of Thrones, nothing watched: "Play S1 E1", no line. Films keep "Watch".
+- 2026-10-20, same way: Breaking Bad S1 E3 at 95 % → "Play" / "Next: S1 E4"; S1 E4 at 40 % → "Resume" /
+  "S1 E4 · 28 min left". Inception at 30 % → "Resume" / "1 h 44 min left".
 - The Trakt status line, rebuilt twice the way the plugin does it: the line stayed inside it, never doubled.
 
 ## Changes to Lampa itself (`app.min.js`)

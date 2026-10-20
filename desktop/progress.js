@@ -1,8 +1,8 @@
-// How far a title is from playing, on the loading card (facts.js; desktop/README.md "Play"). Asked for on
+// How far a title is from playing, on the loading screen (facts.js; desktop/README.md "Play"). Asked for on
 // 2026-10-20 ("show a percentage or a progress bar when we start a show"). Real numbers only:
 //  * through the remux (TorrServer's /gst/, how ruby plays torrents): its heartbeat's Startup.pct, the share
 //    of the bytes the probe and segment 0 need that TorrServer holds (server/remux/startup.js). Until the
-//    first bytes come, how many peers are connected: that wait is most of the start (server/remux/README.md).
+//    first bytes come, the bar waits at 0: that wait is most of the start (server/remux/README.md).
 //  * TorrServer without the remux: Lampa's own preload percentage (Lampa.Loading.setProgress), which its
 //    loading screen showed before the card hid it.
 // Runs where play.js does.
@@ -13,14 +13,12 @@
 
     function on() { return document.body.classList.contains('ruby-facts-on'); }
 
-    function speed(bps) { return bps > 0 ? (bps / 1e6).toFixed(1) + ' MB/s' : ''; }
-
     function show(res) {
-        var t = (res && res.Torrent) || {}, st = res && res.Startup, peers = +t.active_peers || 0;
-        if (!st) return rubyFacts.progress(null, peers ? peers + (peers === 1 ? ' peer' : ' peers') : '');
-        if (st.pct <= 0 && !(t.download_speed > 0)) return rubyFacts.progress(0, peers ? 'Finding peers · ' + peers + ' connected' : 'Finding peers');
-        var s = speed(t.download_speed);
-        rubyFacts.progress(st.pct, st.pct + '%' + (s && st.pct < 100 ? ' · ' + s : ''));
+        var t = (res && res.Torrent) || {}, st = res && res.Startup;
+        // the share only: peers and MB/s mean nothing to most people (simplicity review 2026-10-20)
+        if (!st) return rubyFacts.progress(null, '');
+        if (st.pct <= 0 && !(t.download_speed > 0)) return rubyFacts.progress(0, '');
+        rubyFacts.progress(st.pct, st.pct + '%');
     }
 
     function poll() {
@@ -45,7 +43,7 @@
         });
         var setProgress = Lampa.Loading.setProgress;
         Lampa.Loading.setProgress = function (pct, detail) {
-            if (on()) rubyFacts.progress(Math.round(pct), Math.round(pct) + '%' + (detail && detail.speed ? ' · ' + detail.speed : ''));
+            if (on()) rubyFacts.progress(Math.round(pct), Math.round(pct) + '%');
             return setProgress.apply(this, arguments);
         };
         setInterval(poll, POLL_MS);

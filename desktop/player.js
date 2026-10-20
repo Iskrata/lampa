@@ -7,6 +7,7 @@
 //   * F toggles fullscreen, C subtitles. Left/Right seek even while the control bar is up (Lampa moves between its buttons
 //     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
 //     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
+//   * Quality: the resolutions Play found (play.js), switched where the video is; anime also switches audio.
 //   * AirPlay: a button next to picture-in-picture, in Safari when an AirPlay screen is around
 //     (WebKitPlaybackTargetAvailabilityEvent). It hands the stream to an Apple TV: torrents play as HLS
 //     from the server (server/remux), which the Apple TV fetches itself.
@@ -198,6 +199,51 @@
         subs.innerHTML = rubyIcons.svg('cc') + '<span class="ruby-cc-label">Subtitles</span>' + (tip ? tip.outerHTML : '');
     }
 
+    // Quality: the resolutions Play found for this title (play.js), switched where it is; for anime also the
+    // audio (simplicity review 2026-10-20: Play no longer asks "Play in"). Elsewhere (another source, "Pick
+    // torrents for me" off) Lampa's own menu. Lampa's handler is taken over rather than raced: phones press
+    // the button through jQuery's trigger from the "⋯" menu, which no capture listener sees.
+    function qualityButton(panel) {
+        var btn = panel.querySelector('.player-panel__quality');
+        if (!btn) return;
+        if (!btn._rubyQuality) {
+            btn._rubyQuality = true;
+            var own = (($._data(btn, 'events') || {})['hover:enter'] || []).map(function (h) { return h.handler; });
+            $(btn).off('hover:enter').on('hover:enter', function (e) {
+                if (qualityMenu()) return;
+                var self = this, args = arguments;
+                own.forEach(function (h) { h.apply(self, args); });
+            });
+            // Lampa writes the stream's own level ("FHD") into it when the stream loads
+            new MutationObserver(function () { label(btn); }).observe(btn, { childList: true, characterData: true, subtree: true });
+        }
+        label(btn);
+    }
+    function label(btn) {
+        var q = window.rubyPlay && rubyPlay.qualities(), cur = q && q.list.filter(function (c) { return c.on; })[0];
+        if (cur && btn.textContent !== cur.label) btn.textContent = cur.label;
+        if (cur) btn.classList.remove('hide');
+    }
+    function qualityMenu() {
+        var q = window.rubyPlay && rubyPlay.qualities();
+        if (!q) return false;
+        var items = q.list.map(function (c) { return { title: c.label, res: c.res, selected: c.on }; });
+        if (q.audio) items.push({ title: 'Audio', separator: true },
+            { title: 'English dub', audio: 'en', selected: q.audio === 'en' },
+            { title: 'Japanese with English subtitles', audio: 'ja', selected: q.audio === 'ja' });
+        var back = Lampa.Controller.enabled().name;
+        Lampa.Select.show({
+            title: 'Quality',
+            items: items,
+            onSelect: function (a) {
+                if (a.selected) return Lampa.Controller.toggle(back);
+                rubyPlay.switchTo(a.res ? { res: a.res } : { audio: a.audio });
+            },
+            onBack: function () { Lampa.Controller.toggle(back); }
+        });
+        return true;
+    }
+
     function airplayButton(panel) {
         if (!window.WebKitPlaybackTargetAvailabilityEvent) return;
         var btn = panel.querySelector('.player-panel__airplay'), pip = panel.querySelector('.player-panel__pip');
@@ -276,6 +322,7 @@
             relabelSubs(panel);
             airplayButton(panel);
             seekButtons(panel);
+            qualityButton(panel);
         });
     }
 
