@@ -63,12 +63,13 @@ Switching writes the target to `ruby_profile_switch` and reloads. The swap runs 
 next page load, before `app.min.js` has read anything and after the old page can no longer write, so
 nothing leaks between profiles.
 
-**English from the start.** Language is a device setting, shared by its profiles. Lampa opens a "Choose
-your language" screen on first run when `language` is unset, and both `language` and `tmdb_lang`
-default to `ru`. So at page start `profiles.js` sets both to `en` when they're unset, and a new device
-goes straight to "Who's watching?" (the user's call, 2026-10-20). Settings → Interface → Language still
-changes it. Verified 2026-10-20: dev server with `LAMPA_UPSTREAM=127.0.0.1` (the host's `lampa-init.js`
-502s, so it has no preset), `localStorage` cleared: no `.lang` picker, both keys `en`, the app shown.
+**English only.** Language is a device setting, shared by its profiles, and the fork's own text is
+English only: a friend's browser set to Bulgarian (picked on Lampa's first-run screen) showed Lampa's
+parts in Bulgarian and the fork's in English. So at page start `profiles.js` sets `language` and
+`tmdb_lang` to `en` on every load, also over an earlier choice, and sets `lampa_settings.lang_use =
+false`, Lampa's own switch that skips its "Choose your language" screen and removes Settings → Interface →
+Language (the user's call, 2026-10-20). TMDB's language row in Advanced settings still shows, but comes back
+to English on the next load.
 
 **Sharing profiles between devices.** Run the profile service (`server/sync/`, its README) at `./sync/` on
 the same origin. `store.js` detects it with a test write. **The server's copy of a profile is the one that
@@ -123,7 +124,7 @@ profile" in the logs), instead of losing them to the server's copy.
 - Checked 2026-10-20 in `tools/dev-server.js`. A device with Bulgarian subtitles and autoplay off kept
   both and gave them to the profile. A second device then picked the profile and got both.
 
-Shared: servers, plugins, the interface language, and `trakt_client_id` / `trakt_client_secret`. The list
+Shared: servers, plugins, and `trakt_client_id` / `trakt_client_secret`. The list
 is at the top of `profiles.js`.
 
 **Who's watching now** comes from the profile service in one request (`GET ./sync/watching`): every

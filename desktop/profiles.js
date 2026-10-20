@@ -122,10 +122,13 @@
     // page must start with the target's data. Everything else is checked in the background (syncList).
     var state = load();
     try {
-        // a new device starts in English (user's call 2026-10-20): Lampa asks for a language on first run
-        // when 'language' is unset, and both keys default to 'ru'. Only unset keys: a choice in Settings wins.
-        if (ls.getItem('language') === null) ls.setItem('language', 'en');
-        if (ls.getItem('tmdb_lang') === null) ls.setItem('tmdb_lang', 'en');
+        // English everywhere (user's call 2026-10-20): the fork's own text is English only, so another language
+        // gave half-translated screens (a friend's browser in Bulgarian). Set on every load, also over an earlier
+        // choice; lang_use false is Lampa's own switch that drops its first-run picker and the Interface row.
+        ls.setItem('language', 'en');
+        ls.setItem('tmdb_lang', 'en');
+        window.lampa_settings = window.lampa_settings || {};
+        window.lampa_settings.lang_use = false;
         var target = ls.getItem(SWITCH);
         ls.removeItem(SWITCH);
         // (also "switching" to the same id when this browser has never loaded that profile's data: a new
