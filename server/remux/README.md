@@ -213,37 +213,41 @@ go once all of them pass `REMUX_SOURCES_MB` (4 GB). A torrent's bytes never chan
   with only the hash and `save_to_db`; Lampa adds torrents unsaved). After a drop TorrServer lists it "in db"
   without peers or memory, and the next add has its file list at once. Measured 2026-10-20 on the home server
   with Big Buck Bunny: re-added after a drop, the file list came in 32-35 ms and peers came from its trackers
-  (360 known after 2 s); the Friends pack's file list took 1.9-12.3 s cold in these runs. Saved torrents not
+  (360 known after 2 s). The Friends pack: 2.1-11.5 s cold, 0.1 s saved (the runs below). Saved torrents not
   played for 30 days are removed (`forget`, at start and daily; `REMUX_SOURCES/torrents.json`).
 - **The log** says `master in 0.1 s: probe and index kept from an earlier open`. `REMUX_DEBUG` also logs each
   read of `/gst/src/`: how much came from disk, how much from TorrServer, and how long it took.
 
 **Measured** on the home server, 2026-10-20 (two copies of this service side by side on its TorrServer: the one
 then deployed, and this one; a script did what Lampa's player does: add the torrent, wait for its file list,
-master, init, the segments; then `/gst/remove`). Friends S01E01 resumed at 0:51 (segment 8). The old player asked
-seg0 and then seg8 (desktop/README.md "Starting where you left off"), the new one seg8. "Picture" is from the
-file list to the resume segment:
+master, init, the segments, then `/gst/remove`; each run started once the previous one's torrent was unloaded).
+Friends S01E01 resumed at 0:51 (segment 8). "Before" is the deployed service with the old player (seg0, then seg8,
+desktop/README.md "Starting where you left off") and the torrent not in TorrServer's database; "reopen" is this
+service with the new player (seg8 only) after an earlier open. Total is from the add to the resume segment:
 
-| run | file list | master | segments | picture |
+| run (22:36-22:45 local) | file list | master | segments | total |
 |---|---|---|---|---|
-| before, cold | 12.3 s | 30.7 s | seg0 0.1 s, seg8 11.9 s | 42.7 s |
-| before, cold | 4.6 s | 17.2 s | seg0 1.8 s, seg8 2.0 s | 20.9 s |
-| before, cold | 1.9 s | 19.3 s | seg0 2.4 s, seg8 8.9 s | 30.7 s |
-| before, cold | 5.1 s | 22.2 s | seg0 0.1 s, seg8 10.3 s | 32.6 s |
-| before, cold | 5.7 s | 26.8 s | seg0 0.1 s, seg8 10.4 s | 37.4 s |
-| first open | 11.0 s | 33.5 s | seg8 1.9 s | 35.4 s |
-| reopen, index read from TorrServer (bug, below) | 1.9 s | 0.04 s | seg8 31.1 s | 31.1 s |
-| same | 8.5 s | 0.07 s | seg8 18.5 s | 18.5 s |
-| same | 1.9 s | 0.1 s | seg8 17.4 s | 17.5 s |
-| same, from the start | 5.1 s | 0.1 s | seg0 17.8 s, seg1 3.8 s | 21.7 s |
+| first open | 11.5 s | 9.0 s | seg8 2.7 s | 23.2 s |
+| before | 9.0 s | 23.9 s | seg0 0.1 s, seg8 12.0 s | 45.0 s |
+| reopen | 0.1 s | 0.04 s | seg8 10.0 s | **10.1 s** |
+| before | 2.1 s | 35.3 s | seg0 0.1 s, seg8 10.4 s | 47.9 s |
+| reopen | 0.1 s | 0.06 s | seg8 6.1 s | **6.2 s** |
+| before | 2.7 s | 27.1 s | seg0 0.1 s, seg8 6.7 s | 36.6 s |
+| reopen | 0.1 s | 0.05 s | seg8 27.4 s | **27.6 s** |
+| before | 4.8 s | 10.4 s | seg0 0.1 s, seg8 1.3 s | 16.7 s |
+| reopen | 0.1 s | 0.05 s | seg8 11.1 s | **11.3 s** |
 
-- **The swarm decides most of it.** At a reopen's master 1-3 peers were connected; the first piece then took
-  17-31 s. Before, the same warm-up was spent inside the probe. Runs minutes apart differed by 2x, and later
-  that evening the swarm gave 34 MB/s and every open, before or after, took 2-5 s.
-- **The bug those reopens had:** the Cues were kept as two ranges (their 16-byte header, then the body), and the
-  first version served only one kept range before going to TorrServer, so ffmpeg's seek still waited for the
-  Cues piece (14.8 s of the 17.4 s, `REMUX_DEBUG`). Kept ranges are now served one after another, and the start
-  is kept 1 MiB past the probe (ffmpeg's open read 68 KB from the next piece: 4.0 s).
+- **Median 41 s before, 11 s after.** What is left is the resume segment's own piece: in every reopen
+  `REMUX_DEBUG` shows the start, Cues and tail served from disk and one read from TorrServer, at the segment
+  (`37757024-…: disk 0, TorrServer 4004975 in 10.0 s`). Its time is the swarm's warm-up: 0 peers connected at the
+  master; the 27.4 s run downloaded at 0 MB/s for most of it with 17 peers.
+- **Earlier the same evening** (before two fixes): the Cues were kept as two ranges (their 16-byte header, then
+  the body), and the first version served one kept range and then went to TorrServer, so a seek still waited for
+  the Cues piece (14.8 s of a 17.4 s seg8). Kept ranges are now served one after another. ffmpeg's open also read
+  68 KB past where ffprobe stopped, in the next piece (4.0 s): the start is now kept 1 MiB further. Those
+  reopens took 17.5-31.1 s for seg8, against 20.9-42.7 s before.
+- A first open costs what it did (the probe waits for the start's and the index's pieces), minus segment 0 on a
+  resume.
 
 ## Loading progress
 
