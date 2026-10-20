@@ -30,6 +30,8 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/link?u=<Jackett .torrent link without its key>` | that link fetched from Jackett with the key, for TorrServer |
 | `GET /gst/jackett/api/v2.0/indexers/<x>/results?...` | Lampa's own Jackett search, with the key added here and removed from the answer (every download link becomes a `/gst/link` one); other Jackett paths 404 |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
+| `GET /gst/src/<hash>/<file>[?rec=1]` | the file's bytes (HTTP ranges) for ffmpeg and ffprobe on this machine, not through Caddy (below, "Opening a file again") |
+| `GET /gst/src/<hash>/<file>[?rec=1]` | the file's bytes (HTTP ranges) for ffmpeg and ffprobe on this machine; not through Caddy (below, "Opening a file again") |
 | `POST /gst/download` `{hash, index, lang, tmdb, kind, season, episode, name}` | start a download (below); the job |
 | `GET /gst/downloads` | every job: `{id, state, progress, size, subs, url, …}`, state `queued` / `fetching` / `subtitles` / `finishing` / `ready` / `failed` |
 | `GET /gst/download/<id>/<name>.mp4` | the finished file, with byte ranges, as an attachment named `<name>.mp4` |
@@ -49,6 +51,7 @@ Node 18.15+ (no dependencies; `fs.statfs`), plus ffmpeg and ffprobe 8.x. Environ
 | `REMUX_DOWNLOADS` | `<tmp>/lampa-remux-downloads`: downloads (below), kept across restarts |
 | `REMUX_SWARM` | `<tmp>/lampa-remux-swarm.json`: releases seen dead (below), kept across restarts |
 | `REMUX_RELEASES` | `<tmp>/lampa-remux-releases.json`: releases that played or failed, per title (below), kept across restarts |
+| `REMUX_SOURCES` / `REMUX_SOURCES_MB` | `<tmp>/lampa-remux-sources` / `4096`: what each file's first open read (its start and index) and its probe, kept across restarts, the least recently opened dropped past that many MB (below, "Opening a file again") |
 | `JACKETT_URL` | `http://127.0.0.1:9117/jackett`: the Jackett `/gst/pick` searches |
 | `JACKETT_KEY` / `JACKETT_CONFIG` | Jackett's API key, or the path of Jackett's `ServerConfig.json` to read it from (the home server: `C:\jackett\data\ServerConfig.json`). Without either, `/gst/pick` answers 503 and browsers search themselves |
 | `TMDB_KEY` | Lampa's own public TMDB key (app.min.js `key()`): the title's names, dates and runtimes |
@@ -92,6 +95,7 @@ The waiting segment 27 was handed on. Caddy answered the player's retry with it 
 | `startup.js` | how far a file is from playing, for the loading card (below, "Loading progress") |
 | `download.js` | a file made into one MP4 to keep (below, "Downloads") |
 | `torrserver.js` | what the service asks TorrServer besides the stream (a torrent's files, drop) |
+| `source.js` | the file's bytes for ffmpeg and ffprobe (`/gst/src/`), from disk where an earlier open read them (below, "Opening a file again") |
 | `pick.js` / `releases.js` | which release to play (`/gst/pick`), and what played or failed (below, "Picking a release") |
 
 **Segments are cut at keyframes, planned before anything plays.** A seekable playlist has to list every
@@ -179,6 +183,68 @@ Measured 2026-10-20 on the home server (scripts run there against its TorrServer
   Only peers that accept incoming connections are reachable. It connected to 1-5 of the 120-148 peers it knew
   about.
 
+## Opening a file again (`source.js`)
+
+**Why a reopen was as slow as the first open.** Lampa drops the torrent when the player closes (`/gst/remove`),
+and TorrServer keeps its pieces only in memory. Every open then probed the file again and ffmpeg read it from
+TorrServer, and both read the file's start *and* its index at the end. Measured 2026-10-20 on the home server
+(scripts there against its TorrServer), Friends S01-S10 (1080p x265 Silence, `1a6558e5`, 182 GB, file 68 =
+S01E01, 767 MB), the torrent dropped before each run:
+- **Pieces are 16 MiB**, and the episode starts 15,041,329 bytes into piece 1187: its first 1.7 MB share a
+  piece with the previous file. Its Cues are in its last piece, 1233. Reading the start means a whole piece of
+  other data, and so does the index.
+- **The probe waits for both:** the file's first 64 KB came after 8.9 s (peers connecting), the Cues 24.9 s
+  later, ffprobe finished at the same moment as the Cues (34.0 s, at 1-2 MB/s from 5-10 of ~500 peers).
+  ffprobe reads the index too (Matroska's SeekHead).
+- **So does every ffmpeg run, even one from 0:** after a cold add, ffmpeg from the start touched pieces 1187,
+  1188 and 1233 and gave its first output after 45 s (that time 30 s of 0 MB/s with 9-12 peers connected).
+- In the service's log the three opens that day took 40.1, 33.2 and 52.4 s ("probe ~33-52 s, index ~33-52 s").
+
+**What is kept.** The first open's probe reads the file through this service (`/gst/src/<hash>/<file>?rec=1`,
+HTTP ranges), and every byte it reads is kept on disk in `REMUX_SOURCES/<hash>-<file>/`: the file's start up to
+where ffprobe stopped (2.8 MB for that episode, 0.9 MB for Big Buck Bunny's MP4) plus 1 MiB (ffmpeg reads 68 KB
+past ffprobe), the index (Cues 107 KB; an MP4's moov), and the last 64 KiB (OpenSubtitles' file hash). The probe's
+answer and the keyframe times go into its `meta.json`. At most 64 MB per file; the least recently opened files
+go once all of them pass `REMUX_SOURCES_MB` (4 GB). A torrent's bytes never change, so nothing kept goes stale.
+- **A reopen** answers the master from `meta.json` (no ffprobe, no Cues read), and ffmpeg reads the file through
+  the same address: the start, the index and the tail from disk, the rest from TorrServer. Only the pieces of
+  the segment asked for are waited for.
+- **The file list:** each torrent played is saved in TorrServer's database (`torrserver.js keep`: a second `add`
+  with only the hash and `save_to_db`; Lampa adds torrents unsaved). After a drop TorrServer lists it "in db"
+  without peers or memory, and the next add has its file list at once. Measured 2026-10-20 on the home server
+  with Big Buck Bunny: re-added after a drop, the file list came in 32-35 ms and peers came from its trackers
+  (360 known after 2 s); the Friends pack's file list took 1.9-12.3 s cold in these runs. Saved torrents not
+  played for 30 days are removed (`forget`, at start and daily; `REMUX_SOURCES/torrents.json`).
+- **The log** says `master in 0.1 s: probe and index kept from an earlier open`. `REMUX_DEBUG` also logs each
+  read of `/gst/src/`: how much came from disk, how much from TorrServer, and how long it took.
+
+**Measured** on the home server, 2026-10-20 (two copies of this service side by side on its TorrServer: the one
+then deployed, and this one; a script did what Lampa's player does: add the torrent, wait for its file list,
+master, init, the segments; then `/gst/remove`). Friends S01E01 resumed at 0:51 (segment 8). The old player asked
+seg0 and then seg8 (desktop/README.md "Starting where you left off"), the new one seg8. "Picture" is from the
+file list to the resume segment:
+
+| run | file list | master | segments | picture |
+|---|---|---|---|---|
+| before, cold | 12.3 s | 30.7 s | seg0 0.1 s, seg8 11.9 s | 42.7 s |
+| before, cold | 4.6 s | 17.2 s | seg0 1.8 s, seg8 2.0 s | 20.9 s |
+| before, cold | 1.9 s | 19.3 s | seg0 2.4 s, seg8 8.9 s | 30.7 s |
+| before, cold | 5.1 s | 22.2 s | seg0 0.1 s, seg8 10.3 s | 32.6 s |
+| before, cold | 5.7 s | 26.8 s | seg0 0.1 s, seg8 10.4 s | 37.4 s |
+| first open | 11.0 s | 33.5 s | seg8 1.9 s | 35.4 s |
+| reopen, index read from TorrServer (bug, below) | 1.9 s | 0.04 s | seg8 31.1 s | 31.1 s |
+| same | 8.5 s | 0.07 s | seg8 18.5 s | 18.5 s |
+| same | 1.9 s | 0.1 s | seg8 17.4 s | 17.5 s |
+| same, from the start | 5.1 s | 0.1 s | seg0 17.8 s, seg1 3.8 s | 21.7 s |
+
+- **The swarm decides most of it.** At a reopen's master 1-3 peers were connected; the first piece then took
+  17-31 s. Before, the same warm-up was spent inside the probe. Runs minutes apart differed by 2x, and later
+  that evening the swarm gave 34 MB/s and every open, before or after, took 2-5 s.
+- **The bug those reopens had:** the Cues were kept as two ranges (their 16-byte header, then the body), and the
+  first version served only one kept range before going to TorrServer, so ffmpeg's seek still waited for the
+  Cues piece (14.8 s of the 17.4 s, `REMUX_DEBUG`). Kept ranges are now served one after another, and the start
+  is kept 1 MiB past the probe (ffmpeg's open read 68 KB from the next piece: 4.0 s).
+
 ## Loading progress
 
 `/gst/<hash>/heartbeat?index=<file>` adds `Startup: { pct }` (`startup.js`), which the loading card shows as a
@@ -186,8 +252,9 @@ percentage and a bar (desktop/progress.js). Lampa's own heartbeat (no `index`) i
 of the bytes starting needs that TorrServer already holds: the first 20 MB of the file (ffprobe's
 `-probesize`) until the probe is done, then up to the end of segment 0 (bitrate × its length). The count
 comes from TorrServer's `/cache` piece map (`PiecesLength`, each piece's `Size` / `Completed`), from where the
-file starts in the torrent, so bytes already cached count. It stays at 99 until segment 0 is written, then 100.
-It doesn't count the Cues piece at the end of a Matroska file (one piece).
+file starts in the torrent, so bytes already cached count, and so do bytes an earlier open kept on disk
+("Opening a file again"). It stays at 99 until the first segment the player asks for is written (segment 0, or
+the one it resumes at), then 100. It doesn't count the Cues piece at the end of a Matroska file (one piece).
 
 Checked 2026-10-20: `report()` on a made-up piece map (a film starting inside piece 3; 13 pieces of 1 MiB
 done = 49 %, plus half a piece = 52 %). End to end with Big Buck Bunny from cold, this service on the Mac

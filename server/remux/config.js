@@ -12,6 +12,10 @@ module.exports = {
     cache: process.env.REMUX_CACHE || path.join(os.tmpdir(), 'lampa-remux'),
     // subtitles downloaded from OpenSubtitles: kept across restarts (the cache above is wiped at start)
     subs: process.env.REMUX_SUBS || path.join(os.tmpdir(), 'lampa-remux-subs'),
+    // what each file's first open read (its start and index) and its probe, so it opens again without waiting
+    // for those pieces (source.js): kept across restarts, the oldest dropped past sourcesMax bytes
+    sources: process.env.REMUX_SOURCES || path.join(os.tmpdir(), 'lampa-remux-sources'),
+    sourcesMax: (parseInt(process.env.REMUX_SOURCES_MB || '4096', 10) || 4096) * 1048576,
     // films made into MP4s to keep (download.js): kept across restarts
     downloads: process.env.REMUX_DOWNLOADS || path.join(os.tmpdir(), 'lampa-remux-downloads'),
     // releases seen dead (swarm.js): kept across restarts

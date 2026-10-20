@@ -3,6 +3,7 @@
 // peers (README "Why starting takes longer than a seek"), and these bytes are what it downloads meanwhile:
 // ffprobe reads up to the first PROBE_BYTES of the file, then segment 0 is the file's first seconds.
 'use strict';
+const source = require('./source');
 
 const PROBE_BYTES = 20e6, FORGET_MS = 5 * 60000;
 const started = new Map();   // "<hash>:<file>" -> { at, session }: master requests, the session once probed
@@ -26,7 +27,8 @@ function needed(st, length) {
 function report(hash, index, cache, torrent) {
     if (!index) return null;
     const st = started.get(`${hash}:${index}`);
-    if (st && st.session && st.session.has(0)) return { pct: 100 };
+    // the first segment the player asked for (0, or where it resumes) is written
+    if (st && st.session && st.session.wrote) return { pct: 100 };
     const files = ((torrent && torrent.file_stats) || []).slice().sort((a, b) => a.id - b.id);
     const pl = cache && cache.PiecesLength;
     let off = 0, file = null;
@@ -40,6 +42,8 @@ function report(hash, index, cache, torrent) {
         const overlap = Math.min(end, (i + 1) * pl) - Math.max(off, i * pl);
         have += p.Completed ? overlap : overlap * Math.min(1, (p.Size || 0) / (p.Length || pl));
     }
+    // what an earlier open kept on disk (source.js) needs no piece
+    have = Math.max(have, source.covered(hash, index, 0, need));
     return { pct: Math.min(99, Math.floor(have * 100 / need)) };
 }
 

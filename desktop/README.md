@@ -37,6 +37,7 @@ see "Touch devices and phones".
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
 | `play.js` | Play without a torrent list or a question: picks the release for this screen and connection, and the file; episodes play on click |
+| `startat.js` | Continue's stream starts at the saved time: no segment 0 first ("Starting where you left off") |
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `swarm.js` | real seeder counts in every torrent list, dead releases left out; switches to the next release of the same resolution when the playing one stops sending or is too slow ("Dead swarms") |
 | `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
@@ -530,6 +531,28 @@ Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`)
   "S1 E4 · 28 min left". Inception at 30 % → "Resume" / "1 h 44 min left".
 - The Trakt status line, rebuilt twice the way the plugin does it: the line stayed inside it, never doubled.
 
+## Starting where you left off
+
+`startat.js`. Lampa's player started every stream at 0 and jumped to the saved time on its first `timeupdate`
+(app.min.js Timeline). Through the remux that cost a whole segment the player threw away: the remux made
+segment 0 (ffmpeg from the start), then, after the jump, the segment at the saved time (another ffmpeg run).
+Friends S01E01 resumed at 0:53 on 2026-10-20: seg0 4.8 s, then seg8 8.8-12 s.
+
+- **hls.js** (Chrome, and Lampa's choice elsewhere): `window.Hls` is wrapped so the player's new `Hls` gets
+  `startPosition` = the time Lampa will jump to (the saved time past 10 s and under 90 %, at most 15 s before
+  the end; nothing with Settings → Player → "Start over" or "Ask"). Lampa's own jump then lands where the
+  video already is. The wrap is put in place on the player's `start` event, which comes right before the
+  stream is handed over (`PlayerVideo.url`).
+- **Safari's native HLS:** the time is set on the `<video>` right after the player's `load()` (HTML's default
+  playback start position; `load()` resets it, so not before). Measured in the iOS 27 simulator's Safari, a
+  plain page and the remux (Big Buck Bunny, saved time 160 s, 2026-10-20): as before, `loadedmetadata` at
+  0.6 s, then init and seg0; with the time set after `load()`, init and then seg20 (153.5-160.9 s), no seg0;
+  a `#t=160` on the URL still fetched seg0 first, then seg20.
+- **Checked 2026-10-20** through Lampa's player (dev server, a local remux on ruby's TorrServer, Big Buck Bunny
+  with a saved time of 160 s): in the built-in browser (hls.js) the first segment asked for was seg20 and it
+  played on at 176 s; in the iOS 27 simulator's Safari (native HLS) the log said "native HLS starts at 160.0"
+  and the requests were master, video playlist, init, seg20…; the same play with no saved time asked seg0.
+
 ## Changes to Lampa itself (`app.min.js`)
 
 Nine small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
@@ -667,8 +690,8 @@ decides.
     ("it pauses when I rewind sometimes", Safari, 2026-10-18). Now only `currentTime` changes.
   - **`Lampa.PlayerVideo.to`** (Continue's jump to the saved time, a click on the timeline, the skip button)
     did the same pause/seek/play. While the video plays it now only seeks. With Safari's native HLS,
-    Continue starts at 0 and jumps on the first `timeupdate`, through `to`; hls.js (Chrome) starts at the
-    saved time itself, which is why Continue never hung in Chromium.
+    Continue started at 0 and jumped on the first `timeupdate`, through `to` (since 2026-10-20 both Safari and
+    hls.js start at the saved time: "Starting where you left off"; Lampa's jump then lands where the video is).
   - Checked 2026-10-18 in the built-in browser (Chromium, local remux of a synthetic 15-min H.264 MKV):
     3 × Left from 5:19 → 4:50 then Right → +10 s, never paused; `to(600)` with
     `HTMLMediaElement.prototype.play` rejecting → 10:04 and still playing (Lampa's `to` stays paused there).

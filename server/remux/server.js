@@ -12,6 +12,8 @@
 //                                                     index Startup: { pct }, how far that file is from playing
 //                                                     (startup.js)
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
+//   GET /gst/src/<hash>/<file>[?rec=1]             -> the file's bytes for ffmpeg/ffprobe on this machine, from disk
+//                                                     where its first open read them (source.js)
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
 //   GET /gst/swarm?hash=<hash>,<hash>...           -> real seeder counts from trackers, and the releases seen dead
 //                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled, waiting })
@@ -30,8 +32,9 @@ const path = require('path');
 const media = require('./media');
 const { Session } = require('./session');
 const startup = require('./startup');
+const source = require('./source');
 const cfg = require('./config');
-const { post: torrserver, describe } = require('./torrserver');
+const { post: torrserver, describe, keep, forget } = require('./torrserver');
 const downloads = require('./download');
 const swarms = require('./swarm');   // (swarm() below is the log's peers line)
 const picks = require('./pick');
@@ -150,6 +153,9 @@ async function handle(req, res) {
     const parts = url.pathname.replace(/^.*?\/gst\//, '').split('/').map(decodeURIComponent);
     const [hash, a, b] = parts;
 
+    // ffmpeg's and ffprobe's own reads of a torrent file (source.js), never from outside (Caddy adds the header)
+    if (hash === 'src' && /^[0-9a-f]{40}$/i.test(a || '') && /^\d+$/.test(b || '') && !req.headers['x-forwarded-for'])
+        return source.handle(req, res, a.toLowerCase(), b, url.searchParams.get('rec') === '1');
     if (hash === 'speedtest') return speedtest(res, url.searchParams.get('mb'));
     if (hash === 'swarm') return send(res, 200, JSON.stringify(await swarms.report(url.searchParams.get('hash') || '')), 'application/json');
     if (hash === 'pick' && a === 'failed' && req.method === 'POST') {
@@ -190,10 +196,14 @@ async function handle(req, res) {
         // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
         await Promise.all([s.init(), s.ready()]);   // ready before the player asks for it
         send(res, 200, master(s), TYPES.m3u8);
-        // a session that already existed (a seek, another tab) costs nothing: only the first master is logged
+        // its file list at once the next time Lampa adds it (torrserver.js keep)
+        keep(hash).catch(e => console.error('keep:', e.message));
+        // a session that already existed (a seek, another tab) costs nothing: only its first master is logged
         const took = s.m.took || {};
-        if (loaded - t0 > 50) console.log(`${hash.slice(0, 8)}:${index} master in ${sec(Date.now() - t0)}: probe ${took.probe} s, ` +
-            `index ${took.index} s, then init and subtitles ${sec(Date.now() - loaded)} (${await swarm(hash)})`);
+        if (s.logged) return;
+        s.logged = true;
+        console.log(`${hash.slice(0, 8)}:${index} master in ${sec(Date.now() - t0)}: ` + (took.kept ? 'probe and index kept from an earlier open' :
+            `probe ${took.probe} s, index ${took.index} s`) + `, then init and subtitles ${sec(Date.now() - loaded)} (${await swarm(hash)})`);
         return;
     }
 
@@ -236,6 +246,9 @@ process.on('unhandledRejection', e => console.error('unhandled:', e && e.message
 fs.rmSync(cfg.cache, { recursive: true, force: true });
 fs.mkdirSync(cfg.cache, { recursive: true });
 downloads.start(hash => forHash(hash).length > 0);
+// torrents saved for their file list and not played for a month leave TorrServer's list
+forget().catch(() => {});
+setInterval(() => forget().catch(() => {}), 86400000).unref();
 const waiting = new Set();   // responses not started yet (most wait for ffmpeg to write a segment)
 const server = http.createServer((req, res) => {
     waiting.add(res);

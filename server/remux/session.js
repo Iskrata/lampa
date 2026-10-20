@@ -146,6 +146,7 @@ class Session {
         const tmp = this.file(n) + '.tmp';
         fs.writeFileSync(tmp, Buffer.concat(j.frags));
         fs.renameSync(tmp, this.file(n));
+        this.wrote = true;
         j.frags = [];
         this.notify();
     }

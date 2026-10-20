@@ -6,9 +6,11 @@
 const { execFile } = require('child_process');
 const mkv = require('./mkv');
 const mp4 = require('./mp4index');
+const source = require('./source');
 const cfg = require('./config');
 
 const SEGMENT_S = 4;
+const HEAD_MARGIN = 1 << 20;   // kept past the probe's read of the file's start (probe())
 const TEXT_SUBS = new Set(['subrip', 'ass', 'ssa', 'webvtt', 'mov_text', 'text']);
 // a stream in a language (ISO 639-1), matched against the 2- and 3-letter tags and track titles
 const LANGS = { en: /^(en|eng)$|english/i, ja: /^(ja|jpn)$|japanese/i, bg: /^(bg|bul)$|bulgarian|българск/i,
@@ -67,14 +69,37 @@ function videoCodec(v) {
 
 const PLAYABLE_VIDEO = new Set(['hevc', 'h264', 'av1', 'vp9']);
 
-async function load(hash, index, lang) {
-    const url = `${cfg.torrserver}/stream/file?link=${encodeURIComponent(hash)}&index=${encodeURIComponent(index)}&play`;
-    const none = () => null;
+// the probe and the keyframe index, read through source.js the first time (which keeps what they read), from
+// its disk after that: { info, keys, mp4, took }
+async function probe(hash, index) {
+    const kept = source.probe(hash, index);
+    if (kept) return Object.assign({ took: { probe: 0, index: 0, kept: true } }, kept);
+    const url = source.url(hash, index, true);
+    const none = () => null, failed = {};
     // how long each read took, for the log (README "Why starting takes longer than a seek")
     const t0 = Date.now(), took = {}, timed = (k, p) => p.finally(() => { took[k] = (Date.now() - t0) / 1000; });
     const [info, mkvKeys, mp4Keys] = await Promise.all([timed('probe', ffprobe(url)),
-        timed('mkv', mkv.keyframes(url).catch(none)), timed('mp4', mp4.keyframes(url).catch(none))]);
-    const keys = mkvKeys || mp4Keys;
+        timed('mkv', mkv.keyframes(url).catch(() => failed)), timed('mp4', mp4.keyframes(url).catch(() => failed))]);
+    // OpenSubtitles' file hash reads the last 64 KiB (opensubs.js moviehash): kept with the rest. The index at
+    // the end has usually brought that piece in already
+    const size = parseInt(info.format && info.format.size, 10);
+    const read = (a, z) => fetch(url, { headers: { Range: `bytes=${a}-${z}` } }).then(r => r.arrayBuffer()).catch(none);
+    if (size > 65536) await read(size - 65536, size - 1);
+    // ffmpeg reads a little past where ffprobe stopped (68 KB for Friends S01E01, in the next 16 MiB piece: 4 s on
+    // a reopen, 2026-10-20). Not waited for: past the pieces the probe brought in, it may wait for another one
+    const head = source.headEnd(hash, index);
+    if (head && head < size) read(head, Math.min(size, head + HEAD_MARGIN) - 1);
+    const ok = k => k !== failed && k;
+    const keys = ok(mkvKeys) || ok(mp4Keys) || null, mp4Index = !ok(mkvKeys) && !!ok(mp4Keys);
+    // an index that couldn't be read this time (the torrent stopped sending) isn't kept as "no index": the
+    // next open reads it again
+    if (keys || (mkvKeys !== failed && mp4Keys !== failed)) source.probe(hash, index, { info, keys, mp4: mp4Index });
+    return { info, keys, mp4: mp4Index, took: { probe: took.probe, index: mp4Index ? took.mp4 : took.mkv } };
+}
+
+async function load(hash, index, lang) {
+    const url = source.url(hash, index);
+    const { info, keys, mp4: mp4Index, took } = await probe(hash, index);
     const streams = info.streams || [];
     const video = streams.find(s => s.codec_type === 'video' && !(s.disposition && s.disposition.attached_pic));
     if (!video) throw new Error('no video stream');
@@ -95,10 +120,10 @@ async function load(hash, index, lang) {
     // ffmpeg seeks 3/23 s before -ss for inputs with B-frames, unless the container seeks by presentation
     // time (MP4 does, Matroska doesn't): its DTS heuristic, fftools/ffmpeg_demux.c. From exactly a keyframe
     // that lands on the one before, so ask for just past it (the next keyframe can't be within 0.011 s).
-    const heuristic = !mp4Keys && video.has_b_frames > 0;
+    const heuristic = !mp4Index && video.has_b_frames > 0;
     return {
         hash, index, lang, url, duration, video, audio, subs,
-        took: { probe: took.probe, index: mkvKeys || !mp4Keys ? took.mkv : took.mp4 },
+        took,
         // audio not in English (e.g. anime in Japanese): the English subtitles come on by themselves
         subsOn: !!audio && !english(audio),
         seekPast: heuristic ? 3 / 23 + 0.011 : 0.001,
