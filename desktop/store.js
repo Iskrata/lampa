@@ -7,6 +7,8 @@
 // data. Writes are asynchronous; the last write wins.
 // rubyStore.get(name) / .getAsync(name) -> string | null (missing) | undefined (server unreachable),
 // .put(name, text, keepalive), .putNow(name, text), .del(name), .remote (the server folder is in use).
+// On the home server ./sync/ is the profile service (server/sync/): profiles change only through
+// .post(name, msg, keepalive) -> Promise of { status, body } (status 0: unreachable) and .postNow (synchronous).
 (function () {
     var BASE = './sync/', LOCAL = 'ruby_store_', PROBE = 'ruby_store_mode';
     var ls = window.localStorage;
@@ -35,6 +37,7 @@
         return ok;
     }
     var remote = probe();
+    function parseJson(t) { try { return JSON.parse(t); } catch (e) { return null; } }
 
     window.rubyStore = {
         remote: remote,
@@ -59,6 +62,17 @@
         putNow: function (name, text) {   // synchronous: before a reload that will read it straight back
             if (!remote) return ls.setItem(LOCAL + name, text);
             request('PUT', name, text, true);
+        },
+        post: function (name, msg, keepalive) {
+            var text = JSON.stringify(msg);
+            return fetch(BASE + encodeURIComponent(name), { method: 'POST', body: text, keepalive: !!keepalive && text.length < 60000,
+                headers: { 'Content-Type': 'application/json' } })
+                .then(function (r) { return r.text().then(function (t) { return { status: r.status, body: parseJson(t) }; }); })
+                .catch(function () { return { status: 0, body: null }; });
+        },
+        postNow: function (name, msg) {
+            var x = request('POST', name, JSON.stringify(msg), true);
+            return { status: x ? x.status : 0, body: x ? parseJson(x.responseText) : null };
         },
         del: function (name) {
             if (!remote) return ls.removeItem(LOCAL + name);

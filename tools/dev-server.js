@@ -3,11 +3,16 @@
 //     injects them)
 //   * the host's back end proxied: /ts/* (TorrServer), /jackett, /jr, /imdb, /plugins, lampa-init.js
 //   * /ts/gst/* to a local remux service (node server/remux/server.js, REMUX_PORT)
-//   * /sync/ is an in-memory folder that dies with this process: test data never reaches real shared profiles
+//   * /sync/ is the profile service (server/sync/server.js) over a temporary folder that goes with this process:
+//     test data never reaches real shared profiles. /sync/__all lists every file in it, for tests.
 // LAMPA_UPSTREAM=host (default "ruby"; TorrServer on :8090, the rest on :80), DEV_PORT (8095), REMUX_PORT (8092).
 // node tools/dev-server.js, then open http://127.0.0.1:8095/
 const http = require('http'), fs = require('fs'), path = require('path');
-const ROOT = path.join(__dirname, '..'), PORT = +(process.env.DEV_PORT || 8095), SYNC = {};
+const ROOT = path.join(__dirname, '..'), PORT = +(process.env.DEV_PORT || 8095);
+const SYNC_TMP = fs.mkdtempSync(path.join(require('os').tmpdir(), 'lampa-sync-')), SYNC_DIR = path.join(SYNC_TMP, 'data');
+const sync = require('../server/sync/server').handler({ data: SYNC_DIR, journal: path.join(SYNC_TMP, 'journal'), trash: path.join(SYNC_TMP, 'trash') });
+process.on('exit', () => fs.rmSync(SYNC_TMP, { recursive: true, force: true }));
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
 const UP = process.env.LAMPA_UPSTREAM || 'ruby', REMUX = +(process.env.REMUX_PORT || 8092);
 const TYPES = { html: 'text/html', js: 'application/javascript', css: 'text/css', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', woff2: 'font/woff2', ico: 'image/x-icon' };
 
@@ -23,13 +28,15 @@ function proxy(req, res, host, port, p, slow) {
 
 http.createServer((req, res) => {
     const u = req.url;
-    if (u.startsWith('/sync/')) {   // in-memory stand-in for the shared WebDAV folder: never the real one
-        const name = decodeURIComponent(u.slice(6).split('?')[0]);
-        if (req.method === 'PUT') { let d = ''; req.on('data', c => d += c); return req.on('end', () => { SYNC[name] = d; res.writeHead(201); res.end(); }); }
-        if (req.method === 'DELETE') { delete SYNC[name]; res.writeHead(204); return res.end(); }
-        if (name === '__all') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(SYNC)); }
-        if (!(name in SYNC)) { res.writeHead(404); return res.end(); }
-        res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(SYNC[name]);
+    if (u.startsWith('/sync/')) {
+        if (u.startsWith('/sync/__all')) {
+            const all = {};
+            for (const f of fs.readdirSync(SYNC_DIR)) if (!f.endsWith('.tmp')) all[f] = fs.readFileSync(path.join(SYNC_DIR, f), 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify(all));
+        }
+        req.url = u.slice(5);
+        return sync(req, res);
     }
     if (u.startsWith('/ts/gst/')) return proxy(req, res, '127.0.0.1', REMUX, u.slice(3), true);
     if (u.startsWith('/ts/')) return proxy(req, res, UP, 8090, u.slice(3));

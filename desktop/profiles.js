@@ -3,10 +3,12 @@
 // account). So a profile is a set of those keys: the active profile's values are the live keys Lampa and
 // its plugins use; every profile's values are also kept as profile-<id>.json in rubyStore (store.js) -
 // a ./sync/ folder on the server when there is one, so all devices share the profiles, else this browser.
-// Switching uploads the current profile, marks the target in ruby_profile_switch and reloads; the swap
-// runs here at the start of the next page load, before app.min.js has read anything, so nothing leaks.
-// While a profile is in use its data is uploaded every 15 s when it changed and when the tab is hidden;
-// at page start a newer copy from another device replaces the local one (the last write wins).
+// Switching sends what changed, marks the target in ruby_profile_switch and reloads; the swap runs here at
+// the start of the next page load, before app.min.js has read anything, so nothing leaks.
+// With the profile service on the server (server/sync/) the server's copy is the one that counts: this page
+// sends only what it changed, as changes (rubySync.ops, every 2 s), and takes the server's copy at start,
+// when the tab comes back and after playback. A page can't send a whole profile, so a stale tab, old code or
+// another device can't put an old copy back (they did, three times on 2026-10-18..20).
 // Per profile: bookmarks/My List, watch history and progress, search history, thumbs ratings
 // (ratings.js) and the Trakt login with all Trakt plugin state - so one person's IMDb/Trakt taste
 // never reaches another. Shared: settings, servers, plugins, the Trakt app id.
@@ -21,7 +23,6 @@
     var MAX = 10;
     var NOT_SYNCED = /cache|_log$|debug/;   // per profile, but rebuilt on their own: not worth uploading
     var COLORS = ['#2f6fdf', '#e50914', '#1f9d55', '#8b3fd9', '#e8730c', '#0e9aa7'];
-    var UPLOAD_MS = 15000;
 
     function own(key) {
         if (SHARED.indexOf(key) >= 0) return false;
@@ -34,7 +35,16 @@
         return s;
     }
     function save() { ls.setItem(STATE, JSON.stringify(state)); }
-    function saveList() { save(); rubyStore.put('profiles.json', JSON.stringify({ list: state.list })); }
+    // the list changes only by what this page did ({ upsert: profile } | { add: [profiles] } | { remove: id })
+    function saveList(msg) {
+        save();
+        if (!rubyStore.remote) return rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
+        msg.by = by('profiles');
+        rubyStore.post('profiles.json', msg).then(function (r) {
+            if (r.status === 200 && r.body) state.list = r.body.list, save();
+            else log('profile list change failed', { status: r.status, answer: r.body });
+        });
+    }
     function find(id) { return state.list.filter(function (p) { return p.id === id; })[0]; }
 
     // ---- what happened to profiles on this device, to work out later what went wrong (desktop/README.md
@@ -65,11 +75,44 @@
         return { t: Date.now(), keys: keys, by: by(why || '') };
     }
     function apply(blob) {
-        liveKeys().forEach(function (k) { ls.removeItem(k); });
-        var keys = (blob && blob.keys) || {};
-        Object.keys(keys).forEach(function (k) { ls.setItem(k, keys[k]); });
-        state.dataT = (blob && blob.t) || 0;
+        quiet++;
+        try {
+            liveKeys().forEach(function (k) { ls.removeItem(k); });
+            var keys = (blob && blob.keys) || {};
+            Object.keys(keys).forEach(function (k) { ls.setItem(k, keys[k]); });
+        } finally { quiet--; }
+        state.dataV = (blob && blob.v) || 0;
     }
+    // has this browser ever loaded the current profile's data (dataT: before the profile service)
+    function loaded() { return state.dataV !== undefined || !!state.dataT; }
+    // which keys differ, for the logs (sizes, not contents)
+    function diff(a, b) {
+        var out = {};
+        Object.keys(a).concat(Object.keys(b)).forEach(function (k) {
+            if (a[k] !== b[k]) out[k] = (a[k] || '').length + ' -> ' + (b[k] || '').length;
+        });
+        return out;
+    }
+
+    // ---- what this page changes. Every write to the profile's keys (Lampa's, plugins', ours) goes through
+    // localStorage.setItem/removeItem: the value a key had before its first write since the last send is
+    // kept (in ruby_sync_pending, so a tab closed too early sends it on the next load), and every 2 s the
+    // changes go to the server as changes (rubySync.ops), never as a copy. apply() is quiet: loading a
+    // profile isn't a change.
+    var PENDING = 'ruby_sync_pending', SEND_MS = 2000, quiet = 0;
+    var pending = parse(ls.getItem(PENDING)) || { p: null, base: {} };
+    function dirty() { return Object.keys(pending.base).length > 0; }
+    function keep() { ls.setItem(PENDING, JSON.stringify(pending)); }
+    var proto = Object.getPrototypeOf(ls), setItem = proto.setItem, removeItem = proto.removeItem;
+    function note(k) {
+        if (quiet || !state || !state.chosen || !own(k) || NOT_SYNCED.test(k)) return;
+        if (pending.p !== state.current) pending = { p: state.current, base: {} };
+        if (k in pending.base) return;
+        pending.base[k] = ls.getItem(k);
+        keep();
+    }
+    proto.setItem = function (k) { if (this === ls) note(k); return setItem.apply(this, arguments); };
+    proto.removeItem = function (k) { if (this === ls) note(k); return removeItem.apply(this, arguments); };
 
     // ---- page start (before Lampa): only a profile switch reads from the store, synchronously, because the
     // page must start with the target's data. Everything else is checked in the background (syncList).
@@ -79,23 +122,11 @@
         // when 'language' is unset, and both keys default to 'ru'. Only unset keys: a choice in Settings wins.
         if (ls.getItem('language') === null) ls.setItem('language', 'en');
         if (ls.getItem('tmdb_lang') === null) ls.setItem('tmdb_lang', 'en');
-        // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store, but only
-        // under an id it has nothing for: every browser's first profile is p1, so in a shared folder the id can
-        // be someone else's (on 2026-10-18 an iPhone's empty old "Me" replaced Iskrata's history and list this
-        // way). A taken id waits here for the first contact with the shared list (syncList), which moves a
-        // differently named profile's data to its new id.
-        Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) {
-            var name = 'profile-' + k.slice(OLD_DATA.length) + '.json', stored = rubyStore.get(name);
-            if (stored !== null) return;   // taken, or the server is unreachable (try again next time)
-            rubyStore.put(name, JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {}, by: by('old local profile') }));
-            ls.removeItem(k);
-            log('old local profile uploaded', { file: name });
-        });
         var target = ls.getItem(SWITCH);
         ls.removeItem(SWITCH);
         // (also "switching" to the same id when this browser has never loaded that profile's data: a new
         // browser picking the profile it happened to start on)
-        if (target && find(target) && (target !== state.current || !state.dataT)) {
+        if (target && find(target) && (target !== state.current || !loaded())) {
             apply(parse(rubyStore.get('profile-' + target + '.json')));
             state.current = target;
             state.chosen = true;
@@ -105,163 +136,152 @@
         console.error('profiles: start failed', e);
     }
 
-    // ---- after start: the shared list, and a newer copy of this profile from another device
+    // ---- after start: the shared list, then the server's copy of this profile
     function syncList() {
         rubyStore.getAsync('profiles.json').then(function (shared) {
             if (shared === undefined) return;
-            var server = parse(shared);
-            if (!state.synced) {
-                // this browser's first contact with the shared list: keep its own profiles too. Every browser's
-                // first profile is 'p1', so a local profile whose id is taken by a differently named one on the
-                // server gets a new id (and keeps its data) instead of landing on someone else's profile; a new
-                // browser's untouched default "Me" is not added at all.
-                // A profile already in the shared list under the same id and name is the same one: its shared data
-                // wins over this browser's (dataT 0 makes the check below take it), never the other way round.
-                var list = server && server.list ? server.list : [];
-                var fresh = !state.chosen && state.list.length === 1 && list.length > 0;
-                var added = {}, renamed = {};
-                state.list.forEach(function (p) {
-                    if (fresh) return;
-                    var same = list.filter(function (q) { return q.id === p.id; })[0];
-                    if (same && same.name === p.name) { if (state.current === p.id) state.dataT = 0; return; }
-                    if (same) {
-                        var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                        if (state.current === p.id) state.current = id;
-                        var old = ls.getItem(OLD_DATA + p.id);
-                        if (old) rubyStore.put('profile-' + id + '.json', JSON.stringify({ t: 1, keys: parse(old) || {}, by: by('old local profile') }));
-                        renamed[p.id] = id;
-                        p = { id: id, name: p.name, color: p.color, img: p.img };
-                    }
-                    added[p.id] = true;
-                    list.push(p);
-                });
-                Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) { ls.removeItem(k); });
-                state.list = list.slice(0, MAX);
-                state.synced = true;
-                rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
-                if (added[state.current]) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot('first contact')));
-                log('first contact', { fresh: fresh, added: Object.keys(added), renamed: renamed, shared: list.length });
-            } else if (server && server.list && server.list.length) state.list = server.list;
-            else if (shared === null) rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));   // server copy gone: re-seed
+            var server = parse(shared), list = server && server.list ? server.list : [];
+            if (!state.synced) return firstContact(list);
+            if (list.length) state.list = list;
+            else saveList({ add: state.list });   // the server's list is gone: seed it again
+            listed();
+        });
+    }
+    function listed() {
+        save();
+        if (root && !root.classList.contains('manage') && !root.querySelector('.ruby-who__form')) picker(false);   // refresh an open picker
+        if (!find(state.current)) {   // deleted on another device: move to the first profile, then pick again
+            state.chosen = false;
+            ls.setItem(SWITCH, state.list[0].id);
             save();
-            if (root && !root.classList.contains('manage') && !root.querySelector('.ruby-who__form')) picker(false);   // refresh an open picker
-            if (!find(state.current)) {   // deleted on another device: move to the first profile, then pick again
-                state.chosen = false;
-                ls.setItem(SWITCH, state.list[0].id);
-                save();
-                return location.replace(location.pathname);
+            return location.replace(location.pathname);
+        }
+        refresh('start');
+    }
+    // this browser's first contact with the shared list: its own profiles join it. Every browser's first profile
+    // is 'p1', so a local profile whose id is taken by a differently named one gets a new id (and keeps its data)
+    // instead of landing on someone else's; a new browser's untouched default "Me" isn't added at all. One with
+    // the same id and name is the same profile: the server's data counts, refresh() takes it. A profile's data
+    // goes up only as a new profile's (the service refuses it for an id that has data: 2026-10-18 an iPhone's
+    // empty old "Me", also p1, replaced Iskrata's history and list).
+    function firstContact(list) {
+        var fresh = !state.chosen && state.list.length === 1 && list.length > 0, add = [], data = {}, renamed = {};
+        state.list.forEach(function (p) {
+            if (fresh) return;
+            var same = list.filter(function (q) { return q.id === p.id; })[0];
+            if (same && same.name === p.name) return;
+            var id = p.id;
+            if (same) {
+                id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                renamed[p.id] = id;
+                if (state.current === p.id) state.current = id;
             }
-            if (!rubyStore.remote || !state.chosen) return;   // nothing to refresh before someone has picked
-            rubyStore.getAsync('profile-' + state.current + '.json').then(function (text) {
-                var latest = parse(text);
-                if (!latest || !(latest.t > (state.dataT || 0))) return;
-                // changed on another device since this browser last saw it: take it over (Lampa has read its
-                // storage already, so reload once), unless the content is the same anyway
-                if (JSON.stringify(latest.keys) === JSON.stringify(snapshot().keys)) { state.dataT = latest.t; return save(); }
-                log('took the newer copy', { t: latest.t, had: state.dataT || 0, by: latest.by || null, diff: diff(snapshot().keys, latest.keys) });
-                apply(latest);
-                save();
-                location.replace(location.pathname);
+            var old = ls.getItem(OLD_DATA + p.id);   // the first local-only version kept other profiles here
+            if (state.current === id) data[id] = snapshot().keys; else if (old) data[id] = parse(old) || {};
+            add.push({ id: id, name: p.name, color: p.color, img: p.img });
+        });
+        add = add.slice(0, Math.max(0, MAX - list.length));
+        log('first contact', { fresh: fresh, added: add.map(function (p) { return p.id; }), renamed: renamed, shared: list.length });
+        if (!rubyStore.remote) {
+            state.list = list.concat(add);
+            state.synced = true;
+            rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
+            Object.keys(data).forEach(function (id) { rubyStore.put('profile-' + id + '.json', JSON.stringify({ t: Date.now(), keys: data[id] })); });
+            return listed();
+        }
+        rubyStore.post('profiles.json', { add: add, by: by('first contact') }).then(function (r) {
+            if (r.status !== 200 || !r.body) return log('first contact failed, again on the next load', { status: r.status });
+            state.list = r.body.list;
+            state.synced = true;
+            Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) { ls.removeItem(k); });
+            Object.keys(data).forEach(function (id) {
+                rubyStore.post('profile-' + id + '.json', { create: { keys: data[id] }, by: by('first contact') }).then(function (c) {
+                    if (c.status === 200 && id === state.current) { state.dataV = c.body.v; save(); }
+                    else if (c.status !== 200) log('first contact: data not created', { id: id, status: c.status });
+                });
             });
+            listed();
         });
     }
 
-    // ---- while in use: upload the profile's data when it changed. Another device on the same profile may have
-    // written it since this page last read or wrote it, and the last write wins: a tab left open used to undo
-    // what the other device did (2026-10-20: an open Safari tab put a title removed on the server straight
-    // back). So each upload first reads the server's copy. When another device wrote it, the two are merged
-    // key by key against what this page last had: a key only one side changed keeps that change; one both
-    // changed keeps this page's, except watch progress (file_view), merged per title, and the lists (favorite),
-    // merged per item (mergeLists). The page then reloads so
-    // Lampa reads the merge, but never during playback: until the player closes, nothing is uploaded.
-    // A page being closed ('closing') can't wait for the read; it skips the upload once a conflict is known.
-    var lastSent = '', checking = false, conflict = false;
-    function file() { return 'profile-' + state.current + '.json'; }
-    function send(snap, keepalive) {
-        lastSent = JSON.stringify(snap.keys);
-        state.dataT = snap.t;
-        save();
-        rubyStore.put(file(), JSON.stringify(snap), keepalive);
-    }
-    // which keys differ, for the logs (sizes, not contents)
-    function diff(a, b) {
-        var out = {};
-        Object.keys(a).concat(Object.keys(b)).forEach(function (k) {
-            if (a[k] !== b[k]) out[k] = (a[k] || '').length + ' -> ' + (b[k] || '').length;
-        });
-        return out;
-    }
-    function mergeViews(a, b) {   // per title, the more recently watched
-        var x = parse(a) || {}, y = parse(b) || {};
-        Object.keys(y).forEach(function (h) { if (!x[h] || (y[h].updated || 0) > (x[h].updated || 0)) x[h] = y[h]; });
-        return JSON.stringify(x);
-    }
-    // My List, history and the other lists (favorite): the other side's lists, plus what this page added and
-    // minus what it removed since it last synced; cards (the titles' details) from both. Without this a stale
-    // tab that added one title put its whole old list back (2026-10-20 14:50: a ruby.iskrata.dev tab with
-    // yesterday's near-empty copy added Edgerunners and wiped the history and the Trakt login).
-    function mergeLists(b, a, t) {
-        var base = parse(b) || {}, ours = parse(a) || {}, out = parse(t) || {};
-        Object.keys(ours).forEach(function (c) {
-            if (!Array.isArray(ours[c])) return;
-            var was = base[c] || [], list = (out[c] || []).slice();
-            if (c === 'card') {
-                ours.card.forEach(function (x) { if (x && !list.some(function (y) { return y && y.id == x.id; })) list.push(x); });
-            } else {
-                list = list.filter(function (id) { return was.indexOf(id) < 0 || ours[c].indexOf(id) >= 0; });
-                ours[c].slice().reverse().forEach(function (id) { if (was.indexOf(id) < 0 && list.indexOf(id) < 0) list.unshift(id); });
-            }
-            out[c] = list;
-        });
-        return JSON.stringify(out);
-    }
-    function merge(base, ours, theirs) {
-        var out = {};
-        Object.keys(base).concat(Object.keys(ours), Object.keys(theirs)).forEach(function (k) {
-            var v = ours[k] === base[k] ? theirs[k] : theirs[k] === base[k] ? ours[k] :
-                k.indexOf('file_view') === 0 ? mergeViews(ours[k], theirs[k]) : k === 'favorite' ? mergeLists(base[k], ours[k], theirs[k]) : ours[k];
-            if (v !== undefined) out[k] = v;
-        });
-        return out;
-    }
-    function upload(why) {
-        if (!state.chosen || checking) return;   // a new browser before its first pick holds nobody's data
-        var snap = snapshot(why);
-        if (JSON.stringify(snap.keys) === lastSent) return;
-        if (!rubyStore.remote) return send(snap);
-        if (why === 'closing') return conflict ? log('closed with a conflict, not uploaded') : send(snap, true);
-        checking = true;
+    // ---- the server's copy is the one that counts: taken at start, when the tab comes back and after playback
+    // (never during it), whenever it isn't what this page has. Lampa has read its storage already, so the page
+    // reloads once. Unsent changes go first.
+    var retry = false, needRefresh = false;
+    function playing() { return !!(window.Lampa && Lampa.Player && Lampa.Player.opened && Lampa.Player.opened()); }
+    function refresh(why) {
+        if (!rubyStore.remote || !state.chosen) return;
+        if (dirty() || sending) { retry = true; return flush('before refresh'); }
+        if (playing()) { needRefresh = true; return; }
+        retry = needRefresh = false;
         rubyStore.getAsync(file()).then(function (text) {
-            checking = false;
-            if (text === undefined) return;   // server unreachable: next round
-            var server = parse(text), now = snapshot(why);
-            if (!server || server.t === state.dataT || (server.by && server.by.device === device)) return send(now, why === 'hidden');
-            if (!conflict) log('conflict', { theirs: server.by || null, t: server.t, had: state.dataT || 0, diff: diff(parse(lastSent) || {}, server.keys || {}) });
-            conflict = true;
-            if (window.Lampa && Lampa.Player && Lampa.Player.opened()) return;   // after the player closes
-            var merged = { t: Date.now(), keys: merge(parse(lastSent) || {}, now.keys, server.keys || {}), by: by('merged') };
-            log('merged', { diff: diff(now.keys, merged.keys) });
-            apply(merged);
-            lastSent = JSON.stringify(merged.keys);
-            conflict = false;
+            var s = parse(text);
+            if (!s || (s.v || 0) === state.dataV) return;
+            var mine = snapshot().keys;
+            if (JSON.stringify(s.keys) === JSON.stringify(mine)) { state.dataV = s.v || 0; return save(); }
+            if (dirty() || playing()) { needRefresh = true; return; }
+            log('took the server copy', { why: why, v: s.v || 0, had: state.dataV, by: s.by || null, diff: diff(mine, s.keys || {}) });
+            apply(s);
             save();
-            rubyStore.putNow(file(), JSON.stringify(merged));
             location.replace(location.pathname);
         });
     }
-    lastSent = JSON.stringify(snapshot().keys);
-    setInterval(function () { upload('changed'); }, UPLOAD_MS);
-    document.addEventListener('visibilitychange', function () { if (document.hidden) upload('hidden'); });
-    window.addEventListener('pagehide', function () { upload('closing'); });
+
+    // ---- sending: one request at a time, so the server applies changes in the order they were made
+    var sending = false;
+    function file() { return 'profile-' + state.current + '.json'; }
+    function flush(why, keepalive) {
+        if (!dirty() || !state.chosen || (sending && why !== 'closing' && why !== 'switch')) return;
+        if (pending.p !== state.current) {
+            log('unsent changes of another profile dropped', { p: pending.p, keys: Object.keys(pending.base) });
+            pending = { p: null, base: {} };
+            return keep();
+        }
+        if (!rubyStore.remote) {   // this browser only: no one else writes, the copy is the data
+            pending.base = {};
+            keep();
+            return rubyStore.put(file(), JSON.stringify(snapshot(why)));
+        }
+        var sent = pending, ops = [];
+        Object.keys(sent.base).forEach(function (k) { var op = rubySync.ops(k, sent.base[k], ls.getItem(k)); if (op) ops.push(op); });
+        pending = { p: sent.p, base: {} };
+        keep();
+        if (!ops.length) return;
+        var msg = { base: state.dataV, by: by(why), ops: ops };
+        if (why === 'switch') return done(rubyStore.postNow(file(), msg));
+        sending = true;
+        rubyStore.post(file(), msg, keepalive).then(done);
+        function done(r) {
+            sending = false;
+            if (r.status === 200 && r.body) {
+                // someone else changed it since this page's copy: their part reaches this page on its next refresh
+                if (r.body.stale) needRefresh = true;
+                state.dataV = r.body.stale ? -1 : r.body.v;
+                save();
+                if (retry && !dirty()) refresh('after sending');
+                return;
+            }
+            // 405: the folder answering isn't the profile service yet (a deploy in progress): kept, like an outage
+            if (r.status >= 400 && r.status < 500 && r.status !== 405) return log('changes refused', { status: r.status, answer: r.body, keys: ops.map(function (o) { return o.k; }) });
+            // unreachable, a server error, or no service yet: back in the queue, from the value the server still has
+            Object.keys(sent.base).forEach(function (k) { pending.base[k] = sent.base[k]; });
+            pending.p = sent.p;
+            keep();
+        }
+    }
+    setInterval(function () { flush('changed'); }, SEND_MS);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) flush('hidden', true); else refresh('back'); });
+    window.addEventListener('pagehide', function () { flush('closing', true); });
+    var waitPlayer = setInterval(function () {
+        if (!window.Lampa || !Lampa.Player || !Lampa.Player.listener) return;
+        clearInterval(waitPlayer);
+        Lampa.Player.listener.follow('destroy', function () { if (needRefresh) setTimeout(function () { refresh('after playback'); }, 500); });
+    }, 500);
 
     function switchTo(id) {
-        if (id === state.current && (state.dataT || !rubyStore.remote)) { state.chosen = true; save(); close(); return; }
-        log('switch', { to: id, conflict: conflict });
-        if (state.chosen && !conflict) {   // (with a conflict pending, this page's copy is stale: leave the server's)
-            var snap = snapshot('switch');
-            rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snap));
-            state.dataT = snap.t;
-        }
+        if (id === state.current && (loaded() || !rubyStore.remote)) { state.chosen = true; save(); close(); return; }
+        log('switch', { to: id });
+        if (state.chosen) flush('switch');
         save();
         ls.setItem(SWITCH, id);
         location.replace(location.pathname);   // start on Home, the old page's activity belongs to the old profile
@@ -400,8 +420,8 @@
             var name = input.value.trim();
             if (!name) return input.focus();
             if (p) { p.name = name; p.color = draft.color; p.img = draft.img || undefined; }
-            else state.list.push({ id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, color: draft.color, img: draft.img || undefined });
-            saveList();
+            else state.list.push(p = { id: 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, color: draft.color, img: draft.img || undefined });
+            saveList({ upsert: p });
             picker(true);
         }
         input.addEventListener('keydown', function (e) { if (e.key === 'Enter') commit(); if (e.key === 'Escape') picker(true); });
@@ -412,8 +432,8 @@
             if (!confirm('Delete the profile "' + p.name + '"? Its list, history, ratings and Trakt login are removed on every device.')) return;
             log('deleted profile', { id: p.id, name: p.name });
             state.list = state.list.filter(function (x) { return x.id !== p.id; });
-            rubyStore.del('profile-' + p.id + '.json');
-            saveList();
+            if (!rubyStore.remote) rubyStore.del('profile-' + p.id + '.json');   // the service keeps it in its trash
+            saveList({ remove: p.id });
             picker(true);
         });
     }

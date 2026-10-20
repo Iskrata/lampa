@@ -10,7 +10,8 @@ see "Touch devices and phones".
 |---|---|
 | `loading.js` | the startup intro (the wordmark, Netflix-style) and the red spinner in place of Lampa's loaders; first, and on every platform |
 | `icons.js` | `rubyIcons.svg(name)`: shared SVG icons (no emoji or text glyphs as icons) |
-| `store.js` | where profiles live (`rubyStore`): a WebDAV folder at `./sync/` if the server has one, else this browser |
+| `store.js` | where profiles live (`rubyStore`): the profile service at `./sync/` (`server/sync/`) if the server has one, else this browser |
+| `profilesync.js` | `rubySync.ops`: what changed in a profile key, as the change the profile service applies |
 | `profiles.js` | profiles and "Who's watching?" (`rubyProfiles`); must load **before** Lampa, see below |
 | `desktop.js` | density, Apple TV dark CSS, full rows, pixel wheel scrolling, sharp images; shared helpers on `rubyDesktop` (`tmdb`, `details`, `logo`, `kind`, `card`, `pageY`, `openFull`) |
 | `trakt.js` | `rubyTrakt`: Trakt API calls, related titles, the "Connect Trakt" device-code sign-in, the Client ID setting |
@@ -69,37 +70,43 @@ goes straight to "Who's watching?" (the user's call, 2026-10-20). Settings → I
 changes it. Verified 2026-10-20: dev server with `LAMPA_UPSTREAM=127.0.0.1` (the host's `lampa-init.js`
 502s, so it has no preset), `localStorage` cleared: no `.lang` picker, both keys `en`, the app shown.
 
-**Sharing profiles between devices.** Serve any WebDAV folder at `./sync/` on the same origin, for
-example `rclone serve webdav <dir> --addr 127.0.0.1:8091` behind your web server's `/sync/` route.
-`store.js` detects it with a test write, then keeps `profiles.json` and `profile-<id>.json` (`{t, keys, by}`;
-`by` names the device that wrote it and why) there:
-- **Reads** happen synchronously at page start, before Lampa.
-- **Writes** go up every 15 s when something changed, and when the tab hides. Each first reads the
-  server's copy. If another device wrote it since this page last read or wrote it, the two are merged
-  key by key against what the page last had: a key only one side changed keeps that change; one both
-  changed keeps this page's, except watch progress (`file_view`), merged per title by its `updated`, and
-  the lists (`favorite`: My List, history…), merged per item: the other side's list plus what this page
-  added, minus what it removed (2026-10-20 14:50 a stale tab that added one title had put its whole
-  near-empty list back). The
-  page then reloads so Lampa reads the merge, but never during playback (nothing goes up until the player
-  closes). Before 2026-10-20 the last write simply won: a Safari tab left open put back a title just
-  removed on the server. A page being closed can't wait for the read and uploads blind, unless it
-  already knows of a conflict. Checked 2026-10-20 in tools/dev-server.js: the other device's search and
-  this page's timetable both survived, and the watch progress held all three titles.
+**Sharing profiles between devices.** Run the profile service (`server/sync/`, its README) at `./sync/` on
+the same origin. `store.js` detects it with a test write. **The server's copy of a profile is the one that
+counts.** A browser's copy is only a cache, because Lampa reads its storage synchronously everywhere.
+- **Writes are changes, never copies.** Every write to the profile's keys goes through
+  `localStorage.setItem`/`removeItem`: Lampa's, the plugins' and ours. `profiles.js` notes the value each key
+  had before, and every 2 s, when the tab hides, and when it closes, it sends what changed (`profilesync.js`):
+  - a field of an object, such as one title's progress;
+  - ids moved to the front of a list or removed from it (My List, history);
+  - cards by id.
+  The server applies them to its copy. A page with a stale copy can only add what it changed; it can't put
+  its old copy back. Unsent changes wait in `ruby_sync_pending`, so a tab closed too early sends them on its
+  next load.
+- **Reads:** the page takes the server's copy whenever it isn't what the page has. That happens at start,
+  when the tab comes back, and after playback (never during it), and the page reloads once so Lampa reads
+  it. A profile switch reads it synchronously before Lampa starts.
+- **Old code can't write.** The service refuses whole-profile writes (409), so a tab still running code
+  from before the service changes nothing.
+- **Why:** before 2026-10-20 each browser uploaded its whole copy and the last upload won. That went
+  wrong three times in three days, each time to Iskrata's profile:
+  - **2026-10-18:** an iPhone's first contact sent its old, empty local "Me", which was `p1` too.
+  - **2026-10-20 10:37:** a stale `ruby.iskrata.dev` tab wiped the Trakt login and history.
+  - **2026-10-20 14:50:** the same tab added one title to My List and put its old lists back.
 - **Which profile a device is on** stays on the device.
-- **A browser's first contact** merges in its own profiles. Its untouched default "Me" isn't added. A
-  renamed first profile whose id `p1` is already taken by a differently named one gets a new id, and its
-  data goes up under that id. A profile with the same id and name is the same one: the shared copy wins
-  and the browser's own is dropped. Nothing a browser brings along ever replaces a shared profile's data:
-  on 2026-10-18 an iPhone's first contact did exactly that (its old, empty local "Me" was `p1` too and went
-  up as `profile-p1.json`, wiping Iskrata's history and list; seen in Caddy's access log as a
-  17-byte PUT right after the iPhone's first `.probe`). Fixed 2026-10-20, replayed in tools/dev-server.js.
+- **A browser's first contact** adds its own profiles to the shared list. Its untouched default "Me"
+  isn't added.
+  - A profile whose id is taken by a differently named one (every browser's first profile is `p1`) gets a
+    new id, and its data goes up as that new profile's.
+  - A profile with the same id and name is the same profile: the server's data counts.
+  - Data goes up only as a new profile's: the service refuses it for an id that already has data.
+- Checked 2026-10-20 in `tools/dev-server.js` with two origins as two devices. The list is in
+  `server/sync/README.md`.
 
 Without `./sync/`, everything stays in the browser.
 
 **Profile logs.** Each browser keeps its last 100 profile events (`ruby_events`, a device id in
-`ruby_device`): uploads of old local profiles, first contacts and what they merged, newer copies taken,
-conflicts and merges (which keys, sizes before and after), switches, deleted profiles, and what went into
+`ruby_device`): first contacts and what they added, server copies taken (which keys, sizes before and
+after), changes the service refused, switches, deleted profiles, and what went into
 the watch history or was left out. With `./sync/` they also go up as `events-<device>.json`, and
 `rubyProfiles.log(what, info)` adds one. On the home server a watcher journals them with every profile
 change and alerts when a profile loses data (the deployment's notes).
