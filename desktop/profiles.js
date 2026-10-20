@@ -75,6 +75,10 @@
     // page must start with the target's data. Everything else is checked in the background (syncList).
     var state = load();
     try {
+        // a new device starts in English (user's call 2026-10-20): Lampa asks for a language on first run
+        // when 'language' is unset, and both keys default to 'ru'. Only unset keys: a choice in Settings wins.
+        if (ls.getItem('language') === null) ls.setItem('language', 'en');
+        if (ls.getItem('tmdb_lang') === null) ls.setItem('tmdb_lang', 'en');
         // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store, but only
         // under an id it has nothing for: every browser's first profile is p1, so in a shared folder the id can
         // be someone else's (on 2026-10-18 an iPhone's empty old "Me" replaced Iskrata's history and list this

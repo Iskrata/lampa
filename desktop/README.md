@@ -57,6 +57,13 @@ Switching writes the target to `ruby_profile_switch` and reloads. The swap runs 
 next page load, before `app.min.js` has read anything and after the old page can no longer write, so
 nothing leaks between profiles.
 
+**English from the start.** Language is a device setting, shared by its profiles. Lampa opens a "Choose
+your language" screen on first run when `language` is unset, and both `language` and `tmdb_lang`
+default to `ru`. So at page start `profiles.js` sets both to `en` when they're unset, and a new device
+goes straight to "Who's watching?" (the user's call, 2026-10-20). Settings → Interface → Language still
+changes it. Verified 2026-10-20: dev server with `LAMPA_UPSTREAM=127.0.0.1` (the host's `lampa-init.js`
+502s, so it has no preset), `localStorage` cleared: no `.lang` picker, both keys `en`, the app shown.
+
 **Sharing profiles between devices.** Serve any WebDAV folder at `./sync/` on the same origin, for
 example `rclone serve webdav <dir> --addr 127.0.0.1:8091` behind your web server's `/sync/` route.
 `store.js` detects it with a test write, then keeps `profiles.json` and `profile-<id>.json` (`{t, keys, by}`;
