@@ -470,7 +470,10 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
 - **Signed in** once, kept 20 h. A download answered 401 signs in again and is asked once more: on 2026-10-20 a
-  token from 17:55 UTC got "401 invalid token" by 19:43, and every download failed until a restart. A failed
+  token from 17:55 UTC got "401 invalid token" by 19:43, and every download failed until a restart. Why is
+  unknown: the token's own `exp` says 24 h, and another sign-in doesn't end an older token (three in a row all
+  answered `/infos/user`, measured that evening). The log says the refused token's age and whether a new one
+  helped. A failed
   download is tried again after 10 min; before, every subtitle request of the player retried it (once a second,
   `f3647aee:15 bg`).
 - **Lined up** with the file's own captions, which are in step with the video, **by their words**: both are

@@ -45,7 +45,7 @@ async function session() {
     if (!c.user || !c.pass) return { token: null, base: API };
     if (login && login.until > Date.now()) return login;
     const j = await request(API, '/login', { body: { username: c.user, password: c.pass } });
-    login = { token: j.token, base: j.base_url ? `https://${j.base_url}/api/v1` : API, until: Date.now() + 20 * 3600e3 };
+    login = { token: j.token, base: j.base_url ? `https://${j.base_url}/api/v1` : API, at: Date.now(), until: Date.now() + 20 * 3600e3 };
     console.log(`opensubtitles: signed in (${j.user && j.user.allowed_downloads} downloads a day${j.user && j.user.vip ? ', VIP' : ''})`);
     return login;
 }
@@ -182,9 +182,13 @@ async function download(pick) {
     try { srt = fs.readFileSync(srtFile, 'utf8'); } catch (e) {
         let s = await session(), dl;
         try { dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token }); } catch (e) {
-            // a token OpenSubtitles stopped taking well before its 24 h (another sign-in to the account?): every
-            // download answered "401 invalid token" on 2026-10-20 (19:43 UTC, signed in 17:55) until a restart
+            // a token OpenSubtitles stopped taking well before its 24 h: every download answered "401 invalid
+            // token" on 2026-10-20 (19:43 UTC, signed in 17:55) until a restart. Not another sign-in (three in a
+            // row all stayed valid, and the token's exp said 24 h; measured that evening), cause unknown: the log
+            // says the token's age, and whether a new one helps (the next line is a download, or this 401 again)
             if (e.status !== 401 || !s.token) throw e;
+            console.log(`opensubtitles: download answered 401 "${e.message.replace(/^.*?401 /, '')}" with a token ` +
+                `${((Date.now() - s.at) / 60e3).toFixed(0)} min old: signing in again`);
             login = null;
             s = await session();
             dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token });
