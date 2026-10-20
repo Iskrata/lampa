@@ -230,9 +230,9 @@ English/Bulgarian/Russian subtitles inside. On an iPhone, Safari saves it to Fil
 there or in the TV app without Lampa or a connection.
 
 1. **Download** runs Play's own flow in download mode (`rubyPlay.download`, `play.js`):
-   - the same search and ranking, under "Download in";
-   - no "too slow" warnings (nothing is streamed) and no "Pick a torrent manually": Lampa's list plays
-     what's picked in it;
+   - the same search and ranking, and no question: the best 1080p release, else 720p, else what there is.
+     1080p fits a phone (a film is about 2–8 GB; 4K files are 10–20 GB). The user's call, 2026-10-20;
+   - nothing found: a message, never Lampa's torrent list (it plays what's picked in it);
    - Lampa's torrent flow then opens the release. When its file list comes, the file (the film, or the
      episode) goes to the server as a job, and the list is closed with its own Back.
 2. **The button** shows where the job is: "Preparing 34%", "Adding subtitles", "Waiting for another
@@ -250,9 +250,9 @@ name on the device is "Title (Year).mp4" or "Show S01E03.mp4".
 Checked 2026-10-20 in the built-in browser, through `tools/dev-server.js` with a local remux and a stand-in
 TorrServer (the tailnet to ruby was down; Lampa's search was stubbed with one public-domain release, so
 Jackett's key stays out of test browsers):
-- **The flow:** Download → "Download in" → Lampa's torrent flow → the file sent to the server → Lampa's
-  window closed. After it, focus is back on the title page, with no loading card and no hidden-list class
-  left.
+- **The flow:** Download → Lampa's torrent flow → the file sent to the server → Lampa's window closed.
+  Offered a 4K and a 1080p release, it took the 1080p one without asking. After it, focus is back on
+  the title page, with no loading card and no hidden-list class left.
 - **The button:** "Preparing 0%" → "Ready to save".
 - **The menu:** "Save to this device · 18 MB · subtitles: English, Bulgarian". Save makes a link to
   `/ts/gst/download/<id>/Big%20Buck%20Bunny%20(2008).mp4`, which answers 200 `video/mp4`, as an attachment.

@@ -50,7 +50,8 @@
 
     function sizeText(bytes) { return (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + ' GB'; }
 
-    // download: the same choice, then the file is made into an MP4 to keep instead of played (download.js)
+    // download: the same search and pick (1080p, no question), then the file is made into an MP4 to keep
+    // instead of played (download.js)
     function start(movie, target, params, download) {
         var series = !!(movie.original_name || movie.name && !movie.title);
         var back = Lampa.Controller.enabled().name, stopped = false;
@@ -112,6 +113,12 @@
         var list = rubyPick.choices(results, movie, target, audio);
         // Lampa's own list plays what's picked in it, so a download has no manual pick
         if (!list.length && download) return Lampa.Noty.show('No English release with enough seeders to download');
+        // a download asks nothing: 1080p fits a phone (4K files are 10-20 GB), else 720p, else what there is
+        // (the user's call, 2026-10-20)
+        if (download) {
+            var res = function (r) { return list.filter(function (c) { return c.res === r; })[0]; };
+            return play(movie, target, (res(1080) || res(720) || list[0]).best, true);
+        }
         if (!list.length && !audio) {   // (anime: still show the sheet, to switch the audio)
             Lampa.Noty.show('No English release with enough seeders: showing all torrents');
             return openList(params);
@@ -121,8 +128,7 @@
             var kind = rubyPick.describe(c.best.Title || '');
             var line = (kind ? kind + ' · ' : '') + sizeText(c.best.Size) + ' · ' + c.best.Seeders + ' seeders';
             // the release's bitrate, with headroom, against this connection: it would keep stopping to buffer
-            // (a download isn't watched over this connection)
-            var need = rubyPick.bitrate(c.best, movie, target) * 1.3, slow = !download && mbps && mbps < need;
+            var need = rubyPick.bitrate(c.best, movie, target) * 1.3, slow = mbps && mbps < need;
             if (slow) line = 'Your connection (' + Math.round(mbps) + ' Mbit/s) is too slow for this · ' + line;
             return { title: c.label, subtitle: line, choice: c, slow: slow };
         });
@@ -132,19 +138,19 @@
         if (pre) pre.selected = true;
         if (audio) items.push({ title: audio === 'ja' ? 'Audio: Japanese · English subtitles' : 'Audio: English dub',
             subtitle: 'Switch to ' + (audio === 'ja' ? 'the English dub' : 'Japanese with English subtitles'), audio: true });
-        if (!download) items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
+        items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
         centred();
         Lampa.Select.show({
-            title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + (download ? 'Download in' : 'Play in'),
+            title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + 'Play in',
             items: items,
             onSelect: function (a) {
                 if (a.audio) {
                     Lampa.Storage.set(ANIME_AUDIO, audio === 'ja' ? 'en' : 'ja');
-                    return setTimeout(function () { choose(movie, target, params, results, back, mbps, download); }, 50);
+                    return setTimeout(function () { choose(movie, target, params, results, back, mbps); }, 50);
                 }
                 if (a.all) return openList(params);
                 Lampa.Storage.set(LAST_RES, a.choice.res);
-                play(movie, target, a.choice.best, download);
+                play(movie, target, a.choice.best);
             },
             onBack: function () { Lampa.Controller.toggle(back); }
         });
