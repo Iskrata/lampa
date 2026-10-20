@@ -63,6 +63,10 @@
         'body.touch-device .ruby-nav__links{flex:1;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent);padding-right:2em}',
         'body.touch-device .ruby-nav__links::-webkit-scrollbar{display:none}',
         'body.touch-device .ruby-nav__caret{display:none}',
+        // phones: search is in the bottom bar (phoneBar)
+        '@media (max-width: 600px){body.touch-device .ruby-nav__right>.ruby-nav__icon,body.touch-device .ruby-nav__link:nth-of-type(6){display:none}}',   // and My List
+        '.ruby-bar--me .navigation-bar__icon .ruby-avatar{width:1.9em;height:1.9em;border-radius:.3em}',
+        '.ruby-bar--list .navigation-bar__icon .ruby-icon{font-size:2.3em}',   // icons.js sizes icons at 1em
         // phones: a tighter bar, and no room for Lampa's page counter ("4 / 500" on grid pages)
         '@media (max-width: 600px){.head__navigator{display:none!important}.ruby-nav{gap:1em;margin-left:0}.ruby-nav__brand{font-size:1.6em;margin-right:0}.ruby-nav__links{gap:1.3em}.ruby-nav__link{font-size:1.15em}.ruby-nav__right{gap:1.1em;padding-right:0}.ruby-nav__icon{font-size:1.6em}.ruby-nav__me>.ruby-avatar{width:2.2em;height:2.2em}}'
     ].join('\n');
@@ -174,6 +178,31 @@
         return true;
     }
 
+    // Phones: Lampa's bottom bar (Back, Home, Search, Settings) becomes Netflix's: Home, Search, My List and your
+    // picture, which opens the profile menu (simplicity review 2026-10-20). Back is the arrow at the top of
+    // every page but Home; Settings is in the profile menu. Search leaves the top bar there.
+    function phoneBar() {
+        var bar = document.querySelector('.navigation-bar__body');
+        if (!bar || bar.querySelector('.ruby-bar')) return !!bar;
+        [].forEach.call(bar.querySelectorAll('[data-action="back"],[data-action="settings"]'), function (el) { el.style.display = 'none'; });
+        var me = rubyProfiles.current();
+        var add = function (cls, icon, label, onTap) {
+            var el = document.createElement('div');
+            el.className = 'navigation-bar__item ruby-bar ' + cls;
+            el.innerHTML = '<div class="navigation-bar__icon">' + icon + '</div><div class="navigation-bar__label">' + label + '</div>';
+            el.addEventListener('click', function (e) { e.stopPropagation(); onTap(); });
+            bar.appendChild(el);
+        };
+        add('ruby-bar--list', rubyIcons.svg('plus'), 'My List', function () { go(LINKS[5]); });
+        add('ruby-bar--me', rubyProfiles.avatar(me), esc(me.name), function () {
+            var m = document.querySelector('.ruby-nav__me');
+            if (!m) return;
+            fillMenu();
+            m.classList.toggle('open');
+        });
+        return true;
+    }
+
     // "top" = the active page's own scroller is at (or near) its start; then the bar is transparent
     function watchScroll() {
         setInterval(function () {
@@ -211,6 +240,7 @@
                 markActive();
                 Lampa.Listener.follow('activity', function (e) { if (e.type === 'start') setTimeout(markActive, 50); });
                 watchScroll();
+                var tries2 = 0, pb = setInterval(function () { if (phoneBar() || ++tries2 > 100) clearInterval(pb); }, 100);
             }
         }, 100);
     }

@@ -442,6 +442,11 @@ Eight small edits, each marked `Lampa Desktop:`; re-apply them when updating fro
 
 ## Player
 
+**Plain words** (simplicity review 2026-10-20): no torrent numbers under the title (size, peers, speed,
+pieces); "Further" → "Next episode", "Audio tracks" → an "Audio" button labelled like Subtitles, "Minimize" →
+"Picture in picture", "Expand" → "Full screen", speed "Plain" → "Normal", "Segments" → "Skip intro". The
+panel is built from its template before player.js runs, so its tooltips are rewritten when the player opens.
+
 **Playable on every device, or a clear error (`compat.js`).** Asked for on 2026-10-20 after *Gladiator*
 (2000, HDR10 x265) loaded forever on a friend's iPhone (iOS 18.7). The remux copies the video as it is, so
 whether it plays is up to the device's decoder. `rubyCompat.decodes(codecs)` asks the decoder the player will
@@ -642,6 +647,11 @@ it's the brand, the user's call 2026-10-19). It runs first, before the other mod
   over the 14 rules in `css/app.css` that draw `img/loader.svg` (page loads, player buffering, dialogs,
   episode stills, the Watch button, extensions…; the list is `LOADERS`). Buffering drops Lampa's frosted
   grey disc: the ring alone over the picture. `facts.js`'s small spinner is the same red.
+- **Measured again 2026-10-20** (dev server, no host proxied, 3 cold loads in an iframe, polled every 50 ms):
+  Lampa ready 1.82-1.84 s, the billboard's picture 1.98-2.00 s, the app shown 2.31-2.35 s, the intro gone
+  3.97-4.01 s (usable from "shown"). Under the ~3 s the simplicity review set as the bar, so nothing changed;
+  the 4-7 s of black seen in the review was with ruby proxied over a relayed tailnet. Not re-measured on ruby:
+  the tailnet couldn't reach it that day.
 - **Not verified in Safari** yet: safaridriver needs Safari → Settings → Developer → "Allow remote
   automation", which was off on 2026-10-19.
 
@@ -688,6 +698,11 @@ every frame interval and every main-thread freeze recorded). Results:
   a fresh session.
 
 ## Settings and the top bar
+
+**Phones** (simplicity review 2026-10-20, `nav.js` `phoneBar`): Lampa's bottom bar (Back, Home, Search,
+Settings) is Netflix's: Home, Search, My List and your picture, which opens the profile menu. Back is the arrow
+at the top of every page but Home, Settings is in the profile menu, and search and My List leave the top bar
+there. Checked at 375×812 in the built-in browser.
 
 Simplicity review 2026-10-20 (the report and the user's choices: claude.ai artifact "Ruby Simplicity Review"):
 - **Top bar:** Home, TV Shows, Movies, Animation, New & Popular, My List. No Trakt link: its menu of nine

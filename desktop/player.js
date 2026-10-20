@@ -19,8 +19,11 @@
         // the "⋯" menu on phones copies these icons; icons.js's 1em would beat Lampa's menu icon size
         '.selectbox-item__icon>.ruby-icon{width:2.7em!important;height:2.7em!important}',
         '.player-panel__subs .ruby-cc-label{margin-left:.35em;font-size:.85em;font-weight:600;letter-spacing:.02em}',
-        '.player-panel__subs{display:flex;align-items:center;width:auto!important;padding:0 .6em}',
+        '.player-panel__subs,.player-panel__tracks{display:flex;align-items:center;width:auto!important;padding:0 .6em}',
+        '.player-panel__tracks svg{width:1.6em;height:1.6em}',
         '.player-panel__airplay.hide{display:none!important}',
+        // no torrent numbers under the title ("1920x800 · 0 / 0 • 0 connected · 0 Byte"; simplicity review 2026-10-20)
+        '.player-info__values .value--size,.player-info__values .value--stat,.player-info__values .value--speed,.player-info__values .value--pieces{display:none!important}',
         '.ruby-tv4k{position:absolute;top:5em;right:2em;z-index:40;display:flex;flex-direction:column;gap:.2em;padding:.9em 1.3em;border-radius:.6em;' +
             'background:rgba(20,20,20,.9);color:#fff;cursor:pointer;font-size:1.2em}',
         '.ruby-tv4k span{font-size:.8em;color:#bbb}',
@@ -204,6 +207,21 @@
         subs.innerHTML = rubyIcons.svg('cc') + '<span class="ruby-cc-label">Subtitles</span>' + (tip ? tip.outerHTML : '');
     }
 
+    // "Audio" with its label next to Subtitles (Lampa's is an unlabelled voice icon), and the tooltips in plain
+    // words: the panel was built from its template before player.js could rename them (Lampa.Lang.add below)
+    function plainWords(panel) {
+        var tracks = panel.querySelector('.player-panel__tracks');
+        if (tracks && !tracks.querySelector('.ruby-cc-label')) {
+            var svg = tracks.querySelector('svg');
+            tracks.innerHTML = (svg ? svg.outerHTML : '') + '<span class="ruby-cc-label">Audio</span>';
+        }
+        var tips = { '.player-panel__pip': 'Picture in picture', '.player-panel__fullscreen': 'Full screen', '.player-panel__next': 'Next episode',
+            '.player-panel__playlist': 'Episodes', '.player-panel__settings': 'Settings', '.player-panel__volume': 'Volume' };
+        Object.keys(tips).forEach(function (sel) {
+            [].forEach.call(panel.querySelectorAll(sel + ' > .tooltip'), function (t) { t.textContent = tips[sel]; });
+        });
+    }
+
     // Quality: the resolutions Play found for this title (play.js), switched where it is; for anime also the
     // audio (simplicity review 2026-10-20: Play no longer asks "Play in"). Elsewhere (another source, "Pick
     // torrents for me" off) Lampa's own menu. Lampa's handler is taken over rather than raced: phones press
@@ -325,6 +343,16 @@
             e.stopPropagation();
             seek(e.key === 'ArrowRight');
         }, true);
+        // plain words (simplicity review 2026-10-20): "Further", "Minimize", "Expand", "Plain"…
+        Lampa.Lang.add({
+            torrent_error_next: { en: 'Next episode' },
+            player_tracks: { en: 'Audio' },
+            player_pip: { en: 'Picture in picture' },
+            player_size_cover_title: { en: 'Full screen' },
+            player_speed_default_title: { en: 'Normal' },
+            player_segments_title: { en: 'Skip intro' },
+            player_segments_descr: { en: 'Skip openings and recaps' }
+        });
         // English unless the profile chose otherwise (Lampa's defaults, so Settings → Player still decides)
         Lampa.Params.defaults.subtitles_start = true;
         Lampa.Params.defaults.subtitles_lang = 'en';
@@ -343,6 +371,7 @@
             var panel = document.querySelector('.player-panel');
             if (!panel) return;
             relabelSubs(panel);
+            plainWords(panel);
             airplayButton(panel);
             seekButtons(panel);
             qualityButton(panel);
