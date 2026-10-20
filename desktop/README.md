@@ -23,6 +23,9 @@ see "Touch devices and phones".
 | `more.js` | "More like this" at the end of title pages |
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
 | `nav.js` | the Netflix-style top bar and profile menu; Lampa's side menu never opens; text boxes take typing at once |
+| `continue.js` | "Continue watching": the first Home row, films + series + anime in progress, with bars |
+| `rows.js` | row names in plain words, each title in one row only |
+| `search.js` | search without source tabs; trending titles before anything is typed |
 | `settings.js` | `rubySettings`: the short Settings for everyone, Lampa's own behind a PIN |
 | `episodes.js` | a series' episodes on its page: season picker, every episode, a click plays it |
 | `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
@@ -124,7 +127,8 @@ Lampa's all-favourites overview. The button stops its clicks from reaching the c
 the title. The title page's bookmark button saves with one click too: Lampa's menu of Bookmarks / Like /
 Later / statuses is skipped. The thumbs are the ratings, so Lampa's own "Like" list was a duplicate.
 That button says "+ My List" (a tick once it's in) with its label always shown; Lampa's was an unlabelled
-bookmark named "Favorites" (simplicity review 2026-10-20).
+bookmark named "Favorites" (simplicity review 2026-10-20). The empty list says "Your list is empty / Add films and
+shows with + to watch them later", without Lampa's "Update" button (it said "Your favorites").
 
 **The title page's buttons** (simplicity review 2026-10-20, for every profile): Play, + My List and the thumbs.
 Lampa's Subscribe bell, "Platforms" and "⋯" are hidden (`title.js`); the "⋯" menu held only Recommendations
@@ -293,6 +297,58 @@ Also fixed on the way: after Lampa's "Failed to connect to TorrServer" window, P
 up until Cancel. That window closes without `list_close`, so `pending` was never cleared. The card now
 goes once no Lampa window has been open for 2 s.
 
+## Continue watching
+
+`continue.js`: the first row on Home is what you're part-way through: films, series and anime, the one watched
+last first, a red bar of how far you are and, for a series, the episode ("S2 E5"). A click plays it from
+there (`rubyPlay.play`), as Netflix does. On TV Shows / Movies / Animation it shows that page's kind.
+
+Lampa's own row (`content_rows_continue_watch`, app.min.js `Favorite` init) put only series on Home, films in
+a "Watched" row on the Movies page and anime only on Animation, in history order and without bars: in the
+review a film watched a minute before wasn't on Home at all. It is turned off on computers by answering its
+setting in `Lampa.Storage.get`: its own switch can't be stored, because `Storage.get(key, 'true')` reads a
+stored `false` as missing and returns the default.
+
+What counts: a title in the history (it gets there after 10 minutes, `watched.js`) with progress under 90 %
+(`rubyResume.film`), or a series with an episode under way or a next one after a finished episode
+(`rubyResume.where`, Lampa's progress only, not Trakt's). Order: Lampa's `updated` stamp on the progress.
+Lampa's own "Episode 2" badge and history mark are hidden on these cards; the bar and the episode are drawn
+from the row's `line` events (Lampa draws a row's far cards on the first sideways scroll).
+
+Checked 2026-10-20 in the dev server, history and progress set by hand: Frieren S1 E2 at 60 %, Breaking Bad S1
+E4 at 40 %, Inception at 30 % → one row of the three, newest first, "S1 E2" / "S1 E4" over the bars.
+
+## Rows
+
+`rows.js`, simplicity review 2026-10-20:
+- **Names** (`Lampa.Lang.add`, English): "Watching now" (films in cinemas; it read like your own progress) →
+  "In cinemas now", "Watch in cinemas" (upcoming) → "Coming soon", "Today in trend" → "Trending today",
+  "Trending for the week" → "Trending this week", "Popular TV shows" → "Popular shows", "Top movies" →
+  "Top-rated films", "We recommend to see" → "Recommended for you", "Continue browsing" → "Recently viewed",
+  "Last year" → "Last year's best", "Catastrophe" → "Disaster".
+- **Each title once:** "Hope" was in four rows of Home. A page's rows load in parallel through the loaders
+  Lampa hands to `ContentRows.call` (main and category pages); each is wrapped, so a row's data is filtered
+  as it arrives, before any card exists: titles another row already had go, or, when fewer than 8 would be
+  left, move to its end. No row disappears or thins out (the user wanted no fewer rows). Continue watching may
+  repeat titles below it. Genre / keyword / people rows are added to the list after that call; they're wrapped
+  a tick later, before they load on scroll.
+- Trimming the drawn cards in the row's `create` event was tried first: by then Lampa has drawn the first
+  screenful, and a row trimmed from 13 to 2 cards stayed that way until scrolled sideways.
+
+Checked 2026-10-20 in the dev server: Home's first ten rows keep 8-13 cards each; "In cinemas now" and
+"Trending today" share no title; repeats left only where a row overlaps almost wholly ("Trending this week"),
+at its end.
+
+**Posters** carry no "TV" mark and no rating any more (`desktop.js`), as on Netflix; the rating stays on the
+title page.
+
+## Search
+
+Simplicity review 2026-10-20 (`search.js`, `oneList` in app.min.js, `nav.js`): the box takes typing as soon
+as search opens; no source tabs (TMDB / CUB / TraktTV / AI Assistant) and no history list; films and shows in
+one list, best match first; before anything is typed, "Trending today" (TMDB `trending/all/day`, posters, a
+click opens the title), and the last search's results are hidden while the box is empty.
+
 ## Episodes
 
 `episodes.js`: a series' title page lists its episodes as on Netflix: "Episodes", a season picker (a native
@@ -352,7 +408,7 @@ Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`)
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Seven small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Eight small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -360,6 +416,11 @@ Seven small edits, each marked `Lampa Desktop:`; re-apply them when updating fro
   deleting a letter and retyping it left the results empty.
 - **Search, `Results.search`:** results 350 ms after you stop typing (upstream: 2.5 s, which looked as if
   Enter were needed).
+- **Search, TMDB `oneList`** (in the same edit as the next one): on computers (`rubyDesktop.active()`), films
+  and shows come back as one list, "Films & shows": titles containing the query first (then the closest by
+  letter pairs), the most popular first among those; people only with a photo. Upstream gave a Movies row, then
+  a TV row: "breaking bad" put documentaries above the show (simplicity review 2026-10-20). Verified: "breaking
+  bad" → Breaking Bad first, "dune" → Dune: Part Three, Part Two, Dune.
 - **Search, TMDB `search$5` + `fuzzySearch`:** TMDB matches whole words exactly, so "edge runners" found
   nothing ("Cyberpunk: Edgerunners") and typos found nothing. With fewer than 3 results, it also searches
   the words joined and the two longest words alone. It keeps results whose title is close to the query

@@ -34,7 +34,9 @@
         '.card.focus .card__view,.card:hover .card__view{transform:translateY(-.35em) scale(1.04);box-shadow:0 1.2em 2.4em rgba(0,0,0,.7)}',
         '.card__title{font-size:.95em;font-weight:500;color:var(--rb-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
         '.card__age{color:var(--rb-text3)}',
-        '.card__vote{font-size:.8em;font-weight:600;background:rgba(0,0,0,.6);border-radius:.5em;padding:.15em .5em}',
+        // posters carry no "TV" mark and no rating, as on Netflix (simplicity review 2026-10-20); the rating stays
+        // on the title page
+        '.card__type,.card__vote{display:none!important}',
         // the Trakt plugin's watchlist / watched / watching badges hang half below the poster, which the rounded
         // overflow:hidden above cuts into purple half-circles: a dark chip in the corner opposite the rating instead
         '.card__view .trakt-watchlist-badge,.card__view .trakt-watched-badge,.card__view .trakt-watching-badge{left:.25em;bottom:.25em;transform:none;' +

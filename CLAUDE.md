@@ -21,7 +21,7 @@ Read these first:
   `play.js`/`pick.js` also run on TVs.
 - `server/remux/`: Node (no dependencies) + ffmpeg/ffprobe 8.x. Speaks Lampa's TorrServer-GStreamer
   protocol at `<TorrServer>/gst/`.
-- `app.min.js`: upstream, plus five small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
+- `app.min.js`: upstream, plus eight small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
   `desktop/` module; patch upstream only when a module can't reach the code (closures). Document each
   patch in desktop/README.md ("Changes to Lampa itself").
 

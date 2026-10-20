@@ -67,6 +67,10 @@ Needs [`server/remux`](server/remux/README.md).
 **And:**
 - A Netflix-style intro at startup (the wordmark drops in, then bursts into ribbons of light) and a red
   spinner wherever Lampa shows one.
+- "Continue watching" first on Home: films, series and anime you're part-way through, with how far you are;
+  one click plays on. Rows have plain names and each title shows up in one row only.
+- Search answers as you type, one list of films and shows with the best match first, and shows what's
+  trending before you type.
 - A featured billboard on Home that rotates through your picks, or what's trending, with its trailer.
 - Apple TV-style dark look, liquid-glass panels, and soft colour light taken from the poster you hover,
   ported from [spotifast](https://github.com/Iskrata/spotifast)'s album-art background.

@@ -14,7 +14,9 @@
         '.ruby-hero__btn--list{background:rgba(109,109,110,.7);color:#fff}',
         // the title page's bookmark: "+ My List" with its label always shown, a tick once it's in
         '.full-start__button.button--book span{display:inline!important}',
-        '.full-start__button.button--book .ruby-icon{width:1.5em;height:1.5em}'
+        '.full-start__button.button--book .ruby-icon{width:1.5em;height:1.5em}',
+        // the empty list: no "Update" button (there is nothing to update)
+        'body.ruby-mylist-page .empty__footer{display:none}'
     ].join('\n');
 
     // what Lampa stores and matches (by id; name/original_name/first_air_date tell it a series)
@@ -92,6 +94,14 @@
             paintBook();
         }, true);
         Lampa.Listener.follow('full', function (e) { if (e.type === 'complite') paintBook(); });
+        // one name for it everywhere (simplicity review 2026-10-20: the empty list said "Your favorites")
+        Lampa.Lang.add({
+            empty_bookmark_title: { en: 'Your list is empty' },
+            empty_bookmark_text: { en: 'Add films and shows with + to watch them later. They\'ll be here.' }
+        });
+        Lampa.Listener.follow('activity', function (e) {
+            if (e.type === 'start') document.body.classList.toggle('ruby-mylist-page', e.component === 'favorite' && e.object && e.object.type === 'book');
+        });
         // added or removed anywhere (here, the title page, another tab of this profile): repaint what's shown
         Lampa.Listener.follow('state:changed', function (e) {
             if (e.target !== 'favorite') return;
