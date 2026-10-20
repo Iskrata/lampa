@@ -119,6 +119,27 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
   files, start at its `-ss`, and are shifted like the audio. A subtitle segment waits until the video is
   past it, so its cues are in.
 
+## Why starting takes longer than a seek
+
+Measured 2026-10-20 on the home server (scripts run there against its TorrServer and this service's modules),
+*Gladiator* (`414ee48b`, 1080p HEVC MKV, ~140 known peers), the torrent dropped before each run:
+
+| run | file list (torrent metadata) | probe + Cues (`media.load`) | segment 0 | seek, a few seconds later |
+|---|---|---|---|---|
+| 1 | 0.5 s | 10.8 s (Cues alone 10.8 s) | 1.0 s | 4.2 s to 85 min |
+| 2 | 10 s | ffprobe alone 5.0 s, then Cues 0.03 s | | |
+| 3 (the live service: master, then segments) | 0.6 s | master 14.5 s | 1.0 s | |
+| 4 | 8.9 s | 2.2 s (subtitles and init 0.05 s more) | | |
+
+- **The total stays at 12-16 s, but the step that pays for it moves.** Whatever comes first waits for TorrServer
+  to find peers: 1-2 connected and ~0 MB/s in the first seconds, 5 connected and ~9 MB/s 10-15 s later. The
+  bytes themselves are few: ffprobe reads ~20 MB of the start, the Cues one piece at the end, segment 0 ~5 MB.
+- **A seek comes after that warm-up.** The file's start and index are already in TorrServer's cache, the
+  session (probe, segment plan) exists, and one segment's bytes are needed.
+- **Why the warm-up is slow:** the home server is behind CGNAT with no IPv6, so TorrServer can only dial out.
+  Only peers that accept incoming connections are reachable. It connected to 1-5 of the 120-148 peers it knew
+  about.
+
 ## Subtitles from OpenSubtitles (`opensubs.js`)
 
 Some releases carry only the US broadcast captions as English subtitles. Desperate Housewives S01
