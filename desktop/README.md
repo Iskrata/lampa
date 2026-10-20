@@ -45,7 +45,8 @@ from the home server this was first built for. It keeps everything clear of Lamp
 
 Lampa keeps all state in `localStorage` under fixed keys and has no local profiles (its own need a CUB
 account). A profile is therefore a set of those keys. The active profile's values are the live keys that
-Lampa and its plugins read. Every other profile's values wait in `ruby_profile_data_<id>`.
+Lampa and its plugins read. Every other profile's values are kept in `rubyStore` as `profile-<id>.json`
+(the first local-only version kept them in `ruby_profile_data_<id>`; they move there on the next load).
 
 Switching writes the target to `ruby_profile_switch` and reloads. The swap runs at the very start of the
 next page load, before `app.min.js` has read anything and after the old page can no longer write, so
@@ -59,7 +60,12 @@ there:
 - **Writes** go up every 15 s when something changed, and when the tab hides. The last write wins.
 - **Which profile a device is on** stays on the device.
 - **A browser's first contact** merges in its own profiles. Its untouched default "Me" isn't added. A
-  renamed first profile whose id `p1` is already taken by a differently named one gets a new id.
+  renamed first profile whose id `p1` is already taken by a differently named one gets a new id, and its
+  data goes up under that id. A profile with the same id and name is the same one: the shared copy wins
+  and the browser's own is dropped. Nothing a browser brings along ever replaces a shared profile's data:
+  on 2026-10-18 an iPhone's first contact did exactly that (its old, empty local "Me" was `p1` too and went
+  up as `profile-p1.json`, wiping Iskrata's history and list; seen in Caddy's access log as a
+  17-byte PUT right after the iPhone's first `.probe`). Fixed 2026-10-20, replayed in tools/dev-server.js.
 
 Without `./sync/`, everything stays in the browser.
 

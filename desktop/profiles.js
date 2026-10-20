@@ -59,9 +59,15 @@
     // page must start with the target's data. Everything else is checked in the background (syncList).
     var state = load();
     try {
-        // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store
+        // profiles kept by the old local-only version (ruby_profile_data_<id>) move into the store, but only
+        // under an id it has nothing for: every browser's first profile is p1, so in a shared folder the id can
+        // be someone else's (on 2026-10-18 an iPhone's empty old "Me" replaced Iskrata's history and list this
+        // way). A taken id waits here for the first contact with the shared list (syncList), which moves a
+        // differently named profile's data to its new id.
         Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) {
-            rubyStore.put('profile-' + k.slice(OLD_DATA.length) + '.json', JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {} }));
+            var name = 'profile-' + k.slice(OLD_DATA.length) + '.json', stored = rubyStore.get(name);
+            if (stored !== null) return;   // taken, or the server is unreachable (try again next time)
+            rubyStore.put(name, JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {} }));
             ls.removeItem(k);
         });
         var target = ls.getItem(SWITCH);
@@ -88,23 +94,30 @@
                 // first profile is 'p1', so a local profile whose id is taken by a differently named one on the
                 // server gets a new id (and keeps its data) instead of landing on someone else's profile; a new
                 // browser's untouched default "Me" is not added at all.
+                // A profile already in the shared list under the same id and name is the same one: its shared data
+                // wins over this browser's (dataT 0 makes the check below take it), never the other way round.
                 var list = server && server.list ? server.list : [];
                 var fresh = !state.chosen && state.list.length === 1 && list.length > 0;
+                var added = {};
                 state.list.forEach(function (p) {
                     if (fresh) return;
                     var same = list.filter(function (q) { return q.id === p.id; })[0];
-                    if (same && same.name === p.name) return;
+                    if (same && same.name === p.name) { if (state.current === p.id) state.dataT = 0; return; }
                     if (same) {
                         var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
                         if (state.current === p.id) state.current = id;
+                        var old = ls.getItem(OLD_DATA + p.id);
+                        if (old) rubyStore.put('profile-' + id + '.json', JSON.stringify({ t: 1, keys: parse(old) || {} }));
                         p = { id: id, name: p.name, color: p.color, img: p.img };
                     }
+                    added[p.id] = true;
                     list.push(p);
                 });
+                Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) { ls.removeItem(k); });
                 state.list = list.slice(0, MAX);
                 state.synced = true;
                 rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
-                if (!fresh && find(state.current)) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
+                if (added[state.current]) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
             } else if (server && server.list && server.list.length) state.list = server.list;
             else if (shared === null) rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));   // server copy gone: re-seed
             save();
