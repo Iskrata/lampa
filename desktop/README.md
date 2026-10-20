@@ -22,7 +22,9 @@ see "Touch devices and phones".
 | `glass.js` | colour light from the hovered poster, liquid-glass panels |
 | `more.js` | "More like this" at the end of title pages |
 | `rowload.js` | a shimmering placeholder row at the bottom while Lampa loads more rows/pages (wraps `Scroll.onEnd`) |
-| `nav.js` | the Netflix-style top bar and profile menu |
+| `nav.js` | the Netflix-style top bar and profile menu; Lampa's side menu never opens; text boxes take typing at once |
+| `settings.js` | `rubySettings`: the short Settings for everyone, Lampa's own behind a PIN |
+| `episodes.js` | a series' episodes on its page: season picker, every episode, a click plays it |
 | `avatars.js` | `rubyAvatars`: profile pictures, drawn characters (Simpsons, Rick and Morty, Pokémon) |
 | `facts.js` | `rubyFacts`: the full-screen loading screen while a title starts |
 | `progress.js` | how far it is, on that card: a percentage and a bar |
@@ -623,6 +625,33 @@ every frame interval and every main-thread freeze recorded). Results:
   switched off).
 - **The automation session itself slowed down over many runs,** so before/after comparisons were made in
   a fresh session.
+
+## Settings and the top bar
+
+Simplicity review 2026-10-20 (the report and the user's choices: claude.ai artifact "Ruby Simplicity Review"):
+- **Top bar:** Home, TV Shows, Movies, Animation, New & Popular, My List. No Trakt link: its menu of nine
+  lists repeated My List and History, and closing it landed in Lampa's side menu.
+- **Profile menu,** Netflix's order: who you are (name and picture), the other profiles, Manage Profiles,
+  Settings, Switch profile. History went (Home's Continue watching takes its place); Connect Trakt moved into
+  Settings.
+- **No side menu** (`nav.js` `noSideMenu`): Lampa opens its side menu (Persons, Catalog, Torrents, Console,
+  Edit…) with `Controller.toggle('menu')` on Back from some sheets and on Left at a row's first poster. With
+  the desktop look that goes to the top bar instead. TVs keep it.
+- **Text boxes take typing at once:** Lampa's keyboard puts the focus in its box only on phones
+  (`collectionFocus(mobile ? input : false)`), so search and PINs needed a click into the box first. The same
+  wrapper focuses it on computers.
+- **Settings** (`settings.js`): a popup in the middle of the screen with Subtitles (Off / English / Bulgarian
+  / Russian), Anime audio, Play the next episode automatically (`playlist_next`), Trailers, Trailer sound,
+  Connect Trakt, Manage profiles and Advanced settings. Advanced opens Lampa's own settings after a PIN: the
+  host's `window.lampa_admin_pin` (set before the scripts run, like `lampa_brand`), else one chosen on the
+  device the first time (`localStorage` `ruby_admin_pin`). It keeps friends from switching off "Desktop look"
+  or "Pick torrents for me" by accident and hides the Jackett key; it isn't security (the page is the user's).
+
+Checked 2026-10-20 in the dev server: the profile menu reads Me / Manage Profiles / Settings / Switch profile;
+a toggle in Settings flips and stays; Advanced asked to choose a PIN, 1234 typed on the real keyboard opened
+Lampa's settings, 9999 the next time said "Wrong PIN"; `Controller.toggle('menu')` lands on the top bar; one
+click on the search icon opens search with the box focused. The "first click is ignored" seen in the review
+didn't happen again: those were Play's loading showing almost nothing and the unfocused search box.
 
 ## Under the top bar
 

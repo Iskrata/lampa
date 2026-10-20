@@ -300,6 +300,17 @@
         setTimeout(function () { document.body.classList.add('ruby-nav-ready'); }, 4000);
     }
 
+    var CENTRED = [
+        'body.ruby-playin .selectbox__layer{display:block!important;background:rgba(0,0,0,.55)}',
+        'body.ruby-playin .selectbox__content{left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;width:min(30em,88vw)!important;',
+        '  height:auto!important;max-height:80vh;border-radius:1em;box-shadow:0 2em 5em rgba(0,0,0,.6);transform:translate(-50%,-46%)!important;opacity:0;',
+        '  transition:opacity .2s,transform .2s!important;padding-bottom:.8em}',
+        'body.ruby-playin.selectbox--open .selectbox__content{transform:translate(-50%,-50%)!important;opacity:1}',
+        // Lampa gives the panel and its list a full-screen height inline (layer--height / layer--wheight)
+        'body.ruby-playin .selectbox__body{max-height:none!important;height:auto!important}',
+        'body.ruby-playin .selectbox__content.layer--height{height:auto!important}'
+    ].join('\n');
+
     function start() {
         // shared by hero.js / glass.js / more.js
         window.rubyDesktop = {
@@ -371,6 +382,25 @@
             },
             // settled(cb): run cb once the page has settled (now, if it has); settled(): has it?
             settled: function (cb) { if (!cb) return isSettled; if (isSettled) cb(); else settledCbs.push(cb); },
+            // the next Lampa.Select as a popup in the middle of the screen (computers), not Lampa's side panel:
+            // restyled while it's open (keys and remote work as before), back to normal once it closes.
+            // Play's messages (play.js), Settings (settings.js)
+            centred: function () {
+                if (!rubyDesktop.active()) return;
+                if (!document.getElementById('ruby-centred')) {
+                    var st = document.createElement('style');
+                    st.id = 'ruby-centred';
+                    st.textContent = CENTRED;
+                    document.head.appendChild(st);
+                }
+                var body = document.body;
+                body.classList.add('ruby-playin');
+                var seen = false, watch = new MutationObserver(function () {
+                    if (body.classList.contains('selectbox--open')) seen = true;
+                    else if (seen) { watch.disconnect(); setTimeout(function () { body.classList.remove('ruby-playin'); }, 250); }
+                });
+                watch.observe(body, { attributes: true, attributeFilter: ['class'] });
+            },
             openFull: function (item) {
                 Lampa.Activity.push({ url: '', component: 'full', id: item.id, method: rubyDesktop.kind(item), card: rubyDesktop.card(item), source: 'tmdb' });
             }

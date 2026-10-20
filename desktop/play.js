@@ -153,7 +153,7 @@
         var items = [{ title: why, separator: true }];
         if (window.rubyMyList && !rubyMyList.has(movie)) items.push({ title: 'Add to My List', subtitle: 'To find it again later', add: true });
         items.push({ title: 'OK' });
-        centred();
+        rubyDesktop.centred();
         Lampa.Select.show({
             title: 'Can\'t play this right now',
             items: items,
@@ -181,19 +181,6 @@
         Lampa.Player.close();
         // a series starts the episode it's on (resume.js), which may be a later one than first played
         setTimeout(function () { start(movie); }, 300);
-    }
-
-    // Play's messages as a popup in the middle of the screen (computers), not Lampa's side panel: its own Select,
-    // restyled while this one is open (keys and remote work as before); back to normal once it closes
-    function centred() {
-        if (!window.rubyDesktop || !rubyDesktop.active || !rubyDesktop.active()) return;
-        var body = document.body;
-        body.classList.add('ruby-playin');
-        var seen = false, watch = new MutationObserver(function () {
-            if (body.classList.contains('selectbox--open')) seen = true;
-            else if (seen) { watch.disconnect(); setTimeout(function () { body.classList.remove('ruby-playin'); }, 250); }
-        });
-        watch.observe(body, { attributes: true, attributeFilter: ['class'] });
     }
 
     function play(movie, target, release, download) {
@@ -347,15 +334,7 @@
         var s = document.createElement('style');
         s.id = 'ruby-play';
         s.textContent = [
-            'body.ruby-autopicking .modal{opacity:0;pointer-events:none}',
-            'body.ruby-playin .selectbox__layer{display:block!important;background:rgba(0,0,0,.55)}',
-            'body.ruby-playin .selectbox__content{left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;width:min(30em,88vw)!important;',
-            '  height:auto!important;max-height:80vh;border-radius:1em;box-shadow:0 2em 5em rgba(0,0,0,.6);transform:translate(-50%,-46%)!important;opacity:0;',
-            '  transition:opacity .2s,transform .2s!important;padding-bottom:.8em}',
-            'body.ruby-playin.selectbox--open .selectbox__content{transform:translate(-50%,-50%)!important;opacity:1}',
-            // Lampa gives the panel and its list a full-screen height inline (layer--height / layer--wheight)
-            'body.ruby-playin .selectbox__body{max-height:none!important;height:auto!important}',
-            'body.ruby-playin .selectbox__content.layer--height{height:auto!important}'
+            'body.ruby-autopicking .modal{opacity:0;pointer-events:none}'
         ].join('\n');
         document.head.appendChild(s);
     }
@@ -364,7 +343,7 @@
         Lampa.SettingsApi.addParam({
             component: 'interface',
             param: { name: SETTING, type: 'trigger', default: true },
-            field: { name: 'Pick torrents for me', description: 'Play asks only for the resolution and picks the best English release' }
+            field: { name: 'Pick torrents for me', description: 'Play picks the best English release for this screen and connection; off: Lampa\'s list of torrents' }
         });
     }
 

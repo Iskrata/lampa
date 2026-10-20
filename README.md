@@ -29,22 +29,28 @@ for example) count as thumbs.
 **Title pages as a full-screen hero.** The backdrop fills the screen and the trailer fades in over it,
 with the title's logo, details and buttons over a dark gradient. Trailers play with sound when the browser
 allows it, get English subtitles when they're in another language, and stop as soon as you scroll, switch
-tab or press Watch. At the bottom of each page: "More like this".
+tab or press Play. Only three buttons: Play (or Resume, with "S2 E5 · 26 min left" under the ratings), + My
+List and the thumbs. Series list their episodes as on Netflix: a season picker, then every episode with its
+picture, length, what happens and how much you've watched. At the bottom of each page: "More like this".
 
 ![Title page: full-screen hero, thumbs ratings](desktop/screenshots/title.jpg)
 
 ![More like this, with the colour of the poster behind the page](desktop/screenshots/more.jpg)
 
-**A Netflix-style top bar.** Wordmark, Home / TV Shows / Movies / Animation / New & Popular / My List /
-Trakt, search, and the profile menu (switch profile, manage profiles, Connect Trakt, history, settings).
+**A Netflix-style top bar.** Wordmark, Home / TV Shows / Movies / Animation / New & Popular / My List,
+search, and the profile menu (who you are, the other profiles, manage profiles, settings, switch profile).
+Settings is short (subtitles, anime audio, next episode, trailers, Connect Trakt, profiles); Lampa's full
+settings are under "Advanced settings", behind a PIN.
 The bar is transparent over the top of the page and turns solid once you scroll.
 
 ![New & Popular and the profile menu](desktop/screenshots/browse.jpg)
 
-**Play without choosing a torrent.** Press Play and pick only the resolution: 4K, 1080p or 720p, each
-showing its best release's seeders and size. The fork searches, keeps English releases of this title that
-will stream, ranks them (seeders, source, a sensible bitrate) and starts the right file. Click an episode
-and it plays that episode; Play on a series continues where you left off. "All torrents" is still there.
+**Play without choosing anything.** Press Play and it plays. The fork searches, keeps English releases of
+this title that will stream, ranks them (source, a sensible bitrate, seeders), picks the resolution for your
+screen and connection (4K only on 4K-class screens) and starts the right file, behind a full-screen loading
+screen with the title's logo. The player's Quality button switches resolution where you are; AirPlaying to a
+TV offers 4K. Nothing good found: it says so, instead of showing a list of torrents. Click an episode and it
+plays that episode; Play on a series continues where you left off.
 
 **Any file plays in the browser.** With the small server in [`server/remux`](server/remux/README.md) next
 to TorrServer, every torrent plays as HLS: 4K HEVC MKVs with Atmos audio play in Safari and Chrome,
@@ -67,12 +73,12 @@ Needs [`server/remux`](server/remux/README.md).
 - Denser layout with three density levels, full rows, and real pixel scrolling with a mouse wheel or
   trackpad (Lampa steps one card or one row at a time).
 - Sharper artwork: posters at w780, backdrops and logos at the original size (up to 4K).
-- "Connect Trakt" with a device code, from the profile menu.
+- "Connect Trakt" with a device code, from Settings.
 
 The look is switched on on computers, phones and tablets. On a phone the top bar's links scroll sideways,
 the profile menu opens with a tap, posters sit three across, and title pages put Play on a line of its own
 with the thumbs always showing. On TVs (`Lampa.Platform.tv()`) Lampa looks exactly as upstream ships it;
-only Play's resolution picker works there too. Each part can be turned off in **Settings →
+only Play's automatic pick works there too. Each part can be turned off in **Settings →
 Interface**.
 
 ## Use it
@@ -84,7 +90,7 @@ below).
 - **Trakt (optional, recommended).** Create an API app at
   [trakt.tv/oauth/applications/new](https://trakt.tv/oauth/applications/new) (redirect URI
   `urn:ietf:wg:oauth:2.0:oob`), paste its Client ID into **Settings → Interface → Trakt Client ID**, then
-  use **Connect Trakt** in the profile menu. Without it, the thumbs and profiles still work. "Picked for
+  use **Connect Trakt** in Settings. Without it, the thumbs and profiles still work. "Picked for
   you" then has no source of related titles, and "More like this" uses TMDB's list instead.
 - **Playing any file (optional).** Run [`server/remux`](server/remux/README.md) (Node + ffmpeg) next to
   TorrServer, publish it at `<TorrServer URL>/gst/` on your web server, and turn on **Settings →

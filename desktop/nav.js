@@ -2,8 +2,8 @@
 // Lampa's header is a TV header: hamburger + "Home - TMDB" title + a row of small icons. On computers it
 // becomes: red wordmark, text links that drive Lampa's own menu items (each .menu__item has a
 // data-action; clicking goes through Lampa's 'hover:enter' so its own navigation runs), the active page
-// in bold, then search and the profile avatar with its menu (switch profile, manage profiles, Trakt,
-// history, settings) on the right. A soft dark gradient over the page top, solid once the page scrolls.
+// in bold, then search and the profile avatar with its menu (who you are, other profiles, manage profiles,
+// settings, switch profile) on the right. Lampa's side menu never opens here (noSideMenu). A soft dark gradient over the page top, solid once the page scrolls.
 // Lampa's own back arrow is kept (there is no other way back for a mouse) but hidden on Home.
 // Active only where desktop.js is (rubyDesktop.active()); never on TVs.
 (function () {
@@ -17,10 +17,10 @@
         { label: 'Animation',     action: 'cartoon',  is: function (a) { return a.url === 'cartoon' || (a.genres + '') === '16'; } },
         { label: 'New & Popular', open: NEW_POPULAR,  is: function (a) { return a.url === NEW_POPULAR.url; } },
         // only the Bookmarks list (what the + buttons add to), not Lampa's all-favourites overview
-        { label: 'My List',       open: MY_LIST,      is: function (a) { return a.component === 'favorite' || a.component === 'bookmarks'; } },
-        { label: 'Trakt',         trakt: true,        is: function (a) { return /trakt/i.test(a.component || '') || /trakt/i.test(a.source || ''); } }
+        { label: 'My List',       open: MY_LIST,      is: function (a) { return a.component === 'favorite' || a.component === 'bookmarks'; } }
     ];
-    var HISTORY = { action: 'history' };
+    // No Trakt link (simplicity review 2026-10-20): its menu of nine lists repeated My List and History, friends
+    // don't use Trakt, and closing that menu landed in Lampa's side menu. Trakt keeps working underneath.
 
     // no bottom border: a gradient background repeats into a transparent border (background-origin is the
     // padding box), which drew a dark 1 px line under the bar. No backdrop blur either: the bar is nearly
@@ -51,6 +51,7 @@
         '.ruby-nav__panel::before{content:"";position:absolute;right:1.6em;top:-.9em;border:.45em solid transparent;border-bottom-color:#e5e5e5}',
         '.ruby-nav__item{display:flex;align-items:center;gap:.8em;padding:.55em 1em;color:#e5e5e5;white-space:nowrap}',
         '.ruby-nav__item:hover span{text-decoration:underline}',
+        '.ruby-nav__who{font-weight:700;color:#fff}.ruby-nav__who:hover span{text-decoration:none}',
         '.ruby-nav__item .ruby-avatar{width:2.4em;height:2.4em}',
         '.ruby-nav__item>.ruby-icon{font-size:1.5em;margin:0 .05em;color:#b3b3b3}',
         '.ruby-nav__sep{border-top:1px solid rgba(255,255,255,.25);margin:.4em 0}',
@@ -73,10 +74,7 @@
         for (var i = 0; i < items.length; i++) {
             var it = items[i];
             if (link.action && it.dataset.action === link.action) return it;
-            if (link.trakt && (it.classList.contains('trakt-menu') || /trakt/i.test(it.innerText + it.className + (it.dataset.component || '')))) return it;
         }
-        // the Trakt plugin's menu entry has no data-action: fall back to the item without one, before Settings
-        if (link.trakt) return [].filter.call(items, function (it) { return !it.dataset.action; })[0] || null;
         return null;
     }
 
@@ -108,22 +106,22 @@
     function close() { var m = document.querySelector('.ruby-nav__me.open'); if (m) m.classList.remove('open'); }
     function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-    // rebuilt on every open: profiles and the Trakt state can change
+    // rebuilt on every open: profiles can change. Netflix's order (simplicity review 2026-10-20): who you are,
+    // the other profiles, Manage Profiles, Settings, Switch profile. Trakt moved into Settings, and History
+    // into Home's Continue watching.
     function fillMenu() {
         var panel = menu.firstChild, me = rubyProfiles.current();
         panel.innerHTML = '';
+        var who = document.createElement('div');
+        who.className = 'ruby-nav__item ruby-nav__who';
+        who.innerHTML = rubyProfiles.avatar(me) + '<span>' + esc(me.name) + '</span>';
+        panel.appendChild(who);
+        var sep0 = document.createElement('div'); sep0.className = 'ruby-nav__sep'; panel.appendChild(sep0);
         rubyProfiles.list().filter(function (p) { return p.id !== me.id; }).forEach(function (p) {
             panel.appendChild(item(rubyProfiles.avatar(p) + '<span>' + esc(p.name) + '</span>', function () { rubyProfiles.switchTo(p.id); }));
         });
         panel.appendChild(item(rubyIcons.svg('pencil') + '<span>Manage Profiles</span>', rubyProfiles.manage));
-        var sep = document.createElement('div'); sep.className = 'ruby-nav__sep'; panel.appendChild(sep);
-        var tk = item(rubyIcons.svg('link') + '<span>' + (rubyTrakt.connected() ? 'Trakt' : 'Connect Trakt') + '</span>', function () {
-            if (rubyTrakt.connected()) go(LINKS[6]); else rubyTrakt.connect();
-        });
-        panel.appendChild(tk);
-        rubyTrakt.user(function (u) { if (u) tk.querySelector('span').textContent = 'Trakt: ' + u; });
-        panel.appendChild(item(rubyIcons.svg('history') + '<span>History</span>', function () { go(HISTORY); }));
-        panel.appendChild(item(rubyIcons.svg('gear') + '<span>Settings</span>', function () { action('open--settings'); }));
+        panel.appendChild(item(rubyIcons.svg('gear') + '<span>Settings</span>', function () { if (window.rubySettings) rubySettings.open(); else action('open--settings'); }));
         var foot = document.createElement('div');
         foot.className = 'ruby-nav__foot';
         foot.textContent = 'Switch profile';
@@ -183,8 +181,28 @@
         }, 200);
     }
 
+    // Lampa's side menu (Persons, Catalog, Torrents, Console, Edit…) opens on Back from some sheets and on Left
+    // at a row's first poster (app.min.js Controller.toggle('menu')). Here the top bar is the menu, so those
+    // go to the top bar (simplicity review 2026-10-20: Esc after the Trakt menu opened it). TVs keep it.
+    // Also: Lampa's text box (search, PINs) puts the focus in the box only on phones (app.min.js keyboard toggle,
+    // collectionFocus(mobile ? input : false)), so on a computer typing went nowhere until the box was clicked
+    // (simplicity review 2026-10-20).
+    function noSideMenu() {
+        var toggle = Lampa.Controller.toggle;
+        Lampa.Controller.toggle = function (name) {
+            if (name === 'menu' && rubyDesktop.active()) name = 'head';
+            var out = toggle.apply(this, [name].concat([].slice.call(arguments, 1)));
+            if (name === 'keybord' && rubyDesktop.active() && !rubyDesktop.touch()) {
+                var box = document.querySelector('.simple-keyboard-input');
+                if (box) { box.removeAttribute('disabled'); box.focus(); }
+            }
+            return out;
+        };
+    }
+
     function start() {
         if (!rubyDesktop.active()) return;
+        noSideMenu();
         var tries = 0, t = setInterval(function () {
             // Lampa's header can take a while (a slow plugin or server): keep trying for a minute, not 5 s
             if (build() || ++tries > 600) {
@@ -199,7 +217,7 @@
 
     var t = setInterval(function () {
         if (!window.Lampa || !Lampa.Listener || !Lampa.Activity || !window.rubyDesktop || !rubyDesktop.active ||
-            !window.rubyProfiles || !window.rubyTrakt || !window.rubyIcons) return;
+            !window.rubyProfiles || !window.rubyIcons) return;
         clearInterval(t);
         start();
     }, 100);
