@@ -37,16 +37,32 @@
     function saveList() { save(); rubyStore.put('profiles.json', JSON.stringify({ list: state.list })); }
     function find(id) { return state.list.filter(function (p) { return p.id === id; })[0]; }
 
+    // ---- what happened to profiles on this device, to work out later what went wrong (desktop/README.md
+    // "Profile logs"): the last 100 events, here and in events-<device>.json beside the profiles, which ruby's
+    // watcher journals. Every profile file also names the device that wrote it and why (snapshot's "by").
+    var DEVICE = 'ruby_device', EVENTS = 'ruby_events', MAX_EVENTS = 100;
+    var device = ls.getItem(DEVICE) || 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    ls.setItem(DEVICE, device);
+    function log(what, info) {
+        var list = parse(ls.getItem(EVENTS)) || [], e = { t: Date.now(), p: state ? state.current : null, what: what };
+        Object.keys(info || {}).forEach(function (k) { e[k] = info[k]; });
+        list = list.concat([e]).slice(-MAX_EVENTS);
+        ls.setItem(EVENTS, JSON.stringify(list));
+        console.log('profiles:', what, info || '');
+        if (rubyStore.remote) rubyStore.put('events-' + device + '.json', JSON.stringify({ device: device, ua: navigator.userAgent, events: list }));
+    }
+    function by(why) { return { device: device, why: why, ua: navigator.userAgent }; }
+
     function liveKeys() {
         var keys = [];
         for (var i = 0; i < ls.length; i++) keys.push(ls.key(i));
         return keys.filter(own);
     }
     // the live profile's data as profile-<id>.json content
-    function snapshot() {
+    function snapshot(why) {
         var keys = {};
         liveKeys().filter(function (k) { return !NOT_SYNCED.test(k); }).forEach(function (k) { keys[k] = ls.getItem(k); });
-        return { t: Date.now(), keys: keys };
+        return { t: Date.now(), keys: keys, by: by(why || '') };
     }
     function apply(blob) {
         liveKeys().forEach(function (k) { ls.removeItem(k); });
@@ -67,8 +83,9 @@
         Object.keys(ls).filter(function (k) { return k.indexOf(OLD_DATA) === 0; }).forEach(function (k) {
             var name = 'profile-' + k.slice(OLD_DATA.length) + '.json', stored = rubyStore.get(name);
             if (stored !== null) return;   // taken, or the server is unreachable (try again next time)
-            rubyStore.put(name, JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {} }));
+            rubyStore.put(name, JSON.stringify({ t: 1, keys: parse(ls.getItem(k)) || {}, by: by('old local profile') }));
             ls.removeItem(k);
+            log('old local profile uploaded', { file: name });
         });
         var target = ls.getItem(SWITCH);
         ls.removeItem(SWITCH);
@@ -98,7 +115,7 @@
                 // wins over this browser's (dataT 0 makes the check below take it), never the other way round.
                 var list = server && server.list ? server.list : [];
                 var fresh = !state.chosen && state.list.length === 1 && list.length > 0;
-                var added = {};
+                var added = {}, renamed = {};
                 state.list.forEach(function (p) {
                     if (fresh) return;
                     var same = list.filter(function (q) { return q.id === p.id; })[0];
@@ -107,7 +124,8 @@
                         var id = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
                         if (state.current === p.id) state.current = id;
                         var old = ls.getItem(OLD_DATA + p.id);
-                        if (old) rubyStore.put('profile-' + id + '.json', JSON.stringify({ t: 1, keys: parse(old) || {} }));
+                        if (old) rubyStore.put('profile-' + id + '.json', JSON.stringify({ t: 1, keys: parse(old) || {}, by: by('old local profile') }));
+                        renamed[p.id] = id;
                         p = { id: id, name: p.name, color: p.color, img: p.img };
                     }
                     added[p.id] = true;
@@ -117,7 +135,8 @@
                 state.list = list.slice(0, MAX);
                 state.synced = true;
                 rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));
-                if (added[state.current]) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot()));
+                if (added[state.current]) rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snapshot('first contact')));
+                log('first contact', { fresh: fresh, added: Object.keys(added), renamed: renamed, shared: list.length });
             } else if (server && server.list && server.list.length) state.list = server.list;
             else if (shared === null) rubyStore.put('profiles.json', JSON.stringify({ list: state.list }));   // server copy gone: re-seed
             save();
@@ -135,6 +154,7 @@
                 // changed on another device since this browser last saw it: take it over (Lampa has read its
                 // storage already, so reload once), unless the content is the same anyway
                 if (JSON.stringify(latest.keys) === JSON.stringify(snapshot().keys)) { state.dataT = latest.t; return save(); }
+                log('took the newer copy', { t: latest.t, had: state.dataT || 0, by: latest.by || null, diff: diff(snapshot().keys, latest.keys) });
                 apply(latest);
                 save();
                 location.replace(location.pathname);
@@ -142,26 +162,79 @@
         });
     }
 
-    // ---- while in use: upload the profile's data when it changed
-    var lastSent = '';
-    function upload(keepalive) {
-        if (!state.chosen) return;   // a new browser before its first pick holds nobody's data
-        var snap = snapshot(), text = JSON.stringify(snap.keys);
-        if (text === lastSent) return;
-        lastSent = text;
+    // ---- while in use: upload the profile's data when it changed. Another device on the same profile may have
+    // written it since this page last read or wrote it, and the last write wins: a tab left open used to undo
+    // what the other device did (2026-10-20: an open Safari tab put a title removed on the server straight
+    // back). So each upload first reads the server's copy. When another device wrote it, the two are merged
+    // key by key against what this page last had: a key only one side changed keeps that change; one both
+    // changed keeps this page's, except watch progress (file_view), merged per title. The page then reloads so
+    // Lampa reads the merge, but never during playback: until the player closes, nothing is uploaded.
+    // A page being closed ('closing') can't wait for the read; it skips the upload once a conflict is known.
+    var lastSent = '', checking = false, conflict = false;
+    function file() { return 'profile-' + state.current + '.json'; }
+    function send(snap, keepalive) {
+        lastSent = JSON.stringify(snap.keys);
         state.dataT = snap.t;
         save();
-        rubyStore.put('profile-' + state.current + '.json', JSON.stringify(snap), keepalive);
+        rubyStore.put(file(), JSON.stringify(snap), keepalive);
+    }
+    // which keys differ, for the logs (sizes, not contents)
+    function diff(a, b) {
+        var out = {};
+        Object.keys(a).concat(Object.keys(b)).forEach(function (k) {
+            if (a[k] !== b[k]) out[k] = (a[k] || '').length + ' -> ' + (b[k] || '').length;
+        });
+        return out;
+    }
+    function mergeViews(a, b) {   // per title, the more recently watched
+        var x = parse(a) || {}, y = parse(b) || {};
+        Object.keys(y).forEach(function (h) { if (!x[h] || (y[h].updated || 0) > (x[h].updated || 0)) x[h] = y[h]; });
+        return JSON.stringify(x);
+    }
+    function merge(base, ours, theirs) {
+        var out = {};
+        Object.keys(base).concat(Object.keys(ours), Object.keys(theirs)).forEach(function (k) {
+            var v = ours[k] === base[k] ? theirs[k] : theirs[k] === base[k] ? ours[k] :
+                k.indexOf('file_view') === 0 ? mergeViews(ours[k], theirs[k]) : ours[k];
+            if (v !== undefined) out[k] = v;
+        });
+        return out;
+    }
+    function upload(why) {
+        if (!state.chosen || checking) return;   // a new browser before its first pick holds nobody's data
+        var snap = snapshot(why);
+        if (JSON.stringify(snap.keys) === lastSent) return;
+        if (!rubyStore.remote) return send(snap);
+        if (why === 'closing') return conflict ? log('closed with a conflict, not uploaded') : send(snap, true);
+        checking = true;
+        rubyStore.getAsync(file()).then(function (text) {
+            checking = false;
+            if (text === undefined) return;   // server unreachable: next round
+            var server = parse(text), now = snapshot(why);
+            if (!server || server.t === state.dataT || (server.by && server.by.device === device)) return send(now, why === 'hidden');
+            if (!conflict) log('conflict', { theirs: server.by || null, t: server.t, had: state.dataT || 0, diff: diff(parse(lastSent) || {}, server.keys || {}) });
+            conflict = true;
+            if (window.Lampa && Lampa.Player && Lampa.Player.opened()) return;   // after the player closes
+            var merged = { t: Date.now(), keys: merge(parse(lastSent) || {}, now.keys, server.keys || {}), by: by('merged') };
+            log('merged', { diff: diff(now.keys, merged.keys) });
+            apply(merged);
+            lastSent = JSON.stringify(merged.keys);
+            conflict = false;
+            save();
+            rubyStore.putNow(file(), JSON.stringify(merged));
+            location.replace(location.pathname);
+        });
     }
     lastSent = JSON.stringify(snapshot().keys);
-    setInterval(function () { upload(false); }, UPLOAD_MS);
-    document.addEventListener('visibilitychange', function () { if (document.hidden) upload(true); });
-    window.addEventListener('pagehide', function () { upload(true); });
+    setInterval(function () { upload('changed'); }, UPLOAD_MS);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) upload('hidden'); });
+    window.addEventListener('pagehide', function () { upload('closing'); });
 
     function switchTo(id) {
         if (id === state.current && (state.dataT || !rubyStore.remote)) { state.chosen = true; save(); close(); return; }
-        if (state.chosen) {
-            var snap = snapshot();
+        log('switch', { to: id, conflict: conflict });
+        if (state.chosen && !conflict) {   // (with a conflict pending, this page's copy is stale: leave the server's)
+            var snap = snapshot('switch');
             rubyStore.putNow('profile-' + state.current + '.json', JSON.stringify(snap));
             state.dataT = snap.t;
         }
@@ -313,6 +386,7 @@
         var del = r.querySelector('[data-a=delete]');
         if (del) del.addEventListener('click', function () {
             if (!confirm('Delete the profile "' + p.name + '"? Its list, history, ratings and Trakt login are removed on every device.')) return;
+            log('deleted profile', { id: p.id, name: p.name });
             state.list = state.list.filter(function (x) { return x.id !== p.id; });
             rubyStore.del('profile-' + p.id + '.json');
             saveList();
@@ -325,6 +399,7 @@
         current: function () { return find(state.current); },
         avatar: avatar,
         switchTo: switchTo,
+        log: log,
         picker: function () { picker(false); },
         manage: function () { picker(true); }
     };

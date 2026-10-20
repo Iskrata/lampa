@@ -29,6 +29,7 @@ see "Touch devices and phones".
 | `mylist.js` | `rubyMyList`: + My List on posters and the billboard |
 | `pick.js` | `rubyPick`: from search results, the English releases that will stream, best per resolution |
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
+| `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
 | `hdr.js` | HDR films in browsers that can't show HDR video: the video playlist, subtitles as files |
@@ -56,10 +57,18 @@ nothing leaks between profiles.
 
 **Sharing profiles between devices.** Serve any WebDAV folder at `./sync/` on the same origin, for
 example `rclone serve webdav <dir> --addr 127.0.0.1:8091` behind your web server's `/sync/` route.
-`store.js` detects it with a test write, then keeps `profiles.json` and `profile-<id>.json` (`{t, keys}`)
-there:
+`store.js` detects it with a test write, then keeps `profiles.json` and `profile-<id>.json` (`{t, keys, by}`;
+`by` names the device that wrote it and why) there:
 - **Reads** happen synchronously at page start, before Lampa.
-- **Writes** go up every 15 s when something changed, and when the tab hides. The last write wins.
+- **Writes** go up every 15 s when something changed, and when the tab hides. Each first reads the
+  server's copy. If another device wrote it since this page last read or wrote it, the two are merged
+  key by key against what the page last had: a key only one side changed keeps that change; one both
+  changed keeps this page's, except watch progress (`file_view`), merged per title by its `updated`. The
+  page then reloads so Lampa reads the merge, but never during playback (nothing goes up until the player
+  closes). Before 2026-10-20 the last write simply won: a Safari tab left open put back a title just
+  removed on the server. A page being closed can't wait for the read and uploads blind, unless it
+  already knows of a conflict. Checked 2026-10-20 in tools/dev-server.js: the other device's search and
+  this page's timetable both survived, and the watch progress held all three titles.
 - **Which profile a device is on** stays on the device.
 - **A browser's first contact** merges in its own profiles. Its untouched default "Me" isn't added. A
   renamed first profile whose id `p1` is already taken by a differently named one gets a new id, and its
@@ -70,6 +79,13 @@ there:
   17-byte PUT right after the iPhone's first `.probe`). Fixed 2026-10-20, replayed in tools/dev-server.js.
 
 Without `./sync/`, everything stays in the browser.
+
+**Profile logs.** Each browser keeps its last 100 profile events (`ruby_events`, a device id in
+`ruby_device`): uploads of old local profiles, first contacts and what they merged, newer copies taken,
+conflicts and merges (which keys, sizes before and after), switches, deleted profiles, and what went into
+the watch history or was left out. With `./sync/` they also go up as `events-<device>.json`, and
+`rubyProfiles.log(what, info)` adds one. On the home server a watcher journals them with every profile
+change and alerts when a profile loses data (the deployment's notes).
 
 Per profile: `favorite`, `file_view*` (progress), `online_view`, `torrents_view`, `timetable`,
 `search_history`, `recomends_*`, `activity` and a few more, every `trakt*` key (the Trakt login and all
@@ -339,11 +355,24 @@ lines on time. Not verified: the 30 s reload, and a real iPhone.
   the button never fired. Checked 2026-10-19 in the built-in browser at 375×812: the menu entry now calls
   the picker, and its icon is 2.7em like Lampa's (icons.js's `1em!important` had made it 11 px).
 
+## Watched
+
+`watched.js`: a title joins Lampa's watch history (`Favorite` `history`) only after 10 minutes of real
+watching, or half of anything under 20 minutes. Lampa adds it the moment a file is clicked, before
+anything plays (`Favorite.add('history', movie, 100)` in its torrent list), and that history feeds Lampa's
+"Recommended" row (TMDB recommendations of every history title) and Picked for you. On 2026-10-19, 13
+seconds of a Spider-Man film opened on the wrong profile made a whole profile's recommendations Marvel.
+Now the add waits: seconds count while the video advances by under 3 s per `timeupdate` (seeks don't
+count), and closing the player before the mark leaves the title out. A title already in the history
+moves to the front as before. On Android's own player (outside the page) nothing changes. Checked
+2026-10-20 in tools/dev-server.js with simulated playback: 13 s left out, a seek to 50 min then 10 min
+of playing added at 600 s, a 3-minute clip added at 90 s.
+
 ## Picked for you
 
 Built once per page load, per profile (`personal.js`, `picks()`). The billboard draws 6 of the top 18 at random on each visit,
 higher picks more likely, so it isn't the same title every time. Besides thumbs, what the profile watched
-counts: the 6 most recent titles in Lampa's history (`Favorite` `history`, added each time a torrent plays)
+counts: the 6 most recent titles in Lampa's history (`Favorite` `history`, after 10 minutes of watching: "Watched")
 that aren't rated each count as half a thumbs up, and anything watched is left out of the picks.
 
 1. Seeds: the 10 most recent thumbs up, with a "love" counting as 60 days more recent. Ratings already on
