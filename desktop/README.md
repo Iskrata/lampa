@@ -136,9 +136,8 @@ episode.
      Japanese track with English subtitles on (`&lang=ja`, added in `Lampa.Torserver.stream`).
 4. **Ask** "Play in", a popup in the middle of the screen on computers (Lampa's own side sheet, restyled while
    it's open, so keys and remote still work): one line per resolution with its best release's seeders and size, then "Pick a torrent
-   manually" (Lampa's list). Only resolutions up to the screen's are offered:
-   - **Screen:** physical width of 2560 px or more → up to 4K; otherwise 1080p; 720p under 1280. Phones
-     stop at 1080p.
+   manually" (Lampa's list). Every resolution found is offered, whatever the screen (until 2026-10-20 they
+   stopped at the screen's: 1080p under 2560 physical px and on phones; the user wanted 4K always there):
    - **Connection:** a release whose bitrate × 1.3 is more than this connection carries says "Your
      connection (N Mbit/s) is too slow for this". The speed is timed once per session, while the search
      runs, by downloading 4 MB of random bytes from the remux service (`/gst/speedtest`).

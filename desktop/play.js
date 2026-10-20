@@ -1,7 +1,7 @@
 // Play without choosing a torrent (desktop/README.md, "Play"). Whatever opens a title's torrent list
 // (Play on a title page, the billboard's Play, an episode) instead:
 //   1. searches like Lampa does, keeps English releases that will stream (pick.js)
-//   2. asks only for the resolution: 4K / 1080p / 720p (none above the screen's), each with its best release,
+//   2. asks only for the resolution: 4K / 1080p / 720p (all of them, whatever the screen), each with its best release,
 //      warning when this connection is too slow for it; "Pick a torrent manually" opens Lampa's list
 //   3. opens the chosen release with Lampa's own torrent flow and picks the file itself: the episode asked
 //      for, or the film. Progress, the episode playlist and "next episode" stay Lampa's.
@@ -48,15 +48,6 @@
     // where a series continues (resume.js): the episode last watched, or the next once it's finished
     function nextEpisode(card, done) {
         rubyResume.where(card, function (r) { done({ season: r.season, episode: r.episode }); });
-    }
-
-    // The highest resolution worth offering on this screen, in physical pixels (a Retina MacBook is ~3000 wide:
-    // 4K is sharper there; a 1080p screen gains nothing from it). Phones: 1080p, whatever their pixel count.
-    function deviceCap() {
-        var w = Math.max(screen.width, screen.height) * (window.devicePixelRatio || 1);
-        var phone = Math.min(screen.width, screen.height) < 600 && 'ontouchstart' in window;
-        if (phone) return 1080;
-        return w >= 2560 ? 2160 : w >= 1280 ? 1080 : 720;
     }
 
     function sizeText(bytes) { return (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + ' GB'; }
@@ -117,8 +108,6 @@
         var audio = animeAudio(movie);
         streamLang = audio === 'ja' ? 'ja' : null;
         var list = rubyPick.choices(results, movie, target, audio);
-        var cap = deviceCap(), fit = list.filter(function (c) { return c.res <= cap; });
-        if (fit.length) list = fit;          // nothing at or below the screen's resolution: offer what there is
         if (!list.length && !audio) {   // (anime: still show the sheet, to switch the audio)
             Lampa.Noty.show('No English release with enough seeders: showing all torrents');
             return openList(params);
