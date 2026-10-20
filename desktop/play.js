@@ -106,12 +106,21 @@
     // (else it keeps stopping to buffer); the lowest found when even that is too much. prefer.res (the player's
     // Quality menu) wins when that resolution was found. list: best resolution first (rubyPick.choices).
     var prefer = null, current = null;
+    // AirPlay: a device that once switched to 4K for its TV (player.js) starts in 4K whenever an AirPlay screen
+    // is around (the user's call 2026-10-20). Kept per device, not per profile.
+    var TV4K = 'ruby_tv_4k', airplayNear = false;
+    function tv4k() { try { return localStorage.getItem(TV4K) === '1'; } catch (e) { return false; } }
+    function watchAirplay() {
+        if (!window.WebKitPlaybackTargetAvailabilityEvent) return;
+        var v = document.createElement('video');
+        v.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) { airplayNear = e.availability === 'available'; });
+    }
     function autoPick(list, movie, target, mbps) {
         var want = prefer && prefer.res;
         prefer = null;
         var exact = list.filter(function (c) { return c.res === want; })[0];
         if (exact) return exact;
-        var big = screen.width * (window.devicePixelRatio || 1) >= 2560;
+        var big = screen.width * (window.devicePixelRatio || 1) >= 2560 || (airplayNear && tv4k());
         var fits = function (c) { return !mbps || rubyPick.bitrate(c.best, movie, target) * 1.3 <= mbps; };
         return list.filter(function (c) { return (big || c.res < 2160) && fits(c); })[0] || list[list.length - 1];
     }
@@ -165,6 +174,7 @@
     }
     function switchTo(opt) {
         if (!current) return;
+        if (opt.tv) try { localStorage.setItem(TV4K, '1'); } catch (e) {}
         var movie = current.movie;
         if (opt.audio) Lampa.Storage.set(ANIME_AUDIO, opt.audio);
         prefer = opt.res ? { res: opt.res } : null;
@@ -393,6 +403,7 @@
             if (on()) $(root).find('.view--trailer').remove();
         });
         episodeClicks();
+        watchAirplay();
     }
 
     window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); },

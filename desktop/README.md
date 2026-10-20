@@ -455,6 +455,16 @@ decides.
   fine, but no AirPlay receiver ever requested the stream (`access-public.log`), and a diagnostic beacon on
   the button never fired. Checked 2026-10-19 in the built-in browser at 375×812: the menu entry now calls
   the picker, and its icon is 2.7em like Lampa's (icons.js's `1em!important` had made it 11 px).
+- **4K on the TV** (the user's call 2026-10-20). Play picks for the phone's screen (1080p at most), but an
+  Apple TV fetches the stream itself and may be on a 4K TV. When AirPlay starts
+  (`webkitcurrentplaybacktargetiswirelesschanged`) with a 4K copy found and something smaller playing, a "Play
+  in 4K on your TV" button shows for 30 s. It isn't automatic: switching plays another release in a new video
+  element (Lampa makes one per stream, app.min.js `videobox`), which ends the AirPlay session, so the user taps
+  AirPlay once more. The device then remembers it (`localStorage` `ruby_tv_4k`, not per profile) and Play
+  picks 4K on it whenever an AirPlay screen is around (`play.js`, a detached video element listening for
+  `webkitplaybacktargetavailabilitychanged`). Checked 2026-10-20 in Chromium with the Safari events faked: the
+  button shows over the player. Not checked with a real Apple TV, nor whether a detached video element gets
+  the availability events.
 
 ## Watched
 

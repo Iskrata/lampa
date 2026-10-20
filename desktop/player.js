@@ -8,6 +8,7 @@
 //     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
 //     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
 //   * Quality: the resolutions Play found (play.js), switched where the video is; anime also switches audio.
+//   * AirPlay to a TV with a 4K copy found: a "Play in 4K on your TV" button (play.js remembers it per device).
 //   * AirPlay: a button next to picture-in-picture, in Safari when an AirPlay screen is around
 //     (WebKitPlaybackTargetAvailabilityEvent). It hands the stream to an Apple TV: torrents play as HLS
 //     from the server (server/remux), which the Apple TV fetches itself.
@@ -20,6 +21,10 @@
         '.player-panel__subs .ruby-cc-label{margin-left:.35em;font-size:.85em;font-weight:600;letter-spacing:.02em}',
         '.player-panel__subs{display:flex;align-items:center;width:auto!important;padding:0 .6em}',
         '.player-panel__airplay.hide{display:none!important}',
+        '.ruby-tv4k{position:absolute;top:5em;right:2em;z-index:40;display:flex;flex-direction:column;gap:.2em;padding:.9em 1.3em;border-radius:.6em;' +
+            'background:rgba(20,20,20,.9);color:#fff;cursor:pointer;font-size:1.2em}',
+        '.ruby-tv4k span{font-size:.8em;color:#bbb}',
+        '.ruby-tv4k:hover,.ruby-tv4k.focus{background:#fff;color:#000}.ruby-tv4k:hover span,.ruby-tv4k.focus span{color:#444}',
         '.player-panel__center{display:flex;align-items:center;justify-content:center;gap:.4em}',
         '.player-panel .ruby-seek{position:relative;display:flex;align-items:center;justify-content:center;width:4.2em;height:4.2em;padding:0}',
         '.player-panel .button.ruby-seek svg{width:2.9em!important;height:2.9em!important}',
@@ -244,6 +249,23 @@
         return true;
     }
 
+    // On a TV through AirPlay, with a 4K copy found and something smaller playing: offer it (the user's call
+    // 2026-10-20). Switching makes a new video element, which ends the AirPlay session, so it's a button, not
+    // automatic: the user taps AirPlay once more after it. play.js then remembers it for this device.
+    function tvOffer(video) {
+        var old = document.querySelector('.ruby-tv4k');
+        if (old) old.remove();
+        var q = window.rubyPlay && rubyPlay.qualities(), cur = q && q.list.filter(function (c) { return c.on; })[0];
+        if (!video.webkitCurrentPlaybackTargetIsWireless || !q || !cur || cur.res === 2160) return;
+        if (!q.list.some(function (c) { return c.res === 2160; })) return;
+        var b = document.createElement('div');
+        b.className = 'ruby-tv4k selector';
+        b.innerHTML = '<b>Play in 4K on your TV</b><span>Then tap AirPlay once more</span>';
+        onPress(b, function () { b.remove(); rubyPlay.switchTo({ res: 2160, tv: true }); });
+        (document.querySelector('.player') || document.body).appendChild(b);
+        setTimeout(function () { b.remove(); }, 30000);
+    }
+
     function airplayButton(panel) {
         if (!window.WebKitPlaybackTargetAvailabilityEvent) return;
         var btn = panel.querySelector('.player-panel__airplay'), pip = panel.querySelector('.player-panel__pip');
@@ -264,6 +286,7 @@
             video.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) {
                 btn.classList.toggle('hide', e.availability !== 'available');
             });
+            video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', function () { tvOffer(video); });
         }
     }
 
