@@ -256,7 +256,11 @@ for 90 s: three masters got 499 after 20 s, then ffprobe failed. It was opened f
 Journal's page (tv 65491), and is Vikings S06 (tv 44217). Checked 2026-10-20 with a local copy of this
 service against the home server's Jackett: Vikings S6E1 offered it second at 1080p (35 seeders, three
 listings). After `POST /gst/pick/failed?hash=bbbc0a68…&tmdb=65491&kind=tv&why=dead`, all three listings were
-gone for tv 44217 too. The same failure was recorded on the home server after deploying (below).
+gone for tv 44217 too. On the home server, after deploying 20c24c1 (2026-10-20 16:40 local), the same
+report was made for the real failure, with the same result: `317 found, 19 dead, 3 failed before, 1080p 2,
+720p 2`. The pick took 1.0 s there with a real tracker scrape (19 releases had 0 seeders on the trackers),
+29 ms cached. A `/gst/link` link fetched on the home server answered 302 to the release's magnet (a
+TorrentGalaxyClone listing), and no link in the answer carried the key.
 
 **Measured 2026-10-20** (local copy on the Mac, the home server's Jackett over the tailnet; the Mac blocks
 UDP, so each scrape waited its 1 s timeout): Vikings S6E1 317 results, the pick 1.9 s cold, 1.0 s with the
