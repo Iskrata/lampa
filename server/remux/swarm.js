@@ -134,10 +134,13 @@ async function sample() {
 }
 setInterval(() => { sample().catch(e => console.error('swarm:', e.message)); }, SAMPLE_MS).unref();
 
-// what the heartbeat adds: { dead, stalled } (stalled: ms the torrent has sent nothing while a request waits)
+// what the heartbeat adds: { dead, stalled, waiting } (stalled: ms the torrent has sent nothing while a request
+// waits; waiting: requests waiting on the torrent now). A player that asks for nothing isn't held up by the
+// torrent, however slowly it downloads: TorrServer only downloads what's read (an iPhone that refused to load
+// the video got Desperate Housewives' S1 pack called "too slow" on 2026-10-20, desktop/swarm.js)
 function state(hash) {
     const w = watched.get(hash), now = Date.now();
-    return { dead: isDead(hash), stalled: w && w.n ? Math.min(now - w.since, now - w.grewAt) : 0 };
+    return { dead: isDead(hash), stalled: w && w.n ? Math.min(now - w.since, now - w.grewAt) : 0, waiting: w ? w.n : 0 };
 }
 
 // GET /gst/swarm?hash=<h>,<h>...: { seeders: { hash: n | null }, dead: [{ hash, title, size }] } (also /gst/pick's)

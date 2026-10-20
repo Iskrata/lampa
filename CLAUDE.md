@@ -23,7 +23,7 @@ Read these first:
 - `server/remux/`: Node (no dependencies) + ffmpeg/ffprobe 8.x. Speaks Lampa's TorrServer-GStreamer
   protocol at `<TorrServer>/gst/`.
 - `server/auth/`: Node (no dependencies). The public host's sign-in page, behind Caddy's `forward_auth`.
-- `app.min.js`: upstream, plus eight small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
+- `app.min.js`: upstream, plus nine small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
   `desktop/` module; patch upstream only when a module can't reach the code (closures). Document each
   patch in desktop/README.md ("Changes to Lampa itself").
 
@@ -48,6 +48,9 @@ No test suite. Check changes in a real browser:
 - Pure logic (`desktop/pick.js`) runs in Node with `global.window = {}`.
 - The app: `node tools/dev-server.js` serves this checkout with a TorrServer/Jackett host proxied
   (`LAMPA_UPSTREAM`, see the file) and a throwaway in-memory `/sync/`, so test data never reaches real
-  shared profiles. Drive it with the built-in browser or chrome-devtools.
+  shared profiles. Drive it with the built-in browser or chrome-devtools. `DEV_CONSOLE=1` prints the page's
+  console in its terminal, for the iOS simulator's Safari (no console to reach otherwise).
+- Phones: start playback with real taps (the simulator tool's `tap`), not scripted clicks. Safari plays a
+  `<video>` only after a tap, and a start comes seconds after it (desktop/README.md "A start Safari refused").
 - Safari behaves differently (native HLS, scrolling performance): verify there before calling something
   done. desktop/README.md "Performance" describes the safaridriver method.

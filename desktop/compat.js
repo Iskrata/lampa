@@ -9,7 +9,9 @@
 //    decode, with that reason; HDR (VIDEO-RANGE PQ/HLG) where the browser can't show HDR video plays the video
 //    playlist alone, the master's subtitles handed to Lampa as files (below)
 //  * waiting: a video that doesn't start, or stops, while the torrent keeps up (swarm.js switches releases when
-//    the torrent is the cause) ends in an error that says what is known, instead of the spinner
+//    the torrent is the cause) ends in an error that says what is known, instead of the spinner; one whose
+//    player asks the remux for nothing for IDLE_MS says this device didn't load it
+//  * a tap readies the <video> the player will use, so Safari lets a start that comes seconds later play (below)
 // The decoder asked is the one the player will use (Lampa's HlsStream.shouldUseProgram): hls.js through Media
 // Source Extensions in Chrome, Android and with Settings → Player → HLS "hls.js"; else the browser's own HLS.
 // HDR: Safari skips an HDR10 variant marked VIDEO-RANGE=PQ where it can't show HDR video, and fails at once on
@@ -28,6 +30,9 @@
     // ... or no picture at all this long: a start takes 12-16 s of swarm warm-up (server/remux/README.md),
     // swarm.js gives a slow one 60 s before switching
     var START_MS = 120000;
+    // ... or the player has had its stream this long and asked the remux for nothing (Swarm.waiting 0, no start):
+    // this device isn't loading it (the iPhone of 2026-10-20 never asked for the video playlist)
+    var IDLE_MS = 30000;
     // stopped mid-film this long while not paused (swarm.js switches a slow torrent after 30 s)
     var STALL_MS = 90000;
     var POLL_MS = 3000;
@@ -103,11 +108,13 @@
     var watch = 0, current = null;
     function stopWatching() { clearInterval(watch); watch = 0; current = null; }
 
+    // the stream's file index goes along: only with it does the remux say Startup (how far the file is from
+    // playing), without it START_READY_MS never applied
     function heartbeat(url) {
-        var m = /^(.*\/gst\/[0-9a-f]{40})\//i.exec(url);
+        var m = /^(.*\/gst\/[0-9a-f]{40})\//i.exec(url), index = /[?&]index=(\d+)/.exec(url);
         if (!m) return Promise.resolve(null);
         var late = new Promise(function (r) { setTimeout(function () { r(null); }, 8000); });
-        return Promise.race([fetch(m[1] + '/heartbeat', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; }), late]);
+        return Promise.race([fetch(m[1] + '/heartbeat' + (index ? '?index=' + index[1] : ''), { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }, function () { return null; }), late]);
     }
 
     function attr(line, name) {
@@ -199,7 +206,7 @@
     function begin(data) {
         stopWatching();
         var url = (data && data.url) || '';
-        var c = current = { url: url, at: Date.now(), stuckSince: Date.now(), readySince: 0, played: false, lastTime: -1, codecs: '' };
+        var c = current = { url: url, at: Date.now(), stuckSince: Date.now(), readySince: 0, idleSince: 0, played: false, lastTime: -1, codecs: '' };
         watch = setInterval(function () {
             var v = Lampa.PlayerVideo.video();
             if (!v || current !== c) return;
@@ -212,6 +219,10 @@
             heartbeat(url).then(function (h) {
                 if (current !== c) return;
                 var ready = !!(h && h.Startup && h.Startup.pct >= 100);
+                var idle = !c.played && !ready && !!v.currentSrc && !!(h && h.Swarm) && h.Swarm.waiting === 0;
+                c.idleSince = idle ? c.idleSince || Date.now() : 0;
+                if (idle && Date.now() - c.idleSince >= IDLE_MS)
+                    return fail('The video didn\'t start: this ' + device() + ' didn\'t load it. Press play, or close the player and start it again.');
                 if (!c.played) {
                     if (ready && !c.readySince) c.readySince = Date.now();
                     if (!(ready && Date.now() - c.readySince >= START_READY_MS) && stuck < START_MS) return;
@@ -221,7 +232,23 @@
         }, POLL_MS);
     }
 
-    window.rubyCompat = { caps: caps, playable: playable, decodes: decodes };
+    // Safari lets a <video> load and play only from a tap on it, or once a tap has called its play()/load().
+    // A start's stream comes seconds after the tap (the pick, the torrent, the master), and Lampa makes a new
+    // <video> for each, so Safari refused every start (play(): NotAllowedError). The iOS 27 simulator loaded it
+    // anyway and showed a paused player; an iPhone (iOS 18.7, Desperate Housewives, 2026-10-20) loaded nothing,
+    // not even the video playlist, and the spinner stayed. So each tap and key press readies one <video>
+    // (load() with no source), and Lampa's player takes it (app.min.js create$9, "Lampa Desktop:"): in the
+    // simulator the same start then played by itself, no refusal.
+    var spare = null;
+    // each time: an event that isn't a tap (a swipe's touchend) readies nothing, the next tap must
+    function ready() {
+        if (!spare) spare = document.createElement('video');
+        try { spare.load(); } catch (e) {}
+    }
+    function video() { var v = spare; spare = null; return v; }
+    ['touchend', 'click', 'keydown'].forEach(function (e) { document.addEventListener(e, ready, true); });
+
+    window.rubyCompat = { caps: caps, playable: playable, decodes: decodes, video: video };
 
     var t = setInterval(function () {
         if (!window.Lampa || !Lampa.Player || !Lampa.PlayerVideo || !Lampa.Storage || !Lampa.Platform) return;

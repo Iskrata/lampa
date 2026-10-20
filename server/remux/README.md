@@ -208,7 +208,7 @@ What Lampa's lists show and what the player switches on (desktop/README.md, "Dea
   12–16 s ("Why starting takes longer than a seek"), hence 25 s. Sampled every 5 s. A player retrying within
   5 s keeps the wait going: Lampa gives up on a master after 20 s and asks again (Caddy's 499s in the
   Vikings case below). Before marking, a tracker must answer, so this server's own outage never counts. Dead
-  releases are kept 7 days in `REMUX_SWARM`, for everyone. The heartbeat adds `Swarm: { dead, stalled }`.
+  releases are kept 7 days in `REMUX_SWARM`, for everyone. The heartbeat adds `Swarm: { dead, stalled, waiting }` (`waiting`: requests held for the torrent now; desktop/swarm.js calls a release too slow only while one is, since a player that asks for nothing makes any torrent look slow).
   - The count compared is "changed", not "grew": a torrent closed for being idle and added again starts
     at 0. The first version compared "grew". It called WiKi dead while it downloaded 2.6 → 11.7 MB, because
     its count from an earlier try was higher.

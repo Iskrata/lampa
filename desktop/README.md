@@ -40,7 +40,7 @@ see "Touch devices and phones".
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `swarm.js` | real seeder counts in every torrent list, dead releases left out; switches to the next release of the same resolution when the playing one stops sending or is too slow ("Dead swarms") |
 | `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
-| `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a stuck start ends in an error |
+| `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a tap readies the player's `<video>` (Safari), a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
 
 Torrents play in the browser through `server/remux` (its README): any file becomes HLS on the server, so an
@@ -431,9 +431,16 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
   - **No peers:** no file list 45 s after the release was opened, while Lampa's loading window is still
     up (Lampa itself gives up at 90 s).
   - **Dead:** the heartbeat says `Swarm.dead` and the video hasn't moved for 5 s.
-  - **Too slow:** the video has waited 30 s (60 s before it ever played), not paused, while the torrent
-    downloads slower than the release's bitrate. If the torrent keeps up, the wait is this device's own
-    connection, and another release wouldn't help: no switch.
+  - **Too slow:** the video has waited 30 s (60 s before it ever played, counted from when the player has its
+    stream, not from opening it), not paused, while the remux holds one of its requests waiting on the torrent
+    (heartbeat `Swarm.waiting`) and the torrent downloads slower than the release's bitrate. If the torrent
+    keeps up, the wait is this device's own connection, and another release wouldn't help: no switch. If the
+    player asks for nothing, the torrent can't be the cause (TorrServer downloads only what's read): no
+    switch, compat.js says the device didn't load it. Before 2026-10-20 the clock ran from opening the player
+    and nobody asked whether anything waited: an iPhone that never asked for a segment (Safari refused the
+    start, "Player") got Desperate Housewives' S1 pack and the next release reported too slow, so the server
+    stopped offering both for any title, and a start whose master took 61 s (the same pack, iOS 27 simulator)
+    was switched 3 s into playing.
   - Switching closes the player, then Lampa's file list through its Back (which drops the old torrent),
     then opens the next release with Play's flow (`rubyPlay.play`), which picks the same file.
 - **Checked 2026-10-20** in the built-in browser (Chromium), against the home server:
@@ -493,7 +500,7 @@ Checked 2026-10-15 in the dev server (progress set with `Lampa.Timeline.update`)
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Eight small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Nine small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -527,6 +534,11 @@ Eight small edits, each marked `Lampa Desktop:`; re-apply them when updating fro
   fresh page: `Torserver.connected()`, then a file-list request right after it (as `files()` now does once
   the torrent is added): `gstWork()` false without this edit, true with it. (This edit was described here but
   missing from 2610d5c, which went live without it; added in the next commit.)
+- **Player, `create$9`:** the player's `<video>` is the one the last tap readied (`rubyCompat.video()`,
+  compat.js), else a new one as upstream; the class, poster and `crossorigin` are set on either. Safari lets a
+  `<video>` load and play only from a tap, or once a tap has called its `load()`/`play()`; the stream comes
+  seconds after the tap, and upstream made a new element for each start, so every start was refused
+  (`play()`: NotAllowedError). See "Player", "A start Safari refused".
 
 ## Player
 
@@ -564,6 +576,24 @@ decides.
   in Lampa's error screen with the reason: the device didn't play it (and the codec), 0 peers, barely
   downloading, or this device's connection. `swarm.js` switches releases sooner when the torrent is the
   cause (60 s / 30 s), so this is what's left when it can't.
+  The heartbeat is asked with the stream's file index: only then does the remux report `Startup`; without it
+  (before 2026-10-20) the 20 s rule never applied.
+  A player that has had its stream for 30 s and asked the remux for nothing (no `Swarm.waiting`, no start)
+  ends in "this device didn't load it. Press play, or close the player and start it again."
+- **A start Safari refused.** Safari lets a `<video>` load and play only from a tap on it, or once a tap
+  has called its `load()`/`play()`. A start's stream comes seconds after the tap (the pick, the torrent, the
+  master), and Lampa made a new `<video>` for each start, so every start was refused. Found 2026-10-20 after
+  Desperate Housewives S1E15 didn't start on an iPhone (iOS 18.7, from Continue watching): the access log
+  has its two master reads (compat.js, Lampa's parser), then nothing for 55 s, not even the video playlist,
+  until swarm.js called both releases too slow. The same phone had played three starts that morning (before
+  compat.js, whose master read now comes first). In the iOS 27 simulator (dev server with `DEV_CONSOLE=1`,
+  real taps) every start, from Home and from a title page, logged `play promise error: The request is not
+  allowed`; the simulator loaded the video anyway and showed a paused player (play.js: "still paused,
+  showing the player"), the phone loaded nothing. Now every tap and key press calls `load()` on a spare
+  `<video>` (each time: a swipe's touchend doesn't count as a tap, and an element readied by one stays
+  locked), and the player takes it (`create$9`, "Changes to Lampa itself"). Checked the same day in the
+  simulator: VisionQuest S1E1 from Home's Play, no refusal, playing by itself 15 s after the tap. Not
+  checked: a real iPhone.
 - **A decode error** from the video itself is reworded with the codec: "This browser couldn't play this
   release's HEVC 10-bit video. Pick an H.264 (x264) release."
 - **Verified 2026-10-20:** iOS 27 simulator, a synthetic 2-minute HDR10 x265 MKV with English subtitles

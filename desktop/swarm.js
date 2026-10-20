@@ -119,15 +119,20 @@
         }, 300);
     }
 
-    // While the player is open: the remux's heartbeat says when the torrent is dead; a video that waits while
-    // the torrent downloads slower than the release's bitrate is too slow. A video that waits while the
-    // torrent keeps up is this device's own connection: no switch.
+    // While the player is open: the remux's heartbeat says when the torrent is dead; a video that waits for the
+    // torrent (the remux holds one of its requests: Swarm.waiting) while it downloads slower than the release's
+    // bitrate is too slow. A video that waits while the torrent keeps up is this device's own connection, and
+    // one that asks for nothing is this device not loading it (compat.js says so): no switch. On 2026-10-20 an
+    // iPhone that never asked for a segment (Safari refused to load the video) got Desperate Housewives' S1 pack
+    // and the next release called too slow, so neither was offered again. The clock starts when the player has
+    // its stream: compat.js reads the master first, which can take a minute (a0191e41, 61 s, then switched 3 s
+    // into playing, iOS 27 simulator the same day).
     function begin(data) {
         stop();
         var m = /\/gst\/([0-9a-f]{40})\//i.exec(data && data.url || '');
         if (!current || !m) return;
         current.hash = m[1].toLowerCase();
-        var c = current, played = false, lastTime = -1, stuckSince = Date.now(), seekTo = c.at;
+        var c = current, played = false, lastTime = -1, stuckSince = Date.now(), slowSince = stuckSince, seekTo = c.at;
         // a switch goes on where the last release stopped, whatever Settings → Player → timecode says
         if (seekTo && data.timeline) data.timeline.continued = true;
         var need = rubyPick.bitrate(c.release, c.movie || {}, c.target) || 0;
@@ -139,11 +144,14 @@
             if (moving && v.currentTime > 0.2) played = true;
             lastTime = v.currentTime;
             if (moving || (played && v.paused)) stuckSince = Date.now();
+            if (moving || (played && v.paused) || !v.currentSrc) slowSince = Date.now();
             ask(c.hash + '/heartbeat').then(function (h) {
                 if (!h || current !== c || !watch) return;
-                var stuck = Date.now() - stuckSince, mbps = (h.Torrent && h.Torrent.download_speed || 0) * 8 / 1e6;
+                var stuck = Date.now() - stuckSince, slow = Date.now() - slowSince, mbps = (h.Torrent && h.Torrent.download_speed || 0) * 8 / 1e6;
+                // (a remux older than Swarm.waiting: as before)
+                var held = !h.Swarm || h.Swarm.waiting == null || h.Swarm.waiting > 0;
                 if (h.Swarm && h.Swarm.dead && stuck > POLL_MS) return switchRelease('dead');
-                if (stuck > (played ? SLOW_STUCK_MS : START_STUCK_MS) && need && mbps < need) return switchRelease('slow');
+                if (slow > (played ? SLOW_STUCK_MS : START_STUCK_MS) && held && need && mbps < need) return switchRelease('slow');
             });
         }, POLL_MS);
         console.log('Ruby swarm', 'watching', c.hash, need ? need.toFixed(1) + ' Mbit/s needed' : '');

@@ -14,7 +14,7 @@
 //   GET /gst/remove?hash=<hash>                    -> stop and drop the torrent
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
 //   GET /gst/swarm?hash=<hash>,<hash>...           -> real seeder counts from trackers, and the releases seen dead
-//                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled })
+//                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled, waiting })
 //   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja] -> the releases to play, ranked, per
 //                                                     resolution (pick.js); GET /gst/link?u=: a .torrent link of theirs
 //   GET /gst/jackett/api/v2.0/indexers/<x>/results?... -> Lampa's own Jackett search, the key added here and
