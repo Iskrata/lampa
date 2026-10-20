@@ -171,7 +171,8 @@
     // what the other device did (2026-10-20: an open Safari tab put a title removed on the server straight
     // back). So each upload first reads the server's copy. When another device wrote it, the two are merged
     // key by key against what this page last had: a key only one side changed keeps that change; one both
-    // changed keeps this page's, except watch progress (file_view), merged per title. The page then reloads so
+    // changed keeps this page's, except watch progress (file_view), merged per title, and the lists (favorite),
+    // merged per item (mergeLists). The page then reloads so
     // Lampa reads the merge, but never during playback: until the player closes, nothing is uploaded.
     // A page being closed ('closing') can't wait for the read; it skips the upload once a conflict is known.
     var lastSent = '', checking = false, conflict = false;
@@ -195,11 +196,30 @@
         Object.keys(y).forEach(function (h) { if (!x[h] || (y[h].updated || 0) > (x[h].updated || 0)) x[h] = y[h]; });
         return JSON.stringify(x);
     }
+    // My List, history and the other lists (favorite): the other side's lists, plus what this page added and
+    // minus what it removed since it last synced; cards (the titles' details) from both. Without this a stale
+    // tab that added one title put its whole old list back (2026-10-20 14:50: a ruby.iskrata.dev tab with
+    // yesterday's near-empty copy added Edgerunners and wiped the history and the Trakt login).
+    function mergeLists(b, a, t) {
+        var base = parse(b) || {}, ours = parse(a) || {}, out = parse(t) || {};
+        Object.keys(ours).forEach(function (c) {
+            if (!Array.isArray(ours[c])) return;
+            var was = base[c] || [], list = (out[c] || []).slice();
+            if (c === 'card') {
+                ours.card.forEach(function (x) { if (x && !list.some(function (y) { return y && y.id == x.id; })) list.push(x); });
+            } else {
+                list = list.filter(function (id) { return was.indexOf(id) < 0 || ours[c].indexOf(id) >= 0; });
+                ours[c].slice().reverse().forEach(function (id) { if (was.indexOf(id) < 0 && list.indexOf(id) < 0) list.unshift(id); });
+            }
+            out[c] = list;
+        });
+        return JSON.stringify(out);
+    }
     function merge(base, ours, theirs) {
         var out = {};
         Object.keys(base).concat(Object.keys(ours), Object.keys(theirs)).forEach(function (k) {
             var v = ours[k] === base[k] ? theirs[k] : theirs[k] === base[k] ? ours[k] :
-                k.indexOf('file_view') === 0 ? mergeViews(ours[k], theirs[k]) : ours[k];
+                k.indexOf('file_view') === 0 ? mergeViews(ours[k], theirs[k]) : k === 'favorite' ? mergeLists(base[k], ours[k], theirs[k]) : ours[k];
             if (v !== undefined) out[k] = v;
         });
         return out;

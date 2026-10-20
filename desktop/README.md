@@ -76,7 +76,10 @@ example `rclone serve webdav <dir> --addr 127.0.0.1:8091` behind your web server
 - **Writes** go up every 15 s when something changed, and when the tab hides. Each first reads the
   server's copy. If another device wrote it since this page last read or wrote it, the two are merged
   key by key against what the page last had: a key only one side changed keeps that change; one both
-  changed keeps this page's, except watch progress (`file_view`), merged per title by its `updated`. The
+  changed keeps this page's, except watch progress (`file_view`), merged per title by its `updated`, and
+  the lists (`favorite`: My List, history…), merged per item: the other side's list plus what this page
+  added, minus what it removed (2026-10-20 14:50 a stale tab that added one title had put its whole
+  near-empty list back). The
   page then reloads so Lampa reads the merge, but never during playback (nothing goes up until the player
   closes). Before 2026-10-20 the last write simply won: a Safari tab left open put back a title just
   removed on the server. A page being closed can't wait for the read and uploads blind, unless it
