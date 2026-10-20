@@ -9,6 +9,7 @@ Read these first:
 | [README.md](README.md) | what the fork adds, for users |
 | [desktop/README.md](desktop/README.md) | **how every module works**, measured facts, the patches to `app.min.js` |
 | [server/remux/README.md](server/remux/README.md) | the HLS repackaging service (Node + ffmpeg), with the timing facts it rests on |
+| [server/auth/README.md](server/auth/README.md) | the public host's sign-in page: sessions, bans, the move from basic auth |
 
 `CLAUDE.local.md` (not in git) has the deployment this fork runs on, if present.
 
@@ -21,6 +22,7 @@ Read these first:
   `play.js`/`pick.js` also run on TVs.
 - `server/remux/`: Node (no dependencies) + ffmpeg/ffprobe 8.x. Speaks Lampa's TorrServer-GStreamer
   protocol at `<TorrServer>/gst/`.
+- `server/auth/`: Node (no dependencies). The public host's sign-in page, behind Caddy's `forward_auth`.
 - `app.min.js`: upstream, plus eight small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
   `desktop/` module; patch upstream only when a module can't reach the code (closures). Document each
   patch in desktop/README.md ("Changes to Lampa itself").

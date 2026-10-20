@@ -103,6 +103,9 @@ below).
 - **Playing any file (optional).** Run [`server/remux`](server/remux/README.md) (Node + ffmpeg) next to
   TorrServer, publish it at `<TorrServer URL>/gst/` on your web server, and turn on **Settings →
   TorrServer → transcoding**. Without it, the browser plays only what it can play directly (MP4/H.264).
+- **Sign-in page (optional).** To put the site on the internet behind a password, run
+  [`server/auth`](server/auth/README.md) (Node) and point your web server's `forward_auth` at it. It gives
+  you a sign-in page, 90-day sessions and bans for addresses that guess.
 - **Language.** Lampa starts in Russian. Switch it under Settings → Interface → Language. The desktop
   modules themselves are in English.
 - **Sound.** Browsers allow trailers with sound only after you've clicked something on the page. In Safari,
