@@ -86,7 +86,12 @@ counts.** A browser's copy is only a cache, because Lampa reads its storage sync
   next load.
 - **Reads:** the page takes the server's copy whenever it isn't what the page has. That happens at start,
   when the tab comes back, and after playback (never during it), and the page reloads once so Lampa reads
-  it. A profile switch reads it synchronously before Lampa starts.
+  it, at the same address (a link to a title stays on that title). A profile switch reads it synchronously
+  before Lampa starts. `activity` (the screen Lampa is on) and `trakt_last_card` stay per page: not uploaded,
+  not applied from the server, not compared (`NOT_SYNCED`, `sameKeys`). Until 2026-10-20 they were uploaded,
+  the page closing wrote them last, so the next page found the server's copy "changed" in just those two,
+  reloaded to `/` and dropped the link (`?card=1668&media=tv` opened Home, in the built-in browser and the iOS
+  simulator). Checked the same day: three title links in a row each stayed on the title, with no reload.
 - **Old code can't write.** The service refuses whole-profile writes (409), so a tab still running code
   from before the service changes nothing.
 - **Why:** before 2026-10-20 each browser uploaded its whole copy and the last upload won. That went

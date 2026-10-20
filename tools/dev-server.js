@@ -25,7 +25,11 @@ const CONSOLE_JS = '<script>(function(){var t0=Date.now();function send(k,a){try
     'addEventListener("error",function(e){send("uncaught",[e.message+" "+(e.filename||"")+":"+e.lineno])});' +
     'addEventListener("unhandledrejection",function(e){send("rejection",[String(e.reason)])});' +
     // where the page itself goes (Chromium): a navigation away leaves nothing else to inspect
-    'if(window.navigation)navigation.addEventListener("navigate",function(e){send("navigate",[e.destination.url])})})()</script>';
+    'if(window.navigation)navigation.addEventListener("navigate",function(e){send("navigate",[e.destination.url])});' +
+    // ... also by a link's click() or window.open (a magnet: or a download leaves no navigate event), and leaving
+    'var ck=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){send("link-click",[this.href]);return ck.apply(this,arguments)};' +
+    'var wo=window.open;window.open=function(u){send("window.open",[String(u)]);return wo.apply(window,arguments)};' +
+    'addEventListener("pagehide",function(){send("pagehide",[location.href])})})()</script>';
 const TYPES = { html: 'text/html', js: 'application/javascript', css: 'text/css', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', woff2: 'font/woff2', ico: 'image/x-icon' };
 
 function proxy(req, res, host, port, p, slow) {

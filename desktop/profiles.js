@@ -25,12 +25,21 @@
     OWN = OWN.concat(SETTINGS);
     var SHARED = ['trakt_client_id', 'trakt_client_secret'];
     var MAX = 10;
-    var NOT_SYNCED = /cache|_log$|debug/;   // per profile, but rebuilt on their own: not worth uploading
+    // per profile, but rebuilt on their own: not worth uploading. activity (the screen Lampa is on) and
+    // trakt_last_card are this page's own: uploaded, every start found the server's copy "changed" (the last
+    // page wrote them closing) and reloaded the page to Home, dropping a link to a title (2026-10-20)
+    var NOT_SYNCED = /cache|_log$|debug|^activity$|^trakt_last_card$/;
     var COLORS = ['#2f6fdf', '#e50914', '#1f9d55', '#8b3fd9', '#e8730c', '#0e9aa7'];
 
     function own(key) {
         if (SHARED.indexOf(key) >= 0) return false;
         return OWN.indexOf(key) >= 0 || OWN_PREFIX.some(function (p) { return key.indexOf(p) === 0; });
+    }
+    // the synced keys of two copies equal, in any order (copies uploaded before a key joined NOT_SYNCED have it)
+    function sameKeys(a, b) {
+        var ka = Object.keys(a).filter(function (k) { return !NOT_SYNCED.test(k); }).sort();
+        var kb = Object.keys(b).filter(function (k) { return !NOT_SYNCED.test(k); }).sort();
+        return ka.join('\n') === kb.join('\n') && ka.every(function (k) { return a[k] === b[k]; });
     }
     function parse(text) { try { return text ? JSON.parse(text) : null; } catch (e) { return null; } }
     function load() {
@@ -83,7 +92,8 @@
         try {
             liveKeys().forEach(function (k) { ls.removeItem(k); });
             var keys = (blob && blob.keys) || {};
-            Object.keys(keys).forEach(function (k) { ls.setItem(k, keys[k]); });
+            // a copy uploaded before a key joined NOT_SYNCED has another page's (its activity: that page's screen)
+            Object.keys(keys).forEach(function (k) { if (!NOT_SYNCED.test(k)) ls.setItem(k, keys[k]); });
         } finally { quiet--; }
         state.dataV = (blob && blob.v) || 0;
     }
@@ -237,12 +247,13 @@
             }
             if ((s.v || 0) === state.dataV) return;
             var mine = snapshot().keys;
-            if (JSON.stringify(s.keys) === JSON.stringify(mine)) { state.dataV = s.v || 0; return save(); }
+            if (sameKeys(s.keys || {}, mine)) { state.dataV = s.v || 0; return save(); }
             if (dirty() || playing()) { needRefresh = true; return; }
             log('took the server copy', { why: why, v: s.v || 0, had: state.dataV, by: s.by || null, diff: diff(mine, s.keys || {}) });
             apply(s);
             save();
-            location.replace(location.pathname);
+            // the same profile: the page it was on still applies (a link to a title stays one)
+            location.replace(location.pathname + location.search + location.hash);
         });
     }
 
