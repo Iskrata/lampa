@@ -486,7 +486,10 @@ Eight small edits, each marked `Lampa Desktop:`; re-apply them when updating fro
   (`Torserver.files` clears the shared request object) and times out after 2 s.
 - **Torrent, `gstCheck()`:** the remux check (`/gst/echo`) goes on its own request object. On the shared one
   the file list, now asked for at once, could abort it, and an aborted check sets `gstWork()` false: the
-  player would get TorrServer's plain stream instead of the remux.
+  player would get TorrServer's plain stream instead of the remux. Checked 2026-10-20 in the dev server, in a
+  fresh page: `Torserver.connected()`, then a file-list request right after it (as `files()` now does once
+  the torrent is added): `gstWork()` false without this edit, true with it. (This edit was described here but
+  missing from 2610d5c, which went live without it; added in the next commit.)
 
 ## Player
 
