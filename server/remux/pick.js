@@ -123,7 +123,7 @@ async function link(u, res) {
 // Lampa's own Jackett search (its parser, the manual torrent list) comes here instead of to Jackett (Caddy routes
 // /jackett/api/ here): the key is added here and taken out of the answer, where every download link carries
 // it, so browsers never hold it (asked for 2026-10-20: it was in every browser's settings and in search URLs).
-async function search(path, query, res) {
+async function lampaSearch(path, query, res) {
     const key = jackettKey();
     if (!key || !/^\/api\/v2\.0\/indexers\/[\w:.-]+\/results$/.test(path)) { res.writeHead(404); return res.end(); }
     const q = new URLSearchParams(query);
@@ -137,4 +137,4 @@ async function search(path, query, res) {
     res.end(JSON.stringify(j).split(key).join('hidden'));
 }
 
-module.exports = { pick, link, search, rules };
+module.exports = { pick, link, lampaSearch, rules };

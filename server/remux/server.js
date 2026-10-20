@@ -18,7 +18,7 @@
 //   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja] -> the releases to play, ranked, per
 //                                                     resolution (pick.js); GET /gst/link?u=: a .torrent link of theirs
 //   GET /gst/jackett/api/v2.0/indexers/<x>/results?... -> Lampa's own Jackett search, the key added here and
-//                                                     taken out of the answer (pick.js search)
+//                                                     taken out of the answer (pick.js lampaSearch)
 //   POST /gst/pick/failed?hash=&tmdb=&kind=&why=   -> a player gave up on a release: not offered again
 //                                                     (releases.js)
 //   POST /gst/download, GET /gst/downloads, GET /gst/download/<id>/<name>.mp4, POST /gst/download/<id>/cancel
@@ -159,7 +159,7 @@ async function handle(req, res) {
     if (hash === 'pick') return picks.pick(url.searchParams).then(p => send(res, 200, JSON.stringify(p), 'application/json'),
         e => { console.error('pick:', e.message); send(res, e.status || 500, JSON.stringify({ error: e.message }), 'application/json'); });
     if (hash === 'link') return picks.link(url.searchParams.get('u'), res);
-    if (hash === 'jackett') return picks.search('/' + parts.slice(1).join('/'), url.search.slice(1), res)
+    if (hash === 'jackett') return picks.lampaSearch('/' + parts.slice(1).join('/'), url.search.slice(1), res)
         .catch(e => { console.error('jackett search:', e.message); if (!res.headersSent) send(res, 502, e.message); else res.end(); });
     if (hash === 'echo') return send(res, 200, '{"remux":true}', 'application/json');   // Lampa parses it as JSON
     if (hash === 'remove') {
