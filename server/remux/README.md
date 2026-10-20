@@ -23,11 +23,15 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/<hash>/<file>.<lang>/video.m3u8`, `init.mp4`, `seg<n>.m4s` | the stream |
 | `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
-| `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer |
+| `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
+| `POST /gst/download` `{hash, index, lang, tmdb, kind, season, episode, name}` | start a download (below); the job |
+| `GET /gst/downloads` | every job: `{id, state, progress, size, subs, url, …}`, state `queued` / `fetching` / `subtitles` / `finishing` / `ready` / `failed` |
+| `GET /gst/download/<id>/<name>.mp4` | the finished file, with byte ranges, as an attachment named `<name>.mp4` |
+| `POST /gst/download/<id>/cancel` | stop it, or delete the file |
 
 ## Running it
 
-Node 18+ (no dependencies), plus ffmpeg and ffprobe 8.x. Environment variables:
+Node 18.15+ (no dependencies; `fs.statfs`), plus ffmpeg and ffprobe 8.x. Environment variables:
 
 | variable | default |
 |---|---|
@@ -36,6 +40,7 @@ Node 18+ (no dependencies), plus ffmpeg and ffprobe 8.x. Environment variables:
 | `FFMPEG` / `FFPROBE` | `ffmpeg` / `ffprobe` on the PATH |
 | `REMUX_CACHE` | `<tmp>/lampa-remux`, emptied at start |
 | `REMUX_SUBS` | `<tmp>/lampa-remux-subs`: subtitles downloaded from OpenSubtitles, kept across restarts |
+| `REMUX_DOWNLOADS` | `<tmp>/lampa-remux-downloads`: downloads (below), kept across restarts |
 | `OPENSUBTITLES_ENV` | `../opensubtitles.env` (next to the app folder): private `KEY=value` lines `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USER`, `OPENSUBTITLES_PASSWORD` (the same names work as environment variables). Without a key, no OpenSubtitles |
 | `REMUX_DEBUG` | set it to log every fragment's time and segment |
 
@@ -73,6 +78,8 @@ The waiting segment 27 was handed on. Caddy answered the player's retry with it 
 | `mp4.js` | splits ffmpeg's fragmented MP4 into the init segment and fragments, and fixes their times |
 | `server.js` | the HTTP side |
 | `startup.js` | how far a file is from playing, for the loading card (below, "Loading progress") |
+| `download.js` | a file made into one MP4 to keep (below, "Downloads") |
+| `torrserver.js` | what the service asks TorrServer besides the stream (a torrent's files, drop) |
 
 **Segments are cut at keyframes, planned before anything plays.** A seekable playlist has to list every
 segment's length up front. `mkv.js` reads the Cues, about 700 KB at the end of a 20 GB file, giving every
@@ -162,6 +169,51 @@ against the home server's TorrServer, in the built-in browser: "Connecting to th
 then 0 % → 4 % → 60 % → 99 % within 3 s, and 100 % once segment 0 was written. In that test the time
 after 99 % was the Mac reading from the home server over the tailnet (~1 MB/s). On the home server this service
 reads TorrServer over localhost.
+
+## Downloads (`download.js`)
+
+For watching offline, mostly on iPhones (the user's call, 2026-10-20): one torrent file becomes one MP4 that
+the phone keeps and plays without Lampa, in Files or the TV app. Chosen over two alternatives:
+- **The raw torrent file:** no work, but an MKV with E-AC3 doesn't play on an iPhone.
+- **Offline inside Lampa** (a service worker storing the HLS segments): Safari's storage limits and its
+  eviction of a site's data after 7 days unused, for multi-GB films.
+
+**A job, three steps:**
+1. **Pass 1:** one ffmpeg run reads the whole file from TorrServer (`media.ffmpegArgs` with `file:`). Video
+   copied (`hvc1` tag for HEVC), audio as for streaming, the file's own subtitles as WebVTT.
+2. **Subtitles:** a `Session` reads those (one run from 0, `delay` 0: pass 1's output is already on its own
+   timing). It makes the tracks exactly as for the player: OpenSubtitles searched, fitted, TV captions
+   replaced. Tracks with no cue that fits this video are left out.
+3. **Pass 2:** a second ffmpeg run on local disk puts them in as `mov_text`, tagged `eng`/`bul`/`rus`, and
+   moves the index to the front (`+faststart`). English is on by default when the audio isn't English, as
+   in the player.
+
+**State and limits:**
+- **On disk:** each job is `<REMUX_DOWNLOADS>/<id>.json` plus `<id>/film.mp4`, so finished files survive a
+  restart. An unfinished job starts over after one: a deploy that restarts the service costs it the time
+  so far.
+- **Two at a time:** each holds a torrent (up to 1 GB of TorrServer's RAM) and shares the download speed
+  with people watching. Others wait (`queued`).
+- **Disk:** refused when the free space minus what unfinished jobs will still write (2.1 × their file
+  size, pass 1 plus pass 2's copy) would fall under 20 GB.
+- **Expiry:** a ready file is deleted after 3 days, a failed job after 1. A job whose ffmpeg reads nothing
+  for 10 minutes fails: "The torrent stopped downloading".
+- **Sharing:** jobs are shared by everyone using the server; the same file and audio language is one job.
+- **The torrent:** Lampa drops the torrent when its file list or player closes (`/gst/remove`). The service
+  keeps it while a download reads it, and drops it when the job ends unless a player is using it.
+
+**Measured** (2026-10-20):
+- **On ruby** (i7-4790, SSD), Big Buck Bunny 1080p H.264, 276 MB, already in TorrServer: pass 1 took
+  17.5 s (about 16 MB/s), pass 2 0.5 s. So pass 1 is bound by how fast the torrent downloads (a 1080p
+  WEB-DL of 7.7 GB at the 1.7–4.8 MB/s seen for a 4K release would take 30–75 min). Pass 2 is a local
+  copy: about 500 MB/s on that SSD.
+- **On the Mac, through this service,** a 30 s 10-bit HEVC HDR10 MKV with E-AC3 5.1 and English + Bulgarian
+  SRT: the MP4 has `hvc1` HEVC with PQ kept, AAC 5.1, two `mov_text` tracks with the cues on their original
+  times. AVFoundation (macOS) reports it playable, with English and Bulgarian as subtitle options. It also
+  lists a "Forced" variant of each, which Apple's players hide from the menu.
+- **In the iOS 27 simulator:** Safari asked "Do you want to download …?" and saved it as `Test Film
+  (2026).mp4` in Files → Downloads, and it played from there. The subtitle menu couldn't be read: the Mac
+  was overloaded (load 140) and the simulator too slow. Check it on a real iPhone.
 
 ## Subtitles from OpenSubtitles (`opensubs.js`)
 

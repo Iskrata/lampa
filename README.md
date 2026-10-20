@@ -51,6 +51,11 @@ to TorrServer, every torrent plays as HLS: 4K HEVC MKVs with Atmos audio play in
 with seeking, English subtitles (on by default, with a labelled Subtitles button), back/forward buttons and arrow-key seeking and AirPlay to an Apple TV. The video isn't
 re-encoded, so it's light on the server.
 
+**Download for offline.** A Download button on title pages: the server makes the film or episode into
+one MP4 (video as is, AAC audio, English/Bulgarian/Russian subtitles inside), and the button shows how far
+it is. Then "Save to this device": on an iPhone it goes to Files and plays there without a connection.
+Needs [`server/remux`](server/remux/README.md).
+
 **See who's watching.** The top bar shows other profiles that are watching right now, and what.
 
 **And:**

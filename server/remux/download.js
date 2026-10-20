@@ -38,7 +38,7 @@ function save(j) {
 
 function view(j) {
     return { id: j.id, hash: j.hash, index: j.index, tmdb: j.tmdb, kind: j.kind, season: j.season, episode: j.episode,
-        name: j.name, state: j.state, progress: j.progress, size: j.size, error: j.error,
+        name: j.name, state: j.state, progress: j.progress, size: j.size, subs: j.subs || [], error: j.error,
         expires: j.ready ? j.ready + KEEP_MS : null,
         url: j.state === 'ready' ? `download/${j.id}/${encodeURIComponent(fileName(j))}` : null };
 }
@@ -140,7 +140,7 @@ async function run(j) {
     await ffmpeg(j, a);
     for (const f of fs.readdirSync(folder(j))) if (f !== 'film.mp4') fs.rmSync(path.join(folder(j), f), { force: true });
 
-    Object.assign(j, { state: 'ready', progress: 1, size: fs.statSync(film(j)).size, ready: Date.now() });
+    Object.assign(j, { state: 'ready', progress: 1, size: fs.statSync(film(j)).size, subs: tracks.map(t => t.lang), ready: Date.now() });
     save(j);
     console.log(`download ${j.id}: ready, ${(j.size / 1e9).toFixed(2)} GB, subtitles ${tracks.map(t => t.lang).join(' ') || 'none'}`);
     done(j);

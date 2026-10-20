@@ -31,6 +31,7 @@ see "Touch devices and phones".
 | `resume.js` | `rubyResume`: where you are in a series; "Continue S2 E5" on its Play button and status line |
 | `watched.js` | a title joins the watch history only after 10 minutes of watching ("Watched" below) |
 | `play.js` | Play without a torrent list: asks only for the resolution, picks the release and the file; episodes play on click |
+| `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `player.js` | the player's labelled Subtitles button and an AirPlay button |
 | `hdr.js` | HDR films in browsers that can't show HDR video: the video playlist, subtitles as files |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
@@ -219,6 +220,48 @@ Still reported 2026-10-18. Likely cause: Continue's jump to the saved time pause
 later `play()`; Player → Seeking now jumps without pausing.
 
 Settings → Interface → "Pick torrents for me" turns all of this off.
+
+## Download
+
+For watching offline, mostly on iPhones (the user's call, 2026-10-20). Title pages get a **Download** button
+after Play, on computers and phones where the remux service is on (`torrserver_gts`), not on TVs. The
+server makes the file (`server/remux/README.md`, "Downloads"): one MP4 with the video as is, AAC audio and
+English/Bulgarian/Russian subtitles inside. On an iPhone, Safari saves it to Files → Downloads, and it plays
+there or in the TV app without Lampa or a connection.
+
+1. **Download** runs Play's own flow in download mode (`rubyPlay.download`, `play.js`):
+   - the same search and ranking, under "Download in";
+   - no "too slow" warnings (nothing is streamed) and no "Pick a torrent manually": Lampa's list plays
+     what's picked in it;
+   - Lampa's torrent flow then opens the release. When its file list comes, the file (the film, or the
+     episode) goes to the server as a job, and the list is closed with its own Back.
+2. **The button** shows where the job is: "Preparing 34%", "Adding subtitles", "Waiting for another
+   download to finish", then "Ready to save". It asks the server every 5 s while a job is running, also
+   after leaving the page and coming back.
+3. **On a film,** the button then offers "Save to this device" (size and the subtitle languages inside) and
+   "Delete from the server". Save is a link with `download`: the browser's own download.
+4. **On a series,** it lists the episodes downloaded or being made, plus "Download S1 E4": the episode after
+   the last one downloaded, by TMDB's season sizes. With none yet, it's the episode where you are
+   (`resume.js`).
+
+Files stay on the server for 3 days and are shared: a film someone else downloaded is ready at once. The
+name on the device is "Title (Year).mp4" or "Show S01E03.mp4".
+
+Checked 2026-10-20 in the built-in browser, through `tools/dev-server.js` with a local remux and a stand-in
+TorrServer (the tailnet to ruby was down; Lampa's search was stubbed with one public-domain release, so
+Jackett's key stays out of test browsers):
+- **The flow:** Download → "Download in" → Lampa's torrent flow → the file sent to the server → Lampa's
+  window closed. After it, focus is back on the title page, with no loading card and no hidden-list class
+  left.
+- **The button:** "Preparing 0%" → "Ready to save".
+- **The menu:** "Save to this device · 18 MB · subtitles: English, Bulgarian". Save makes a link to
+  `/ts/gst/download/<id>/Big%20Buck%20Bunny%20(2008).mp4`, which answers 200 `video/mp4`, as an attachment.
+  Delete set the button back to "Download".
+- **Phone width** (375 px): the button sits in the button row with its label.
+
+Also fixed on the way: after Lampa's "Failed to connect to TorrServer" window, Play's loading card stayed
+up until Cancel. That window closes without `list_close`, so `pending` was never cleared. The card now
+goes once no Lampa window has been open for 2 s.
 
 ## Where you are in a series
 

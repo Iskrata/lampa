@@ -50,7 +50,8 @@
 
     function sizeText(bytes) { return (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + ' GB'; }
 
-    function start(movie, target, params) {
+    // download: the same choice, then the file is made into an MP4 to keep instead of played (download.js)
+    function start(movie, target, params, download) {
         var series = !!(movie.original_name || movie.name && !movie.title);
         var back = Lampa.Controller.enabled().name, stopped = false;
         params = params || searchParams(movie);
@@ -68,7 +69,7 @@
                 timed.then(function (mbps) {
                     if (stopped) return;
                     Lampa.Loading.stop();
-                    choose(movie, target, params, data.Results, back, mbps);
+                    choose(movie, target, params, data.Results, back, mbps, download);
                 });
             }, function () {
                 if (stopped) return;
@@ -104,11 +105,13 @@
     var ANIME_AUDIO = 'ruby_anime_audio', streamLang = null;
     function animeAudio(movie) { return rubyPick.anime(movie) ? (Lampa.Storage.get(ANIME_AUDIO, 'en') === 'ja' ? 'ja' : 'en') : null; }
 
-    function choose(movie, target, params, results, back, mbps) {
+    function choose(movie, target, params, results, back, mbps, download) {
         rubyFacts.stop();     // not over the question; back once a release is chosen
         var audio = animeAudio(movie);
         streamLang = audio === 'ja' ? 'ja' : null;
         var list = rubyPick.choices(results, movie, target, audio);
+        // Lampa's own list plays what's picked in it, so a download has no manual pick
+        if (!list.length && download) return Lampa.Noty.show('No English release with enough seeders to download');
         if (!list.length && !audio) {   // (anime: still show the sheet, to switch the audio)
             Lampa.Noty.show('No English release with enough seeders: showing all torrents');
             return openList(params);
@@ -118,7 +121,8 @@
             var kind = rubyPick.describe(c.best.Title || '');
             var line = (kind ? kind + ' · ' : '') + sizeText(c.best.Size) + ' · ' + c.best.Seeders + ' seeders';
             // the release's bitrate, with headroom, against this connection: it would keep stopping to buffer
-            var need = rubyPick.bitrate(c.best, movie, target) * 1.3, slow = mbps && mbps < need;
+            // (a download isn't watched over this connection)
+            var need = rubyPick.bitrate(c.best, movie, target) * 1.3, slow = !download && mbps && mbps < need;
             if (slow) line = 'Your connection (' + Math.round(mbps) + ' Mbit/s) is too slow for this · ' + line;
             return { title: c.label, subtitle: line, choice: c, slow: slow };
         });
@@ -128,19 +132,19 @@
         if (pre) pre.selected = true;
         if (audio) items.push({ title: audio === 'ja' ? 'Audio: Japanese · English subtitles' : 'Audio: English dub',
             subtitle: 'Switch to ' + (audio === 'ja' ? 'the English dub' : 'Japanese with English subtitles'), audio: true });
-        items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
+        if (!download) items.push({ title: 'Pick a torrent manually', subtitle: 'All releases, sorted and filtered your way', all: true });
         centred();
         Lampa.Select.show({
-            title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + 'Play in',
+            title: (target ? 'S' + target.season + ' E' + target.episode + ' · ' : '') + (download ? 'Download in' : 'Play in'),
             items: items,
             onSelect: function (a) {
                 if (a.audio) {
                     Lampa.Storage.set(ANIME_AUDIO, audio === 'ja' ? 'en' : 'ja');
-                    return setTimeout(function () { choose(movie, target, params, results, back, mbps); }, 50);
+                    return setTimeout(function () { choose(movie, target, params, results, back, mbps, download); }, 50);
                 }
                 if (a.all) return openList(params);
                 Lampa.Storage.set(LAST_RES, a.choice.res);
-                play(movie, target, a.choice.best);
+                play(movie, target, a.choice.best, download);
             },
             onBack: function () { Lampa.Controller.toggle(back); }
         });
@@ -159,14 +163,16 @@
         watch.observe(body, { attributes: true, attributeFilter: ['class'] });
     }
 
-    function play(movie, target, release) {
-        pending = { target: target, files: [], at: Date.now() };
+    function play(movie, target, release, download) {
+        pending = { target: target, files: [], at: Date.now(), movie: movie, download: download };
         rubyFacts.start('Connecting to the torrent…');
-        // backed out of Lampa's torrent dialog before anything played: take the facts away
+        // backed out of Lampa's torrent dialog before anything played: take the facts away. Lampa's window is
+        // open from Torrent.start until the player opens; its connection-error window closes without the
+        // list_close that clears `pending`, so the window alone tells (the card stayed up after one, 2026-10-20)
         var idle = 0, check = setInterval(function () {
             if (Lampa.Player.opened()) return clearInterval(check);
-            idle = document.querySelector('.modal') || pending ? 0 : idle + 1;
-            if (idle >= 3) { clearInterval(check); rubyFacts.stop(); }
+            idle = document.querySelector('.modal') ? 0 : idle + 1;
+            if (idle >= 3) { clearInterval(check); rubyFacts.stop(); done(); }
         }, 700);
         release.poster = movie.img || release.poster;
         release.title = release.title || release.Title;   // what TorrServer lists it as (the parser's field is Title)
@@ -190,7 +196,13 @@
         var videos = pending.files.filter(function (f) { return VIDEO.test(f.element.path || ''); });
         if (target) found = videos.filter(function (f) { return +f.element.season === target.season && +f.element.episode === target.episode; })[0];
         else found = videos.sort(function (a, b) { return (b.element.length || 0) - (a.element.length || 0); })[0];
-        if (found) {
+        if (found && pending.download) {
+            rubyDownload.begin(found.element, pending.movie, target);
+            rubyFacts.stop();
+            // out through the list's own Back (it closes Lampa's torrent screen; the remux keeps the torrent)
+            Lampa.Controller.back();
+            setTimeout(done, 0);
+        } else if (found) {
             found.item.trigger('hover:enter');
             // by now the player (or Lampa's preload screen) covers the list; if playback never starts
             // (preload cancelled), the list must not stay invisible
@@ -356,7 +368,7 @@
         episodeClicks();
     }
 
-    window.rubyPlay = { on: on };
+    window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); } };
 
     var timer = setInterval(function () {
         if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;
