@@ -437,6 +437,8 @@
     rubyPlay.release = function (movie, target, release) { play(movie, target, release); };
     // ranked(movie): { <res>: [releases, best first] } Play chose from for this title, else null (swarm.js
     // switches to the next of these)
+    // target(): the { season, episode } Play is opening (swarm.js: a pack's bitrate is per episode)
+    rubyPlay.target = function () { return pending && pending.target || null; };
     rubyPlay.ranked = function (movie) { return current && movie && current.movie.id === movie.id ? current.groups : null; };
 
     var timer = setInterval(function () {

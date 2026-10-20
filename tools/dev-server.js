@@ -23,7 +23,9 @@ const CONSOLE_JS = '<script>(function(){var t0=Date.now();function send(k,a){try
     'navigator.sendBeacon("./__console",((Date.now()-t0)/1000).toFixed(1)+" "+k+" "+s.slice(0,2000))}catch(e){}}' +
     '["log","warn","error"].forEach(function(k){var o=console[k];console[k]=function(){send(k,arguments);return o.apply(console,arguments)}});' +
     'addEventListener("error",function(e){send("uncaught",[e.message+" "+(e.filename||"")+":"+e.lineno])});' +
-    'addEventListener("unhandledrejection",function(e){send("rejection",[String(e.reason)])})})()</script>';
+    'addEventListener("unhandledrejection",function(e){send("rejection",[String(e.reason)])});' +
+    // where the page itself goes (Chromium): a navigation away leaves nothing else to inspect
+    'if(window.navigation)navigation.addEventListener("navigate",function(e){send("navigate",[e.destination.url])})})()</script>';
 const TYPES = { html: 'text/html', js: 'application/javascript', css: 'text/css', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', woff2: 'font/woff2', ico: 'image/x-icon' };
 
 function proxy(req, res, host, port, p, slow) {

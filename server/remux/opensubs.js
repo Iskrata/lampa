@@ -71,6 +71,19 @@ function episodeOf(name) {
     return m ? { season: +m[1], episode: +m[2] } : null;
 }
 
+// Does a subtitle say it's for another episode than ep? Its own data (feature_details), else its release name,
+// also as "124 - <title>" (S1E24, the way some packs number files). A file-hash match doesn't overrule it: for
+// Friends S01E01 (1a6558e5, the S01-S10 Silence pack) the hash match was "124 - The One Where Rachel Finds Out",
+// S1E24's lines on S1E1, 2026-10-20.
+function otherEpisode(a, ep) {
+    if (!ep) return false;
+    const d = a.feature_details || {};
+    if (d.episode_number != null && d.season_number != null && (+d.episode_number !== ep.episode || +d.season_number !== ep.season)) return true;
+    const rel = String(a.release || ''), n = !/^\s*(19|20)\d\d\b/.test(rel) && /^\s*([1-9]\d?)(\d{2}) - /.exec(rel);
+    const e = episodeOf(rel) || (n ? { season: +n[1], episode: +n[2] } : null);
+    return !!e && (e.episode !== ep.episode || e.season !== ep.season);
+}
+
 // a release's source (WEB, DVD, Blu-ray, TV) and its other tags. Only these count when comparing names: the
 // show's and the episode's words are in most names (with them, S1E12's DVD rips "...Every Day a Little
 // Death.DVDRip" beat the WEB rip of the same broadcast, 2026-10-18).
@@ -142,14 +155,18 @@ async function search(f, lang) {
     const ep = f.kind === 'tv' ? episodeOf(f.name) : null;
     if (f.kind === 'tv' && !ep) return null;
     const cacheFile = path.join(cfg.subs, `pick-${f.hash}-${f.index}-${lang}.json`);
-    try { return JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch (e) { /* not picked yet */ }
+    try {
+        const kept = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        if (!otherEpisode(kept, ep)) return kept;
+        console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} kept pick "${kept.release}" is another episode: picking again`);
+    } catch (e) { /* not picked yet */ }
     const hash = await fileHash(f);
     // the API answers only with its parameters in alphabetical order (else a redirect)
     const q = Object.assign({ languages: lang }, hash ? { moviehash: hash } : {},
         f.kind === 'tv' ? { parent_tmdb_id: f.tmdb, season_number: ep.season, episode_number: ep.episode } : { tmdb_id: f.tmdb });
     const qs = Object.keys(q).sort().map(k => `${k}=${encodeURIComponent(q[k])}`).join('&');
     const found = await request(API, '/subtitles?' + qs, {});
-    const pick = best(found.data || [], f.name);
+    const pick = best((found.data || []).filter(x => !otherEpisode(x.attributes || {}, ep)), f.name);
     if (!pick) console.log(`opensubtitles: nothing for ${qs}`);
     const a = pick && pick.attributes;
     const out = pick ? { id: a.files[0].file_id, release: a.release, match: !!a.moviehash_match } : null;

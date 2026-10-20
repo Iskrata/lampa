@@ -453,7 +453,9 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     and nobody asked whether anything waited: an iPhone that never asked for a segment (Safari refused the
     start, "Player") got Desperate Housewives' S1 pack and the next release reported too slow, so the server
     stopped offering both for any title, and a start whose master took 61 s (the same pack, iOS 27 simulator)
-    was switched 3 s into playing.
+    was switched 3 s into playing. The bitrate needed is per episode (`rubyPick.bitrate` with Play's
+    `rubyPlay.target()`): before 2026-10-20 a series started by Play went in without its episode, and a pack
+    was worked out as a film (Friends S01-S10, 182 GB over 110 min: "220.6 Mbit/s needed" instead of 2.2).
   - Switching closes the player, then Lampa's file list through its Back (which drops the old torrent),
     then opens the next release with Play's flow (`rubyPlay.play`), which picks the same file.
 - **Checked 2026-10-20** in the built-in browser (Chromium), against the home server:

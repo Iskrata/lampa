@@ -66,7 +66,10 @@
         Lampa.Torrent.start = function (release, movie) {
             var c = carry;
             carry = null;
-            var cur = current = { release: release, movie: movie, target: c ? c.target : null, hash: '', at: c ? c.at : 0,
+            // the episode: a switch carries it, else Play's (without it a series pack's bitrate was worked out over
+            // a film's 110 min: Friends S01-S10, 182 GB, "220.6 Mbit/s needed" instead of 2.2, 2026-10-20)
+            var target = c ? c.target : window.rubyPlay && rubyPlay.target ? rubyPlay.target() : null;
+            var cur = current = { release: release, movie: movie, target: target, hash: '', at: c ? c.at : 0,
                 tried: (c ? c.tried : []).concat(marks(release)), switches: c ? c.switches : 0 };
             clearTimeout(listTimer);
             // still in Lampa's "loading torrent" window (not backed out of, no list, no player)

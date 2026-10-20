@@ -365,6 +365,11 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   release tags (service, codec, resolution, group), not for the hearing impaired, most downloaded. Only
   tags count: the show's and episode's words are in most names, and with them S1E12's DVD rips beat the
   WEB rip.
+  A subtitle whose own data (`feature_details`) or release name (`S01E24`, `1x24`, "124 - <title>") names
+  another episode is left out, hash match or not, and a kept pick like that is picked again (`otherEpisode`).
+  Found 2026-10-20: Friends S01E01 in the S01-S10 Silence pack (1a6558e5, file 68) got the hash match "124 -
+  The One Where Rachel Finds Out", S1E24's lines ("Here's little Ben nodding off"); the file has no captions
+  of its own, so nothing lined them up. Its Bulgarian (S01E01, hash match) and Russian picks were right.
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
