@@ -719,6 +719,22 @@ decides.
 - **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: the profile's language as
   above), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
   in the built-in browser: the subtitle layer went away and came back with the downloaded text.
+- **Full screen on iPhones.** Safari on an iPhone has no `Element.requestFullscreen`, only a `<video>`'s
+  `webkitEnterFullscreen` (iOS's own player). Lampa shows its full-screen button only where
+  `Utils.canFullScreen()` is true (app.min.js `show$9`, `toggleClass('hide', … !canFullScreen())`), so iPhones had
+  none, and in landscape Safari's address and tab bars stay, because the page doesn't scroll (a friend,
+  2026-10-21: "I can't get this top bar away"). `player.js` wraps `Utils.canFullScreen`/`toggleFullscreen`: where
+  the page can't go full screen and a player is open, the button (and Lampa's double tap in the middle) opens
+  the video in iOS's player, which rotates and hides Safari. Lampa's controls aren't in there (iOS shows its own);
+  closing it returns to them at the same time. Unchanged elsewhere: iPads and computers have page full screen,
+  and the header's full-screen button is set up before any player opens, so it stays hidden on iPhones.
+  Adding Ruby to the Home Screen also gets rid of Safari's bars (manifest `display: standalone`, no orientation lock).
+  The panel decides on its button in its own `start` listener, before `Player.opened()` is true, so player.js
+  counts the player open from the `start` it sends. Checked 2026-10-21 in the iOS 27 simulator (iPhone 18 Pro,
+  a local MP4 in Lampa's player, real taps): the button showed (before: `hide`), a tap fired
+  `webkitbeginfullscreen` and Safari's bars went, a swipe down ended it (`webkitendfullscreen` at 70.6 s, still
+  playing) and Lampa's player was back. Not checked: rotation (the simulator can't be turned without an
+  XCUITest), iOS's own controls (they faded before a screenshot), a real iPhone, a remux stream.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
   needs a URL that works without the browser: on the home server the stream path has no password.

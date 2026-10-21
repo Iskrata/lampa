@@ -4,6 +4,7 @@
 //     Safari only gets them since app.min.js keeps the HLS master when it lists subtitles (README "Changes to
 //     Lampa itself"). On by default, in Settings → Player → Subtitle language (English unless chosen; those
 //     three are at the top of its list).
+//   * Full screen on iPhones: the button opens the video in iOS's own player (Safari has no page full screen).
 //   * F toggles fullscreen, C subtitles. Left/Right seek even while the control bar is up (Lampa moves between its buttons
 //     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
 //     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
@@ -93,6 +94,33 @@
             var v = Lampa.PlayerVideo.video();
             if (!v || v.paused || !v.duration) return to.apply(this, arguments);
             seekNow(seconds == -1 ? Math.max(0, v.duration - 3) : Math.max(0, Math.min(seconds, v.duration)));
+        };
+    }
+
+    // iPhone: Safari can't make a page full screen (no Element.requestFullscreen), only a <video>, in iOS's own
+    // player. Lampa asks Utils.canFullScreen and so had no full-screen button there, and in landscape Safari's
+    // bars stay (the page doesn't scroll): a friend couldn't get them away, 2026-10-21. While the player is open
+    // its button (and Lampa's double tap in the middle) now opens the video in iOS's player, which rotates.
+    // Lampa's own controls aren't in there; closing it comes back to them where the video is.
+    function iphoneFullscreen() {
+        var U = Lampa.Utils, can = U.canFullScreen, toggle = U.toggleFullscreen;
+        var proto = window.HTMLVideoElement && HTMLVideoElement.prototype;
+        if (!proto || !proto.webkitEnterFullscreen) return;
+        // open from the player's `start` on: the panel decides on its button in its own `start` listener, which
+        // runs before Lampa.Player.opened() turns true (iOS 27 simulator, 2026-10-21)
+        var open = false, listener = Lampa.Player.listener, send = listener.send;
+        listener.send = function (type) {
+            if (type === 'start') open = true;
+            else if (type === 'destroy') open = false;
+            return send.apply(this, arguments);
+        };
+        function native() { return open && !can(); }
+        U.canFullScreen = function () { return can.apply(this, arguments) || native(); };
+        U.toggleFullscreen = function () {
+            if (!native()) return toggle.apply(this, arguments);
+            var v = Lampa.PlayerVideo.video();
+            // before the video's metadata iOS refuses (InvalidStateError): nothing to show yet
+            try { if (v) v.webkitEnterFullscreen(); } catch (e) { console.log('Ruby', 'iOS full screen:', e.name); }
         };
     }
 
@@ -359,6 +387,7 @@
         subLangsFirst();
         Lampa.Params.defaults.player_rewind = '10';
         seekWithoutPause();
+        iphoneFullscreen();
         Lampa.PlayerVideo.listener.follow('subs', function (e) {
             var video = Lampa.PlayerVideo.video();
             if (video) video._rubySubsSeen = true;
