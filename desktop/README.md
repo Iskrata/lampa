@@ -735,6 +735,19 @@ decides.
   `webkitbeginfullscreen` and Safari's bars went, a swipe down ended it (`webkitendfullscreen` at 70.6 s, still
   playing) and Lampa's player was back. Not checked: rotation (the simulator can't be turned without an
   XCUITest), iOS's own controls (they faded before a screenshot), a real iPhone, a remux stream.
+  **Every start goes there by itself** (the user, 2026-10-21: "I don't see a case where someone would want it
+  portrait"): on the first `playing` of each stream (`currentSrc`), so after a swipe down Lampa's player stays for
+  that episode (a pause, a stall or playing again doesn't reopen iOS's player) and the next episode opens it again.
+  The picture follows the phone: a page can't turn it to landscape (no `screen.orientation.lock` in iOS Safari).
+  Compared in the iOS 27 simulator on 2026-10-21, a start 5 s after the tap and a two-item playlist:
+  - Lampa's own Settings → Player → "iOS" (no `playsinline`, app.min.js create$9): the start went full screen too,
+    but at the end iOS left full screen and Lampa closes its player on `webkitendfullscreen`
+    (app.min.js ~15932): Home, episode 2 never started.
+  - `webkitEnterFullscreen()` on `playing` (this): no tap needed so long after it; episode 2 went full screen
+    after episode 1 ended in it. Twice of four such switches iOS ignored the call (no error, no
+    `webkitbeginfullscreen`, while the last full screen was closing); a second try 1 s later caught it. Playing
+    the same episode again after leaving stayed in Lampa's player.
+  Not checked on a real iPhone, where iOS may want a tap closer to the call.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
   button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
   needs a URL that works without the browser: on the home server the stream path has no password.

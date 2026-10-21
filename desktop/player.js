@@ -4,7 +4,8 @@
 //     Safari only gets them since app.min.js keeps the HLS master when it lists subtitles (README "Changes to
 //     Lampa itself"). On by default, in Settings → Player → Subtitle language (English unless chosen; those
 //     three are at the top of its list).
-//   * Full screen on iPhones: the button opens the video in iOS's own player (Safari has no page full screen).
+//   * Full screen on iPhones: each stream starts in iOS's own player (Safari has no page full screen), and the
+//     button opens it again.
 //   * F toggles fullscreen, C subtitles. Left/Right seek even while the control bar is up (Lampa moves between its buttons
 //     then), media keys seek too, and the bar has back/forward buttons beside play/pause. Seeks are exactly
 //     the step (10 s by default) and never pause the video, also Continue's jump to the saved time.
@@ -102,6 +103,10 @@
     // bars stay (the page doesn't scroll): a friend couldn't get them away, 2026-10-21. While the player is open
     // its button (and Lampa's double tap in the middle) now opens the video in iOS's player, which rotates.
     // Lampa's own controls aren't in there; closing it comes back to them where the video is.
+    // Each stream also starts there by itself (the user: "I don't see a case where someone would want it
+    // portrait", 2026-10-21). Once per stream: after a swipe down Lampa's player stays until the next episode,
+    // and a pause or a stall doesn't bring iOS's player back. A web page can't turn the picture to landscape;
+    // iOS's player turns with the phone.
     function iphoneFullscreen() {
         var U = Lampa.Utils, can = U.canFullScreen, toggle = U.toggleFullscreen;
         var proto = window.HTMLVideoElement && HTMLVideoElement.prototype;
@@ -116,12 +121,28 @@
         };
         function native() { return open && !can(); }
         U.canFullScreen = function () { return can.apply(this, arguments) || native(); };
-        U.toggleFullscreen = function () {
-            if (!native()) return toggle.apply(this, arguments);
-            var v = Lampa.PlayerVideo.video();
+        function enter(v) {
             // before the video's metadata iOS refuses (InvalidStateError): nothing to show yet
             try { if (v) v.webkitEnterFullscreen(); } catch (e) { console.log('Ruby', 'iOS full screen:', e.name); }
+        }
+        U.toggleFullscreen = function () {
+            if (!native()) return toggle.apply(this, arguments);
+            enter(Lampa.PlayerVideo.video());
         };
+        // media events don't bubble: caught in the capture phase. Seconds after the tap is fine: in the iOS 27
+        // simulator a start 5 s after it went full screen, and so did the next episode at the end of one.
+        var autoSrc = null;
+        document.addEventListener('playing', function (e) {
+            var v = e.target;
+            if (!native() || v !== Lampa.PlayerVideo.video() || v.webkitDisplayingFullscreen || v.currentSrc === autoSrc) return;
+            autoSrc = v.currentSrc;
+            enter(v);
+            // the next episode's call comes while the last one's full screen is closing, and iOS sometimes ignores
+            // it (no error, no webkitbeginfullscreen; 2 of 4 runs): a second try a second later caught it
+            setTimeout(function () {
+                if (native() && v === Lampa.PlayerVideo.video() && !v.webkitDisplayingFullscreen && !v.paused) enter(v);
+            }, 1000);
+        }, true);
     }
 
     // Lampa turns a click on a .selector into hover:enter, so both can arrive for one press
