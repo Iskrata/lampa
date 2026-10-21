@@ -24,6 +24,8 @@
         'finnish', 'romanian', 'bulgarian', 'subita', 'hardsub', 'hc', 'korsub'].join('|') + ')\\b', 'i');
     var MULTI_WITH_ENGLISH = /\b(multi|dual[ .-]?audio)\b|\beng\b|english/i;
     var JUNK = /\b(cam|camrip|hdcam|ts|hdts|telesync|tc|telecine|scr|screener|dvdscr|r5|workprint|xxx|3d|sbs|hsbs)\b/i;
+    // a release that says it's another film of this name: "The Odyssey 2026 (NOT The Chris Nolan FILM) 1080p"
+    var NOT_THIS = /\bnot the\b.*\b(film|movie)\b/i;
     var SERIES = /\bs\d{1,2}(e\d{1,3})?\b|\bseason\b|\bcomplete\b|\b\d{1,2}x\d{2}\b|\bepisode\b/i;
 
     function words(s) {
@@ -172,7 +174,7 @@
         (results || []).forEach(function (r) {
             var t = r.Title || '', res = resolution(t);
             if (!res || !r.Size || (r.Seeders || 0) < MIN_SEEDERS[res]) return;
-            if (JUNK.test(t.replace(/[._]/g, ' ')) || !english(t, audio) || !sameTitle(t, movie) || !fits(t, movie, target)) return;
+            if (JUNK.test(t.replace(/[._]/g, ' ')) || NOT_THIS.test(t.replace(/[._]/g, ' ')) || !english(t, audio) || !sameTitle(t, movie) || !fits(t, movie, target)) return;
             // video this device can't decode (compat.js): it would never start
             if (window.rubyCompat && !window.rubyCompat.playable(t)) return;
             var g = groups[res] = groups[res] || [];

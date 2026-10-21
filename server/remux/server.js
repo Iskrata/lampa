@@ -4,7 +4,9 @@
 //   GET /gst/echo                                  -> JSON (Lampa checks this before using /gst/)
 //   GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja] -> HLS master (video + audio in that language, English by
 //                                                     default + English/Bulgarian/Russian subtitles, English on by
-//                                                     themselves when the audio isn't English)
+//                                                     themselves when the audio isn't English); with
+//                                                     &tmdb=&kind=movie, 409 when the video's length says it is
+//                                                     another film of that name (pick.js sameFilm)
 //   GET /gst/<hash>/<file>.<lang>/video.m3u8, init.mp4, seg<n>.m4s, <track>.m3u8, <track>-<n>.vtt
 //                                                     (track: sub<k> the file's own, os<lang> from OpenSubtitles)
 //   GET /gst/<hash>/<file>.<lang>/<track>.vtt         -> one whole subtitle track, as far as it is known
@@ -193,6 +195,9 @@ async function handle(req, res) {
         const s = st.session = await fed(hash, session(hash, index, lang(url.searchParams.get('lang'))), res);
         const loaded = Date.now();
         await describe(s, hash, url.searchParams.get('tmdb'), url.searchParams.get('kind'));
+        // another film of the same name (pick.js sameFilm): the player switches to the next release (desktop/compat.js)
+        const other = await picks.sameFilm(url.searchParams.get('tmdb'), url.searchParams.get('kind'), hash, s.m.duration, s.source && s.source.name);
+        if (other) return send(res, 409, `another film: this video is ${other}`);
         // languages the file has no subtitles in wait a little for OpenSubtitles: the master lists them or not
         await Promise.all([s.init(), s.ready()]);   // ready before the player asks for it
         send(res, 200, master(s), TYPES.m3u8);

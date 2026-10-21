@@ -117,7 +117,9 @@
                 if (ok.length) groups[c.res] = ok;
             });
             console.log('Ruby play', 'server pick in', Date.now() - t0, 'ms:', p.choices.map(function (c) { return c.label + ' ' + c.releases.length; }).join(', ') || 'nothing');
-            return listOf(p.audio, groups);
+            var found = listOf(p.audio, groups);
+            found.notOut = p.notOut || '';
+            return found;
         }, function () { return null; });
         return Promise.race([asked, timeout]).then(function (x) {
             if (!x) console.log('Ruby play', 'no server pick, searching here');
@@ -176,6 +178,9 @@
     function choose(movie, target, found, back, mbps, download) {
         var list = found.list, audio = found.audio;
         streamLang = audio === 'ja' ? 'ja' : null;
+        // a film not out at home yet (server/remux/pick.js notOut): whatever goes by its name is another film
+        if (!list.length && found.notOut) return unavailable(movie, back, 'It isn\'t out to watch at home yet. It comes out on ' +
+            new Date(found.notOut + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + '.');
         if (!list.length) return unavailable(movie, back, download ? 'There\'s no good English copy of it to download yet.' :
             'There\'s no good English copy of it yet. Try again in a few days.');
         // a download asks nothing: 1080p fits a phone (4K files are 10-20 GB), else 720p, else what there is

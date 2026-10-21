@@ -4,6 +4,8 @@
 //     trackers) or that Ruby saw send nothing in the last 7 days
 //   * opening: a release whose file list has no video in it (a fake: Clayface's 1080p releases were each one
 //     .exe on 2026-10-20) or that nobody sends the file list of switches to the next one
+//   * another film: the server refused it, its video's length isn't this title's (server/remux/pick.js
+//     sameFilm): the next one, as many times as there are releases (each costs a few seconds of probing)
 //   * playing: when the release stops sending (the remux says so) or can't keep up while the video waits, it
 //     switches to the next best release of the same resolution and goes on at the same moment, up to 3 times
 // Without the remux service (plain TorrServer) none of this runs.
@@ -118,7 +120,7 @@
     // it saw itself.
     function report(c, why) {
         var h = c.hash || rubyPick.hashOf(c.release), movie = c.movie || {};
-        if (!h || !movie.id || why === 'dead') return;
+        if (!h || !movie.id || why === 'dead' || why === 'other') return;
         fetch(Lampa.Torserver.url() + '/gst/pick/failed?hash=' + h + '&tmdb=' + movie.id + '&kind=' +
             (movie.original_name || movie.name && !movie.title ? 'tv' : 'movie') + '&why=' + why +
             '&title=' + encodeURIComponent(c.release.Title || c.release.title || ''), { method: 'POST' }).catch(function () {});
@@ -128,10 +130,12 @@
 
     function switchRelease(why) {
         stop();
-        var c = current, next = c && c.switches < MAX_SWITCHES ? nextRelease(why) : null;
+        // a switch away from another film isn't the swarm's fault: it doesn't count (the list runs out instead)
+        var c = current, next = c && (why === 'other' || c.switches < MAX_SWITCHES) ? nextRelease(why) : null;
         var v = Lampa.PlayerVideo.video(), at = v && v.currentTime > 5 ? v.currentTime : c && c.at || 0;
         var what = why === 'dead' ? 'This release stopped sending' : why === 'nopeers' ? 'Nobody is sharing this release' :
-            why === 'nofiles' ? 'This release has no video in it' : 'This release is too slow to play';
+            why === 'nofiles' ? 'This release has no video in it' : why === 'other' ? 'This release is a different film with the same name' :
+            'This release is too slow to play';
         console.log('Ruby swarm', why, c && c.hash, 'at', Math.round(at), 'next:', next && next.Title);
         if (c) report(c, why);
         if (!next) {
@@ -140,7 +144,7 @@
             if (!Lampa.Player.opened() && Lampa.Controller.enabled().name === 'modal') Lampa.Controller.back();
             return Lampa.Noty.show(what + ', and there is no other ' + (c ? rubyPick.resolution(c.release.Title || '') + 'p' : '') + ' release to switch to');
         }
-        carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + 1 };
+        carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + (why === 'other' ? 0 : 1) };
         Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
         if (Lampa.Player.opened()) Lampa.Player.close();
         // the player closes back to Lampa's file list (or it's still the loading window); its Back closes it and
@@ -196,7 +200,7 @@
     // Windows PC and 44 s when tried again (2026-10-20), while its other 1080p release was never tried.
     function unopened(url, why) {
         var m = /\/gst\/([0-9a-f]{40})\//i.exec(url || ''), c = current;
-        if (!c || !m || c.hash && c.hash !== m[1].toLowerCase() || c.switches >= MAX_SWITCHES || !nextRelease(why)) return false;
+        if (!c || !m || c.hash && c.hash !== m[1].toLowerCase() || why !== 'other' && c.switches >= MAX_SWITCHES || !nextRelease(why)) return false;
         c.hash = m[1].toLowerCase();
         switchRelease(why);
         return true;

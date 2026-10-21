@@ -202,7 +202,19 @@ episode.
      Last Airbender", and "Avatar The Last Airbender" doesn't match "Avatar The Legend of Aang". A film:
      the year within one, no series packs. A series: a year in the name must be within its years on air,
      which tells the 2005 animated "Avatar: The Last Airbender" from the 2024 live-action one;
-   - hold the episode wanted: a pack whose season range covers it, or that exact episode.
+   - hold the episode wanted: a pack whose season range covers it, or that exact episode;
+   - don't say they're another film ("The Odyssey 2026 (NOT The Chris Nolan FILM) 1080p").
+
+   **Another film of the same name and year** (2026-10-21: Play on Nolan's "The Odyssey" played The Asylum's
+   86-min mockbuster of that name, also 2026, on Amazon and Tubi). The names can't tell them apart, so the
+   server does it (server/remux/README.md "Another film of the same name"):
+   - **Not out at home yet:** a film whose first digital, disc or TV release (TMDB, any country) is more than
+     7 days away gets no releases, and Play says "It isn't out to watch at home yet. It comes out on
+     17 November 2026." All 13 releases found for it that day were the Asylum film (ffprobe on ruby: 86 min each).
+   - **The video's length:** when a film's file is opened, a length under 0.7× or over 1.5× TMDB's runtime (and
+     20+ min off) is another film. The server refuses it (409), remembers it for this title only, and the
+     player goes to the next release: "This release is a different film with the same name: switching to …".
+     These switches don't count towards the 3 for dead or slow releases; the list running out does.
 3. **Rank** each resolution's releases, picture quality first:
    - **Source:** Blu-ray > WEB-DL > WEBRip > HDTV.
    - **Bitrate adjusted for the codec:** x265/HEVC ×1.5, AV1 ×2 against H.264. It rewards a fuller

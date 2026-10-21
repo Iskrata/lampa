@@ -1,6 +1,7 @@
 // Which release to play, decided here for every device, the TV included (README "Picking a release"):
 //   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja]
-//   -> { audio, choices: [{ res, label, releases: [best first] }] best resolution first, found, took }
+//   -> { audio, choices: [{ res, label, releases: [best first] }] best resolution first, found, took }, and
+//      notOut: YYYY-MM-DD for a film not out at home yet (no choices then)
 // It searches Jackett the way Lampa's own parser does, keeps real seeders and drops dead releases (swarm.js),
 // ranks with the browser's own rules (desktop/pick.js, run here unchanged), leaves out releases that failed
 // for this title and puts the ones that played first (releases.js). The device then chooses the resolution
@@ -46,7 +47,24 @@ async function json(url, ms) {
 const titles = new Map();
 function details(kind, tmdb) {
     return cached(titles, kind + tmdb, TMDB_KEEP_MS, () =>
-        json(`https://api.themoviedb.org/3/${kind}/${tmdb}?api_key=${cfg.tmdbKey}&language=en`, 10000));
+        json(`https://api.themoviedb.org/3/${kind}/${tmdb}?api_key=${cfg.tmdbKey}&language=en` +
+            (kind === 'movie' ? '&append_to_response=release_dates' : ''), 10000));
+}
+
+// The day a film can first be watched at home anywhere (TMDB's digital, physical or TV release dates), when TMDB
+// knows one, as YYYY-MM-DD. Before it, every "WEB-DL" or "BluRay" of its name and year is another film: all 13
+// releases of "The Odyssey 2026" were The Asylum's 86-min film on 2026-10-21 (ffprobe on ruby), while Nolan's
+// comes out digitally on 2026-11-17 (US). HOME_EARLY_DAYS: releases leak a few days before the date.
+const HOME = [4, 5, 6], HOME_EARLY_DAYS = 7;
+function atHome(movie) {
+    const days = [];
+    for (const c of (movie.release_dates && movie.release_dates.results) || [])
+        for (const r of c.release_dates || []) if (HOME.includes(r.type) && r.release_date) days.push(r.release_date.slice(0, 10));
+    return days.sort()[0] || '';
+}
+function notOut(movie) {
+    const day = atHome(movie);
+    return day && Date.parse(day) - HOME_EARLY_DAYS * 86400e3 > Date.now() ? day : '';
 }
 
 function jackettKey() {
@@ -152,6 +170,12 @@ async function pick(q) {
     if (!/^\d+$/.test(tmdb)) throw Object.assign(new Error('tmdb=<id> needed'), { status: 400 });
     const target = kind === 'tv' ? { season: +q.get('season') || 1, episode: +q.get('episode') || 1 } : null;
     const movie = await details(kind, tmdb);
+    // not out yet: nothing found under its name is it (play.js says when it comes out)
+    const later = kind === 'movie' ? notOut(movie) : '';
+    if (later) {
+        console.log(`pick movie ${tmdb}: not out at home until ${later}`);
+        return { audio: null, choices: [], found: 0, notOut: later, took: Date.now() - t0 };
+    }
     // copies: alive() writes the real seeders into them, and the search stays cached for the next ask
     const found = (await search(movie, kind)).map(r => Object.assign({}, r));
     const links = await resolveLinks(found);
@@ -159,7 +183,9 @@ async function pick(q) {
     const alive = rules.alive(found, await swarms.report(known.hashes), known);
     const mem = releases.of(tmdb, kind, rules.key), id = r => rules.hashOf(r);
     // a release still without a hash (its link not resolved in time) is matched by name
-    const usable = alive.filter(r => id(r) ? !mem.failed.has(id(r)) : !mem.failedNames.has(rules.key(r.Title)));
+    // and one seen to be another film of this name (sameFilm) is left out for this title
+    const usable = alive.filter(r => id(r) ? !mem.failed.has(id(r)) && !mem.wrong.has(id(r)) :
+        !mem.failedNames.has(rules.key(r.Title)) && !mem.wrongNames.has(rules.key(r.Title)));
     const audio = rules.anime(movie) ? (q.get('lang') === 'ja' ? 'ja' : 'en') : null;
     const best = rules.best(usable, movie, target, audio);
     const choices = [2160, 1080, 720].filter(res => best.groups[res]).map(res => {
@@ -172,9 +198,27 @@ async function pick(q) {
     const took = Date.now() - t0;
     console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found ` +
         `(${links.got}/${links.asked} link-only hashed), ` +
-        `${found.length - alive.length} dead, ${alive.length - usable.length} failed before, ` +
+        `${found.length - alive.length} dead, ${alive.length - usable.length} failed or another film before, ` +
         choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s`);
     return { audio: best.audio, choices, found: found.length, took };
+}
+
+// Another film of the same name and year: release names can't tell them apart ("The Odyssey 2026 1080p AMZN
+// WEB-DL" was The Asylum's 86-min mockbuster, not Nolan's 173-min film, 2026-10-21), the video's length can.
+// Called when a film's file is opened (server.js, master.m3u8): a length far from TMDB's runtime is remembered
+// for this title (releases.wrong) and refused. -> '' when it may be this film, else why it isn't.
+// The margins leave room for other cuts: Kingdom of Heaven's director's cut is 1.35x the theatrical 144 min,
+// Apocalypse Now's Final Cut 1.24x. TMDB's runtime is the theatrical one; under 40 min it isn't trusted.
+const SHORTER = 0.7, LONGER = 1.5, OFF_MIN = 20;
+async function sameFilm(tmdb, kind, hash, seconds, name) {
+    if (kind !== 'movie' || !/^\d+$/.test(tmdb || '') || !seconds) return '';
+    let movie;
+    try { movie = await details('movie', tmdb); } catch (e) { return ''; }
+    const want = movie.runtime || 0, got = seconds / 60;
+    if (want < 40 || Math.abs(got - want) < OFF_MIN || (got >= want * SHORTER && got <= want * LONGER)) return '';
+    const why = `${Math.round(got)} min, ${movie.title} is ${want} min`;
+    releases.wrong(tmdb, 'movie', hash, why, name);
+    return why;
 }
 
 // TorrServer fetching a .torrent link handed out by pick(): only ever our Jackett, with the key added
@@ -205,4 +249,4 @@ async function lampaSearch(path, query, res) {
     res.end(JSON.stringify(j).split(key).join('hidden'));
 }
 
-module.exports = { pick, link, lampaSearch, rules };
+module.exports = { pick, link, lampaSearch, sameFilm, rules };

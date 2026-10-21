@@ -158,7 +158,7 @@
             var c = current;
             var late = new Promise(function (r) { setTimeout(function () { r({ late: true }); }, MASTER_MS); });
             Promise.race([fetch(src, { cache: 'no-store' }).then(function (r) {
-                return r.text().then(function (body) { return { ok: r.ok, body: body }; });
+                return r.text().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
             }), late]).then(function (res) {
                 // the torrent's fault (still waiting on it, or the server's probe got too little): swarm.js
                 // switches to the next release instead of the error
@@ -169,6 +169,8 @@
                 });
                 if (res.ok) return readMaster(src, res.body);
                 if (/the torrent sent too little/.test(res.body || '')) return { unopened: 'slow' };
+                // another film of this name (server/remux/pick.js sameFilm): the next release
+                if (res.status === 409 && /^another film/.test(res.body || '')) return { unopened: 'other' };
                 return { error: 'The server couldn\'t play this file: ' + (res.body || 'error ' + res.status).slice(0, 200) + '. Pick another release.' };
             }, function () { return { url: src }; }).then(function (o) {
                 if (c && c !== current) return;
@@ -176,6 +178,7 @@
                 if (o.unopened) {
                     console.log('Ruby compat', 'the server couldn\'t open the file:', o.unopened);
                     if (window.rubySwarm && rubySwarm.unopened(src, o.unopened)) return stopWatching();
+                    if (o.unopened === 'other') return fail('Every release found for this title is a different film with the same name.');
                     return fail(o.h ? 'The server didn\'t open the file in ' + MASTER_MS / 1000 + ' s: ' + why(o.h, false, false, true) :
                         'The server couldn\'t open the file: the torrent sent too little to read. Pick another release.');
                 }

@@ -353,6 +353,26 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
    the key>`. TorrServer, on the same machine, fetches that, and this service fetches Jackett's link with
    the key and passes on the file or the redirect to a magnet. It only fetches links under `JACKETT_URL`.
 
+### Another film of the same name
+
+On 2026-10-21 Play on Nolan's "The Odyssey" (tmdb 1368337, 173 min) played `f4f90193` "The Odyssey (2026)
+(1080p AMZN WEB-DL x265 10bit EAC3 5.1 Celdra)": The Asylum's mockbuster (tmdb 1698863, 86 min, 2026). Same
+name, same year, so `desktop/pick.js` kept it, and its 940 seeders ranked it first. Every one of the 13
+releases offered was that film (ffprobe on ruby of four of them: 86 min each; two said "NOT The Chris Nolan
+FILM"). An AI reading the names wouldn't help: they are the same names. Two checks:
+
+- **Not out at home** (`pick.js` `notOut`): the pick asks TMDB for the film's `release_dates` too. Before its
+  first digital, physical or TV release anywhere (types 4/5/6) minus 7 days for leaks, the answer is
+  `{ choices: [], notOut: "2026-11-17" }` without a search (0.5 s), and Play says when it comes out. A film
+  TMDB has no such date for is searched as before.
+- **The length** (`pick.js` `sameFilm`, at `master.m3u8` with `tmdb`/`kind=movie`): the probe already knows the
+  file's duration. Under 0.7× or over 1.5× TMDB's runtime and 20+ min off, the master answers `409 another
+  film: this video is 86 min, The Odyssey is 173 min` and `releases.js` marks it `wrong` for this title only
+  (it is the right film for the other one); the pick leaves it out for this title from then on. The margins
+  leave room for other cuts (Kingdom of Heaven's director's cut 1.35×, Apocalypse Now Final Cut 1.24×). TMDB
+  runtimes under 40 min and series are not checked. Measured 2026-10-21 with a local remux against ruby's
+  TorrServer: `f4f90193` refused in 7.8 s.
+
 What stays with the device: the resolution (screen and measured speed) and video it can't decode
 (`compat.js`), so the answer lists every resolution.
 

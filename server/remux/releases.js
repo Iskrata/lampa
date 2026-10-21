@@ -1,11 +1,13 @@
 // What Ruby remembers about releases, per title (README "Picking a release"), for /gst/pick:
 //   * played: this service sent PLAYED_S of a release's video for the title (seeks back don't count twice)
 //   * failed: it was seen dead (swarm.js), or a player gave up on it (desktop/swarm.js: no peers, too slow)
+//   * wrong: its video is another film of the same name (pick.js `sameFilm`: The Asylum's 86-min "The Odyssey"
+//     2026 played for Nolan's 173-min one on 2026-10-21). Only for this title: it is the right film for the other one
 // A failed release is never offered again, for any title (a torrent that sends nothing does so whatever it
 // was opened for: bbbc0a68, Vikings S06, failed on 2026-10-20 opened from Vikings: Athelstan's Journal's page,
 // tv 65491), unless it plays later (picked by hand). One that played for a title comes first in its
 // resolution for that title. Kept across restarts in REMUX_RELEASES:
-//   { "<m|t><tmdb>": { "<hash>": { ok: time, fail: time, why, title } } }
+//   { "<m|t><tmdb>": { "<hash>": { ok: time, fail: time, wrong: time, why, title } } }
 'use strict';
 const fs = require('fs');
 const cfg = require('./config');
@@ -66,8 +68,16 @@ function failed(hash, why, title, name) {
     return true;
 }
 
-// { played: Set, failed: Set } of hashes: played for this title, failed for any; whichever happened last counts.
-// failedNames: the failed ones' release names through nameKey, for a release whose hash isn't known (pick.js)
+// another film than this title, by its video's length (pick.js sameFilm): never offered for this title again
+function wrong(tmdb, kind, hash, why, name) {
+    const key = titleKey(tmdb, kind);
+    mark(key, hash.toLowerCase(), 'wrong', why, name);
+    console.log(`${hash.slice(0, 8)} is not ${key} (${why}): not offered for it again`);
+}
+
+// { played: Set, failed: Set, wrong: Set } of hashes: played for this title, failed for any; whichever happened last counts.
+// wrong: another film for this title. failedNames / wrongNames: those release names through nameKey, for a
+// release whose hash isn't known (pick.js)
 function of(tmdb, kind, nameKey) {
     const last = {};   // hash -> { ok, fail, title } latest across titles
     for (const t of Object.values(titles)) for (const [h, r] of Object.entries(t)) {
@@ -77,8 +87,12 @@ function of(tmdb, kind, nameKey) {
     }
     const played = new Set(), bad = new Set(), names = new Set();
     for (const [h, l] of Object.entries(last)) if (l.fail > l.ok) { bad.add(h); if (l.title && nameKey) names.add(nameKey(l.title)); }
-    for (const [h, r] of Object.entries(titles[titleKey(tmdb, kind)] || {})) if ((r.ok || 0) > last[h].fail) played.add(h);
-    return { played, failed: bad, failedNames: names };
+    const wrongs = new Set(), wrongNames = new Set();
+    for (const [h, r] of Object.entries(titles[titleKey(tmdb, kind)] || {})) {
+        if ((r.wrong || 0) > (r.ok || 0)) { wrongs.add(h); if (r.title && nameKey) wrongNames.add(nameKey(r.title)); }
+        else if ((r.ok || 0) > last[h].fail) played.add(h);
+    }
+    return { played, failed: bad, failedNames: names, wrong: wrongs, wrongNames };
 }
 
-module.exports = { watching, sent, failed, of };
+module.exports = { watching, sent, failed, wrong, of };
