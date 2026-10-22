@@ -127,7 +127,14 @@
                 '<div class="ruby-hero__btn ruby-hero__btn--info">' + rubyIcons.svg('info') + 'More info</div></div>';
             body.querySelector('.ruby-hero__title').textContent = item.title || item.name;
             body.querySelector('.ruby-hero__text').textContent = item.overview;
-            body.querySelector('.ruby-hero__btn--play').addEventListener('click', function () { openTorrents(item); });
+            var play = body.querySelector('.ruby-hero__btn--play');
+            play.addEventListener('click', function () { openTorrents(item); });
+            // a film not out at home yet: "Out 17 Nov", greyed (play.js later); a click still says why
+            if (window.rubyPlay && item.media_type !== 'tv') rubyPlay.later(item, function (v) {
+                if (!v || list[idx] !== item) return;
+                play.innerHTML = rubyIcons.svg('play') + rubyPlay.laterLabel(v);
+                play.classList.add('ruby-later');
+            });
             var info = body.querySelector('.ruby-hero__btn--info');
             info.addEventListener('click', function () { rubyDesktop.openFull(item); });
             info.dataset.rubyItem = '';   // title.js warms the title page's trailer up on hover

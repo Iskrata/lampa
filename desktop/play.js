@@ -179,8 +179,8 @@
         var list = found.list, audio = found.audio;
         streamLang = audio === 'ja' ? 'ja' : null;
         // a film not out at home yet (server/remux/pick.js notOut): whatever goes by its name is another film
-        if (!list.length && found.notOut) return unavailable(movie, back, 'It isn\'t out to watch at home yet. It comes out on ' +
-            new Date(found.notOut + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) + '.');
+        if (!list.length && found.notOut) return unavailable(movie, back, 'It isn\'t out to watch at home yet.' + (found.notOut === 'soon' ? '' :
+            ' It comes out on ' + day(found.notOut, { day: 'numeric', month: 'long', year: 'numeric' }) + '.'));
         if (!list.length) return unavailable(movie, back, download ? 'There\'s no good English copy of it to download yet.' :
             'There\'s no good English copy of it yet. Try again in a few days.');
         // a download asks nothing: 1080p fits a phone (4K files are 10-20 GB), else 720p, else what there is
@@ -380,11 +380,35 @@
         }, true);
     }
 
+    // ---- not out at home yet (server/remux/pick.js notOut): the title page's and billboard's Play are greyed
+    // out and say when ("Out 17 Nov"); a click still says why (choose). Films only: a series' next episode is
+    // the question there. Asked for 2026-10-22: keep such films in the rows, not Play into a knock-off.
+    var LATER_MS = 6 * 3600e3, laters = {};
+    function day(d, opts) { return new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', opts); }
+    // later(movie, done): done('' | 'YYYY-MM-DD' | 'soon'); '' also when there's no remux to ask
+    function later(movie, done) {
+        if (!movie || !movie.id || movie.original_name || movie.name && !movie.title || !on() || !Lampa.Torserver.url()) return done('');
+        var c = laters[movie.id];
+        if (c && Date.now() - c.at < LATER_MS) return c.p.then(done);
+        var p = fetch(Lampa.Torserver.url() + '/gst/home?tmdb=' + movie.id, { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : {}; }).then(function (j) { return j.notOut || ''; }, function () { return ''; });
+        laters[movie.id] = { at: Date.now(), p: p };
+        p.then(done);
+    }
+    // the button's words: "Out 17 Nov" (the year too when it isn't this one), "Coming soon"
+    function laterLabel(v) {
+        if (v === 'soon') return 'Coming soon';
+        var opts = { day: 'numeric', month: 'short' };
+        if (v.slice(0, 4) !== String(new Date().getFullYear())) opts.year = 'numeric';
+        return 'Out ' + day(v, opts);
+    }
+
     function css() {
         var s = document.createElement('style');
         s.id = 'ruby-play';
         s.textContent = [
-            'body.ruby-autopicking .modal{opacity:0;pointer-events:none}'
+            'body.ruby-autopicking .modal{opacity:0;pointer-events:none}',
+            '.ruby-later{opacity:.55}'
         ].join('\n');
         document.head.appendChild(s);
     }
@@ -450,6 +474,9 @@
     // switches to the next of these)
     // target(): the { season, episode } Play is opening (swarm.js: a pack's bitrate is per episode)
     rubyPlay.target = function () { return pending && pending.target || null; };
+    // later(movie, done(notOut)), laterLabel(notOut): a film not out at home yet (resume.js, hero.js)
+    rubyPlay.later = later;
+    rubyPlay.laterLabel = laterLabel;
     rubyPlay.ranked = function (movie) { return current && movie && current.movie.id === movie.id ? current.groups : null; };
 
     var timer = setInterval(function () {

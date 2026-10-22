@@ -1,7 +1,7 @@
 // Which release to play, decided here for every device, the TV included (README "Picking a release"):
 //   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja]
 //   -> { audio, choices: [{ res, label, releases: [best first] }] best resolution first, found, took }, and
-//      notOut: YYYY-MM-DD for a film not out at home yet (no choices then)
+//      notOut: YYYY-MM-DD (or 'soon') for a film not out at home yet (no choices then)
 // It searches Jackett the way Lampa's own parser does, keeps real seeders and drops dead releases (swarm.js),
 // ranks with the browser's own rules (desktop/pick.js, run here unchanged), leaves out releases that failed
 // for this title and puts the ones that played first (releases.js). The device then chooses the resolution
@@ -62,9 +62,22 @@ function atHome(movie) {
         for (const r of c.release_dates || []) if (HOME.includes(r.type) && r.release_date) days.push(r.release_date.slice(0, 10));
     return days.sort()[0] || '';
 }
+// '' when it may be out at home, else the day it comes out, or 'soon' when TMDB has no home date yet and the film
+// hasn't come out anywhere (its first release of any kind is still ahead)
 function notOut(movie) {
     const day = atHome(movie);
-    return day && Date.parse(day) - HOME_EARLY_DAYS * 86400e3 > Date.now() ? day : '';
+    if (day) return Date.parse(day) - HOME_EARLY_DAYS * 86400e3 > Date.now() ? day : '';
+    const first = [movie.release_date || ''];
+    for (const c of (movie.release_dates && movie.release_dates.results) || [])
+        for (const r of c.release_dates || []) if (r.release_date) first.push(r.release_date.slice(0, 10));
+    const known = first.filter(Boolean).sort()[0];
+    return known && Date.parse(known) > Date.now() ? 'soon' : '';
+}
+
+// GET /gst/home?tmdb=<film>: { notOut } for the title page's and billboard's Play (desktop/play.js later)
+async function home(tmdb) {
+    if (!/^\d+$/.test(tmdb || '')) throw Object.assign(new Error('tmdb=<id> needed'), { status: 400 });
+    return { notOut: notOut(await details('movie', tmdb)) };
 }
 
 function jackettKey() {
@@ -249,4 +262,4 @@ async function lampaSearch(path, query, res) {
     res.end(JSON.stringify(j).split(key).join('hidden'));
 }
 
-module.exports = { pick, link, lampaSearch, sameFilm, rules };
+module.exports = { pick, home, link, lampaSearch, sameFilm, rules };

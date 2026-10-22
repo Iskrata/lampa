@@ -211,6 +211,12 @@ episode.
    - **Not out at home yet:** a film whose first digital, disc or TV release (TMDB, any country) is more than
      7 days away gets no releases, and Play says "It isn't out to watch at home yet. It comes out on
      17 November 2026." All 13 releases found for it that day were the Asylum film (ffprobe on ruby: 86 min each).
+     A film with no home date on TMDB yet that hasn't come out anywhere gets the same, without a date.
+     Such films stay in the rows (the user's call, 2026-10-22, over hiding them), but the title page's Play
+     and Download and the billboard's Play are greyed out and Play says "Out 17 Nov" (the year too when it isn't
+     this one) or "Coming soon". A click still gives the message. `rubyPlay.later` asks `/gst/home?tmdb=` once
+     per film per 6 h. Checked 2026-10-22 in the dev server: Odyssey's page greyed, Inception's not; the billboard
+     with the answer stubbed (no such film on it that day).
    - **The video's length:** when a film's file is opened, a length under 0.7× or over 1.5× TMDB's runtime (and
      20+ min off) is another film. The server refuses it (409), remembers it for this title only, and the
      player goes to the next release: "This release is a different film with the same name: switching to …".

@@ -169,6 +169,12 @@
             var btn = root.querySelector('.full-start-new__buttons .button--play span');
             if (btn) btn.textContent = label(r);
             paint();
+            // a film not out at home yet: "Out 17 Nov", greyed (play.js later)
+            rubyPlay.later(card, function (v) {
+                if (!v || page !== mine || !btn) return;
+                btn.textContent = rubyPlay.laterLabel(v);
+                btn.parentNode.classList.add('ruby-later');
+            });
         });
     }
 

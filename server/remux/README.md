@@ -364,7 +364,9 @@ FILM"). An AI reading the names wouldn't help: they are the same names. Two chec
 - **Not out at home** (`pick.js` `notOut`): the pick asks TMDB for the film's `release_dates` too. Before its
   first digital, physical or TV release anywhere (types 4/5/6) minus 7 days for leaks, the answer is
   `{ choices: [], notOut: "2026-11-17" }` without a search (0.5 s), and Play says when it comes out. A film
-  TMDB has no such date for is searched as before.
+  TMDB has no such date for is searched as before, unless it hasn't come out anywhere yet (`notOut: "soon"`;
+  The Mongoose, in US cinemas 2026-10-30). `GET /gst/home?tmdb=` answers just `{ notOut }`, for the Play buttons
+  (desktop/README.md "Play").
 - **The length** (`pick.js` `sameFilm`, at `master.m3u8` with `tmdb`/`kind=movie`): the probe already knows the
   file's duration. Under 0.7× or over 1.5× TMDB's runtime and 20+ min off, the master answers `409 another
   film: this video is 86 min, The Odyssey is 173 min` and `releases.js` marks it `wrong` for this title only

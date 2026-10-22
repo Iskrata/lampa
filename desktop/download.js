@@ -149,6 +149,8 @@
         $(b).on('hover:enter', function () { refresh(function () { paint(); menu(card); }); });
         current = { card: card, button: b };
         refresh(paint);
+        // a film not out at home yet: greyed like Play (play.js later); a click still says why
+        rubyPlay.later(card, function (v) { if (v) b.classList.add('ruby-later'); });
     }
 
     function init() {
