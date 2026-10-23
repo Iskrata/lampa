@@ -309,7 +309,9 @@
         '  transition:opacity .2s,transform .2s!important;padding-bottom:.8em}',
         'body.ruby-playin.selectbox--open .selectbox__content{transform:translate(-50%,-50%)!important;opacity:1}',
         // Lampa gives the panel and its list a full-screen height inline (layer--height / layer--wheight)
-        'body.ruby-playin .selectbox__body{max-height:none!important;height:auto!important}',
+        // ...and the list shrinks to what fits under the 80vh cap (a flex item doesn't go below its content's
+        // height by default: Settings' list ran out of the panel in short windows), Lampa's scroller takes the rest
+        'body.ruby-playin .selectbox__body{max-height:none!important;height:auto!important;min-height:0;overflow:hidden}',
         'body.ruby-playin .selectbox__content.layer--height{height:auto!important}'
     ].join('\n');
 
