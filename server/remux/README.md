@@ -5,7 +5,8 @@ starts in Safari: Lampa's player just spins. This service repackages what TorrSe
 
 - **Video:** copied as is, no re-encoding.
 - **Audio:** English, converted to AAC.
-- **Subtitles:** English, Bulgarian and Russian, in that order: the file's own text subtitles as WebVTT, and
+- **Subtitles:** English, Bulgarian and Russian, in that order: the file's own text subtitles as WebVTT (also
+  the ones the torrent carries as `.srt`/`.vtt` files next to the video, "Subtitle files in the torrent"), and
   from OpenSubtitles in a language the file has none in, or in place of English TV captions (ALL CAPS)
   ("Subtitles from OpenSubtitles" below). A "forced" track (only the lines for speech in another
   language) is left out where the language has a full one: TYSON S01 (TBK) lists English Forced, English,
@@ -517,7 +518,49 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
     S1E12 DVD rip median 0.32 s, 90 % within 1.0 s; S1E13 DVD rip median 0.38 s, 90 % within 1.2 s (DVD
     subtitles reword lines, and part of that is the measurement's own noise). End to end through the service
     (test file, ALL CAPS lines, a stand-in download in mixed case shifted 3 s): 45 anchors, shift -2.9 s.
-- With no captions to line up with, a hash match is used as it is, and otherwise the best guess as it is.
+- With no captions to line up with, a hash match is used as it is, and otherwise the best guess as it is. That
+  guess is often far off: another release's timing ("Subtitle files in the torrent" below: 108 s by 40 min).
+  Lining it up with the speech in the audio instead was tried on 2026-10-24 and doesn't work with a loudness
+  detector ("Lining up with the audio" below).
+
+**Subtitle files in the torrent** (`sidecar.js`, 2026-10-24). Some releases put their subtitles next to the
+video instead of inside it. Desperate Housewives S01 by KONTRAST (torrent 79655332) has MP4s with none inside and
+`Subs/<episode name>/2_eng,English (SDH).srt`. This service didn't look at them, so the player got OpenSubtitles'
+best guess as it was, "Desperate.Housewives.S01E22.WEBRip.x264-ION10": another release, which runs at 23.976/25 of
+the speed and has 3-5 s more at each ad break. Against the release's own captions (lined up by words, 626
+anchors) it was 10 s early at 1 min, 13 s late at 10 min, 45 s at 20 min and 108 s at 40 min ("a bit out of
+sync again", Choko boko, 2026-10-24).
+- **Which files.** A `.srt` or `.vtt` of the torrent whose path has the video's name in it (next to it, or in a
+  folder named after it), or that names the same episode (`S01E22`), or the only one of a torrent with one video
+  and no episode in its name. One that names another episode never is.
+- **Language** from the words of its name that aren't the video's (`eng`, `English`, `bul`, `rus`...: the same
+  patterns as the file's own tracks); a name with no letters left (`<video>.srt`, `2.srt`) is English. One per
+  language the file has none inside: a full one before a forced one, plain before SDH (`SDH`, `HI`, `CC`).
+- **Then they are the file's own:** subtitle `sub<k>` like an embedded one, but read whole at once from
+  TorrServer (UTF-8, else Windows-1251 for Bulgarian/Russian and Windows-1252 otherwise), not from ffmpeg's
+  runs. KONTRAST's are TV captions (ALL CAPS), so OpenSubtitles' English is lined up with them by words as
+  above.
+- **A dropped torrent lists no files**: once nobody has read it for a while, TorrServer's `get` answers "in db"
+  without `file_stats` until something reads the torrent, and a reopen reads nothing before this (the probe is
+  kept, `source.js`). The first local test after TorrServer dropped it said "subtitles none". One byte of the
+  video is read first then (reproduced with TorrServer's `drop`: "subtitles en" after).
+- **A player that got the master before** (with `osen`, the English from OpenSubtitles) carries on after a
+  restart without asking for it again: `osen` is then answered with the file's own English track.
+- **Checked 2026-10-24** with a local service against ruby's TorrServer, on S1E22: the master lists English as
+  `sub0`, the captions were found to be ALL CAPS, and the ION10 download was lined up with them: 626 anchors,
+  speed 0.9496, shift 12.2 -> -114.7 s. "Obviously." at 35:01.60 against the captions' 35:01.77 (0.25 s earlier
+  on purpose, `CAPTION_LAG`). The Bulgarian (DVD, "1x22 - Goodbye For Now") got 69 anchors by timing and no fit
+  ("not this video"): that file has no Bulgarian track.
+
+**Lining up with the audio** (tried 2026-10-24, not built). With no subtitles in the file or the torrent, the only
+in-step reference is the speech itself. Measured on KONTRAST S1E22 (the audio extracted with ffmpeg at 8 kHz, a
+"someone is talking" score per 10 ms from loudness against the 20th-80th percentile of the 30 s around it, also
+band-passed to 300-3000 Hz): over the whole episode the in-step captions single out the right shift (score 3232 at
+0 s against about -1900 at ±4 s). That doesn't help: the download has another speed and four edits, and a single
+shift and speed picked 25/23.976 at -25 s (median error 73 s). Per window it fails: in windows of 30 lines (about
+2 min), searched ±20 s, even the in-step captions came out right (within 0.5 s) in only 7 of 26; ±300 s, in none.
+Music and effects under the dialogue score like speech. It needs a real speech detector (a neural VAD, a
+dependency this service doesn't have).
 
 **Bulgarian and Russian** (2026-10-19), for a file without its own in that language. Searched (free) as soon as
 the master is asked for, by the same hash and title; the master waits up to 8 s for the answers and lists a

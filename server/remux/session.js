@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { Splitter } = require('./mp4');
-const { ffmpegArgs, seekTime, SUB_LANGS } = require('./media');
+const { ffmpegArgs, seekTime, subFiles: runFiles, SUB_LANGS } = require('./media');
+const sidecar = require('./sidecar');
 const opensubs = require('./opensubs');
 const swarm = require('./swarm');
 const cfg = require('./config');
@@ -28,6 +29,10 @@ class Session {
         this.used = Date.now();
         this.waiters = [];
         this.cues = media.subs.map(() => new Map());   // per subtitle: "start|text" -> cue
+        // subtitle files of the torrent (media.js sidecars): read whole, once
+        this.sidecars = Promise.all(media.subs.map((s, k) => s.sidecar != null && sidecar.cues(media.hash, s.sidecar, s.lang)
+            .then(cues => { for (const c of cues) this.cues[k].set(c.start.toFixed(3) + '|' + c.text, c); })
+            .catch(e => console.error(`${media.hash.slice(0, 8)}:${media.index} ${e.message}`))));
         // subtitles from OpenSubtitles (opensubs.js): `source` describes the torrent file, `better` the English
         // cues that replace subtitle 0 (or are the English track when the file has none), `fitMap` how they were
         // moved onto the video; `picks`/`found` the searches for languages the file has no subtitles in
@@ -95,7 +100,7 @@ class Session {
         this.stop();
         this.subWant = 0;
         const m = this.m, j = { start: n, cur: n, frags: [], ended: false, paused: false };
-        const subFiles = m.subs.map((_, k) => path.join(this.dir, `sub${k}-${n}.vtt`));
+        const subFiles = runFiles(m, this.dir, n);
         j.subFiles = subFiles;
         j.proc = spawn(cfg.ffmpeg, ffmpegArgs(m, m.bounds[n], { subFiles }), { stdio: ['ignore', 'pipe', 'pipe'] });
         const splitter = new Splitter({ onInit: () => {}, onFragment: (t, buf) => this.fragment(j, t, buf) },
@@ -199,8 +204,12 @@ class Session {
     // a track id from a request: known now, or once OpenSubtitles has answered
     async hasTrack(id) {
         if (!this.tracks().some(t => t.id === id) && /^os/.test(id)) await this.ready();
-        return this.tracks().some(t => t.id === id);
+        return this.tracks().some(t => t.id === id) || this.ownEnglish(id);
     }
+
+    // `osen` asked for while the file has English of its own: a player that got the master before this service
+    // knew the torrent's subtitle files (sidecar.js) carries on with it after a restart, without asking again
+    ownEnglish(id) { return id === 'osen' && this.english && !this.tracks().some(t => t.id === id); }
 
     // OpenSubtitles' answers for the languages the file has no subtitles in, waited for up to `ms`
     ready(ms = 8000) {
@@ -215,7 +224,8 @@ class Session {
         const from = this.m.bounds[n], to = this.m.bounds[n + 1];
         // only the running ffmpeg writes them: none, or one from a later segment (a seek), never will
         const passed = () => { const j = this.job; return !j || n < j.start || j.cur > n || j.ended; };
-        if (/^sub\d+$/.test(id) && !passed()) {
+        const own = /^sub(\d+)$/.exec(id);
+        if (own && this.m.subs[+own[1]].sidecar == null && !passed()) {
             // just past ffmpeg: let it on; far past it is a seek, and the video request restarts ffmpeg there
             if (n <= this.job.cur + JUMP) { this.subWant = Math.max(this.subWant, n + 1); this.flow(); }
             await this.until(passed, WAIT_MS).catch(() => {});
@@ -233,6 +243,8 @@ class Session {
     }
 
     async allCues(id) {
+        await this.sidecars;
+        if (this.ownEnglish(id)) id = 'sub0';
         const own = /^sub(\d+)$/.exec(id);
         let all;
         if (own) {

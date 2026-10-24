@@ -103,7 +103,7 @@ async function run(j) {
     s.delay = 0;
     if (j.tmdb) s.describe({ tmdb: j.tmdb, kind: j.kind, name: j.path, size: j.bytes });
     const av = path.join(folder(j), 'av.mp4');
-    const subFiles = m.subs.map((_, k) => path.join(folder(j), `sub${k}-0.vtt`));
+    const subFiles = media.subFiles(m, folder(j), 0);
     console.log(`download ${j.id}: pass 1, ${m.video.codec_name} ${m.resolution}, ${m.duration.toFixed(0)} s`);
     const t0 = Date.now();
     await ffmpeg(j, ['-progress', 'pipe:1', ...media.ffmpegArgs(m, 0, { subFiles, file: av })], t => {

@@ -3,10 +3,12 @@
 // else every SEGMENT_S), and the ffmpeg arguments that turn it into fragmented MP4 a browser plays (video copied,
 // audio AAC unless it already is).
 'use strict';
+const path = require('path');
 const { execFile } = require('child_process');
 const mkv = require('./mkv');
 const mp4 = require('./mp4index');
 const source = require('./source');
+const sidecar = require('./sidecar');
 const cfg = require('./config');
 
 const SEGMENT_S = 4;
@@ -39,6 +41,18 @@ function pickAudio(streams, lang) {
     const eng = audio.filter(s => inLang(s, lang) && !commentary(s));
     return eng.find(s => s.disposition && s.disposition.default) || eng[0] ||
         audio.find(s => s.disposition && s.disposition.default) || audio[0] || null;
+}
+
+// Subtitle files that come with the torrent (sidecar.js), one per language the file has none inside: a full one
+// before a forced one, plain before SDH. `sidecar` is the torrent file's id; they have no stream `index`. A name
+// with no language in it ("<video>.srt") is English.
+async function sidecars(hash, index, inside) {
+    const found = (await sidecar.files(hash, index).catch(e => { console.error(`sidecar ${hash.slice(0, 8)}:${index}: ${e.message}`); return []; }))
+        .map(f => ({ sidecar: f.id, tags: { title: '' }, disposition: { forced: f.words.includes('forced') ? 1 : 0 },
+            sdh: f.words.some(w => /^(sdh|hi|cc)$/.test(w)),
+            lang: SUB_LANGS.find(l => f.words.some(w => LANGS[l].test(w))) || (f.words.some(w => /\p{L}/u.test(w)) ? null : 'en') }));
+    return SUB_LANGS.filter(l => !inside.some(s => s.lang === l)).map(l => found.filter(f => f.lang === l)
+        .sort((x, y) => forced(x) - forced(y) || x.sdh - y.sdh)[0]).filter(Boolean);
 }
 
 // segment start times, plus the end: [0, b1, b2, ..., duration]
@@ -111,6 +125,7 @@ async function load(hash, index, lang) {
     const text = streams.filter(s => s.codec_type === 'subtitle' && TEXT_SUBS.has(s.codec_name) && subLang(s))
         .map(s => Object.assign({ lang: subLang(s) }, s));
     const subs = text.filter(s => !forced(s) || !text.some(f => f.lang === s.lang && !forced(f)))
+        .concat(await sidecars(hash, index, text))
         .sort((x, y) => SUB_LANGS.indexOf(x.lang) - SUB_LANGS.indexOf(y.lang));
     const duration = parseFloat(info.format.duration) || 0;
     if (!duration) throw new Error('unknown duration');
@@ -162,9 +177,13 @@ function ffmpegArgs(m, start, opts) {
     // must match the one init segment
     a.push('-map_chapters', '-1', '-map_metadata', '-1', '-max_muxing_queue_size', '4096', '-f', 'mp4');
     a.push(...(opts.file ? [opts.file] : ['-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1']));
-    (opts.subFiles || []).forEach((file, k) =>
+    // (a subtitle file of the torrent, sidecar.js, isn't in this input: null)
+    (opts.subFiles || []).forEach((file, k) => file &&
         a.push('-map', `0:${m.subs[k].index}`, '-c:s', 'webvtt', '-flush_packets', '1', '-f', 'webvtt', file));
     return a;
 }
 
-module.exports = { load, ffmpegArgs, seekTime, SUB_LANGS };
+// the WebVTT files ffmpeg writes from segment-run `n` in `dir`: one per subtitle inside the file, null for a sidecar
+const subFiles = (m, dir, n) => m.subs.map((s, k) => s.sidecar == null ? path.join(dir, `sub${k}-${n}.vtt`) : null);
+
+module.exports = { load, ffmpegArgs, seekTime, subFiles, SUB_LANGS };

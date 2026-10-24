@@ -127,7 +127,8 @@ function best(list, name) {
 
 function parseSrt(text) {
     const cues = [];
-    const t = s => { const m = /(\d+):(\d+):(\d+)[,.](\d+)/.exec(s); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000 : null; };
+    // (WebVTT may leave out the hours)
+    const t = s => { const m = /(?:(\d+):)?(\d+):(\d+)[,.](\d+)/.exec(s); return m ? +(m[1] || 0) * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000 : null; };
     for (const block of text.replace(/^﻿/, '').split(/\r?\n\s*\r?\n/)) {
         const m = /([\d:,.]+)\s*-->\s*([\d:,.]+)[^\n]*\n([\s\S]+)/.exec(block);
         if (!m) continue;
@@ -379,4 +380,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, search, download, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, configured: () => !!creds().key };
+module.exports = { find, search, download, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };
