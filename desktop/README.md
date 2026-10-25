@@ -578,7 +578,7 @@ Friends S01E01 resumed at 0:53 on 2026-10-20: seg0 4.8 s, then seg8 8.8-12 s.
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Nine small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Ten small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -617,6 +617,10 @@ Nine small edits, each marked `Lampa Desktop:`; re-apply them when updating from
   `<video>` load and play only from a tap, or once a tap has called its `load()`/`play()`; the stream comes
   seconds after the tap, and upstream made a new element for each start, so every start was refused
   (`play()`: NotAllowedError). See "Player", "A start Safari refused".
+- **Player, playlist `select`:** while the video plays on an AirPlay screen
+  (`webkitCurrentPlaybackTargetIsWireless`), switching episodes keeps the `<video>` and gives it the next
+  stream, as upstream already does in picture-in-picture (`keepPip`). A new element ends the AirPlay session.
+  See "Player", "AirPlay".
 
 ## Player
 
@@ -775,6 +779,16 @@ decides.
   fine, but no AirPlay receiver ever requested the stream (`access-public.log`), and a diagnostic beacon on
   the button never fired. Checked 2026-10-19 in the built-in browser at 375×812: the menu entry now calls
   the picker, and its icon is 2.7em like Lampa's (icons.js's `1em!important` had made it 11 px).
+  **The next episode stays on the TV** (the user, 2026-10-25: the next episode "doesn't work well" in AirPlay,
+  they had to leave AirPlay and tap through everything). Lampa makes a new `<video>` for each stream
+  (app.min.js `create$9`), and a new element isn't on the AirPlay route: at an episode's end (Settings → Player
+  → "Play the next episode automatically") and on "Next episode" the TV went back to idle and the phone
+  played the next one itself. Also, with the phone locked, Safari lets a new element start only after a tap.
+  Upstream already keeps the element when switching episodes in picture-in-picture; that edit (app.min.js,
+  playlist `select`, "Changes to Lampa itself") now also keeps it while AirPlaying. Checked 2026-10-25 in the
+  dev server (Chromium, two 6 s clips as a playlist, `webkitCurrentPlaybackTargetIsWireless` set on the video):
+  at the end and on the panel's Next episode the same element went on to episode 2 and played; without it, a
+  new element as before. Not checked with a real Apple TV (that Safari keeps the route when `src` changes).
 - **4K on the TV** (the user's call 2026-10-20). Play picks for the phone's screen (1080p at most), but an
   Apple TV fetches the stream itself and may be on a 4K TV. When AirPlay starts
   (`webkitcurrentplaybacktargetiswirelesschanged`) with a 4K copy found and something smaller playing, a "Play

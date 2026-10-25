@@ -23,7 +23,7 @@ Read these first:
 - `server/remux/`: Node (no dependencies) + ffmpeg/ffprobe 8.x. Speaks Lampa's TorrServer-GStreamer
   protocol at `<TorrServer>/gst/`.
 - `server/auth/`: Node (no dependencies). The public host's sign-in page, behind Caddy's `forward_auth`.
-- `app.min.js`: upstream, plus nine small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
+- `app.min.js`: upstream, plus ten small edits marked `Lampa Desktop:`. Keep it that way. Prefer a
   `desktop/` module; patch upstream only when a module can't reach the code (closures). Document each
   patch in desktop/README.md ("Changes to Lampa itself").
 
