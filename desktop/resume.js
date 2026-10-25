@@ -57,11 +57,12 @@
                 for (var k in extra) r[k] = extra[k];
                 done(r);
             };
-            // the episode watched most recently (Lampa stamps each save, `updated`); progress saved
-            // before stamps existed has 0, and then the latest episode with progress wins
+            // the furthest episode with progress: an earlier one saved later (a rewatch, a tab left open on an
+            // old episode) never takes you back (2026-10-25: a stale tab re-saved S1E17 and Play left S2E8 for it;
+            // until then the newest `updated` stamp won). The newest stamp still orders "Continue watching".
             eps.forEach(function (ep, i) {
                 var v = views[i] = Lampa.Timeline.view(hash(card.original_name ? card : d, ep.season, ep.episode));
-                if (v.percent > 0 && (v.updated || 0) >= latest) { latest = v.updated || 0; at = i; }
+                if (v.percent > 0) { at = i; latest = Math.max(latest, v.updated || 0); }
             });
             if (at < 0) return fromTrakt(d, eps, first, out);
             var v = views[at], ep = eps[at];

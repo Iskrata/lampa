@@ -18,9 +18,16 @@ const parse = s => { try { return s == null ? null : JSON.parse(s); } catch (e) 
 const same = (a, b) => String(a) === String(b);   // ids come as numbers and as strings
 const isObject = o => o !== null && typeof o === 'object' && !Array.isArray(o);
 
+const older = (v, kept) => isObject(v) && isObject(kept) && typeof v.updated === 'number' && typeof kept.updated === 'number' && v.updated < kept.updated;
+
 function applyObject(text, o) {
     const cur = parse(text), out = isObject(cur) ? cur : {};
-    for (const [f, v] of Object.entries(o.set || {})) out[f] = v;
+    // a stamped field (file_view's progress, Lampa's `updated`) older than the one kept is a stale page's
+    // copy: it can't put an old place back over a newer one (2026-10-25, a tab paused since 22 Oct)
+    for (const [f, v] of Object.entries(o.set || {})) {
+        if (older(v, out[f])) continue;
+        out[f] = v;
+    }
     for (const f of o.del || []) delete out[f];
     for (const [f, l] of Object.entries(o.lists || {})) {
         const front = l.front || [], remove = l.remove || [];

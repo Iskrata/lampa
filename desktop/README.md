@@ -519,8 +519,10 @@ per profile by `profiles.js`). The hash is Lampa's own `Utils.hash(season + epis
 - **Episodes:** every aired one, from the show's TMDB details (each season's `episode_count`, up to
   `last_episode_to_air`; specials left out). No per-season requests. A card from a list (the billboard) has
   no seasons, so the details are fetched once per session.
-- **Last watched:** the episode with the newest saved progress (Lampa stamps each save with `updated`). Older
-  saves have no stamp; for those, the latest episode in the show with progress counts.
+- **Last watched:** the furthest episode in the show with saved progress, so an earlier episode saved later
+  never takes Play back (until 2026-10-25 the newest `updated` stamp won: a Windows tab left paused on S1E17
+  since 22 Oct woke, re-saved its old place stamped newest, and Play on Choko boko's S2 E8 played S1 E17).
+  The newest stamp still orders "Continue watching".
 - **What plays:**
   - under 90 %: that episode, "Continue S2 E5"; Lampa's player resumes it too, and only below 90 %;
   - 90 % or more: the next aired one, "Play S2 E6";
@@ -575,6 +577,16 @@ Friends S01E01 resumed at 0:53 on 2026-10-20: seg0 4.8 s, then seg8 8.8-12 s.
   with a saved time of 160 s): in the built-in browser (hls.js) the first segment asked for was seg20 and it
   played on at 176 s; in the iOS 27 simulator's Safari (native HLS) the log said "native HLS starts at 160.0"
   and the requests were master, video playlist, init, seg20…; the same play with no saved time asked seg0.
+
+### Keeping the place
+
+Also `startat.js`. Lampa saves the place every 2 min and when the player closes (app.min.js player Timeline
+`startSaveLoop`/`destroy`), so leaving Safari or locking the phone mid-episode lost up to 2 min, more when the
+upload never went out ("like 5 min behind", 2026-10-25). Now it is also saved every 15 s, on pause and when the
+page is hidden (a capture listener on `window`, so it runs before profiles.js sends the changes). A save whose
+time hasn't moved since this page's last one is dropped: Lampa re-stamps a paused player's place every 2 min,
+which is how the stale tab above came to look newest. The profile service (server/sync/ops.js) also keeps a
+stamped field (`updated`) when a page sends an older one.
 
 ## Changes to Lampa itself (`app.min.js`)
 
