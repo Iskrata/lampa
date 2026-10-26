@@ -27,11 +27,6 @@ const TMDB_KEEP_MS = 6 * 3600e3, SEARCH_KEEP_MS = 10 * 60000, SEARCH_MS = 30000,
 // link-only releases' hashes: Jackett answers in 0.2-0.8 s each (85 at once for Matchbox, 2026-10-20); the
 // pick waits at most HASH_WAIT_MS for them, the rest are cached for the next pick
 const HASH_WAIT_MS = 2500, HASH_AT_ONCE = 16, HASH_KEEP = 20000;
-// links Jackett answered 4xx for (the indexer's page is gone): TorrServer can't add them either, so Play's top
-// release was one that failed at once (POST /torrents 400, Lampa's error; LimeTorrents' "Desperate Housewives
-// S01 1080p AMZN WEBRip ... SiGMA" on 2026-10-26, its link 404). Left out of picks for 6 h.
-const DEAD_LINK_MS = 6 * 3600e3, deadLinks = new Map();
-const linkDead = l => { const t = l && deadLinks.get(withoutKey(l)); return !!t && Date.now() - t < DEAD_LINK_MS; };
 
 function cached(map, key, keepMs, make) {
     const c = map.get(key);
@@ -150,10 +145,6 @@ function linkHash(link, key) {
         const r = await jackettGet(k, key);
         const loc = r.headers.get('location') || '';
         if (loc) return ((/btih:([0-9a-f]{40})/i.exec(loc) || [])[1] || '').toLowerCase();
-        if (r.status >= 400 && r.status < 500) {
-            deadLinks.set(k, Date.now());
-            if (deadLinks.size > HASH_KEEP) deadLinks.delete(deadLinks.keys().next().value);
-        }
         if (!r.ok) throw new Error(`Jackett answered ${r.status}`);
         return infoHash(Buffer.from(await r.arrayBuffer()));
     }).finally(() => { const next = hashQueue.shift(); next ? next() : hashing--; });
@@ -167,7 +158,12 @@ async function resolveLinks(found) {
     const key = jackettKey(), todo = found.filter(r => r.Link && r.Link.startsWith(cfg.jackett + '/') && !rules.hashOf(r));
     let got = 0;
     await Promise.race([
-        Promise.all(todo.map(r => linkHash(r.Link, key).then(h => { if (h) r.InfoHash = h, got++; }, () => {}))),
+        Promise.all(todo.map(r => linkHash(r.Link, key, r.Details).then(h => {
+            if (!h) return;
+            r.InfoHash = h, got++;
+            // TorrServer would fetch the same failing link: Lampa adds MagnetUri before Link
+            if (fromPage.has(withoutKey(r.Link))) r.MagnetUri = `magnet:?xt=urn:btih:${h}&dn=${encodeURIComponent(r.Title || '')}`;
+        }, () => {}))),
         new Promise(go => setTimeout(go, HASH_WAIT_MS))]);
     return { asked: todo.length, got };
 }
@@ -199,9 +195,8 @@ async function pick(q) {
         return { audio: null, choices: [], found: 0, notOut: later, took: Date.now() - t0 };
     }
     // copies: alive() writes the real seeders into them, and the search stays cached for the next ask
-    const all = (await search(movie, kind)).map(r => Object.assign({}, r));
-    const links = await resolveLinks(all);
-    const found = all.filter(r => rules.hashOf(r) || !linkDead(r.Link));
+    const found = (await search(movie, kind)).map(r => Object.assign({}, r));
+    const links = await resolveLinks(found);
     const known = rules.twins(found);
     const alive = rules.alive(found, await swarms.report(known.hashes), known);
     const mem = releases.of(tmdb, kind, rules.key), id = r => rules.hashOf(r);
@@ -220,7 +215,7 @@ async function pick(q) {
     });
     const took = Date.now() - t0;
     console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found ` +
-        `(${links.got}/${links.asked} link-only hashed${all.length > found.length ? `, ${all.length - found.length} dead links` : ''}), ` +
+        `(${links.got}/${links.asked} link-only hashed), ` +
         `${found.length - alive.length} dead, ${alive.length - usable.length} failed or another film before, ` +
         choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s`);
     return { audio: best.audio, choices, found: found.length, took };
@@ -245,10 +240,21 @@ async function sameFilm(tmdb, kind, hash, seconds, name) {
 }
 
 // TorrServer fetching a .torrent link handed out by pick(): only ever our Jackett, with the key added
+// LimeTorrents answers some of many asks at once with a page without the torrent's link (Jackett: "Download
+// selectors didn't match", 404 here), and TorrServer's add of that release failed (POST /torrents 400, Lampa's
+// error at once): Play's top 1080p for Desperate Housewives S1E1 on 2026-10-26, whose link answered 404 at
+// 16:31 and 302 at 16:59. So a failed ask is tried again, 3 times in about 6 s.
+const LINK_TRIES = 4, LINK_RETRY_MS = 2000;
 async function link(u, res) {
     const key = jackettKey();
     if (!u || !u.startsWith(cfg.jackett + '/') || !key) { res.writeHead(404); return res.end(); }
-    const r = await jackettGet(u, key);
+    let r;
+    for (let i = 0; i < LINK_TRIES; i++) {
+        if (i) await new Promise(go => setTimeout(go, LINK_RETRY_MS));
+        r = await jackettGet(u, key);
+        if (r.status < 400) break;
+    }
+    if (r.status >= 400) console.error(`link: Jackett answered ${r.status} ${LINK_TRIES} times`);
     // some indexers (TorrentGalaxyClone) answer with a redirect to a magnet link, which TorrServer follows
     if (r.status >= 300 && r.status < 400) { res.writeHead(r.status, { Location: r.headers.get('location') }); return res.end(); }
     res.writeHead(r.status, { 'Content-Type': r.headers.get('content-type') || 'application/x-bittorrent' });
