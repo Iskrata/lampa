@@ -158,12 +158,7 @@ async function resolveLinks(found) {
     const key = jackettKey(), todo = found.filter(r => r.Link && r.Link.startsWith(cfg.jackett + '/') && !rules.hashOf(r));
     let got = 0;
     await Promise.race([
-        Promise.all(todo.map(r => linkHash(r.Link, key, r.Details).then(h => {
-            if (!h) return;
-            r.InfoHash = h, got++;
-            // TorrServer would fetch the same failing link: Lampa adds MagnetUri before Link
-            if (fromPage.has(withoutKey(r.Link))) r.MagnetUri = `magnet:?xt=urn:btih:${h}&dn=${encodeURIComponent(r.Title || '')}`;
-        }, () => {}))),
+        Promise.all(todo.map(r => linkHash(r.Link, key).then(h => { if (h) r.InfoHash = h, got++; }, () => {}))),
         new Promise(go => setTimeout(go, HASH_WAIT_MS))]);
     return { asked: todo.length, got };
 }
