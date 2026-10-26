@@ -268,13 +268,13 @@ service with the new player (seg8 only) after an earlier open. Total is from the
 file's start and its index ("Why starting takes longer than a seek"). `GET /gst/warm` does that wait before
 anyone presses Play. The browser asks for it from a title page, for Continue watching's first title and for the
 next episode while one plays (desktop/README.md "Warming up").
-- `?link=<magnet or /gst/link>&season=&episode=&pct=`: the release Play would start. It is added to TorrServer and,
+- `?link=<magnet or /gst/link>&season=&episode=&at=`: the release Play would start, from `at` seconds (the
+  place Lampa saved; `pct=` for a percent, Trakt's progress having no time). It is added to TorrServer and,
   once the file list is in, the file is picked the way Play picks it (the episode by `SxxEyy`/`NxNN` in its name,
   else the largest video).
 - `?hash=&index=`: a file of a torrent already added (the next episode in the player's playlist).
 - The file is then opened as the master opens it (probe and index, kept on disk by `source.js`), with its init
-  segment. After that come the segments of the first 60 s from where Play will start (`pct`, the progress saved
-  for it), one after another as a player asks. If nobody else asked for anything meanwhile, ffmpeg is stopped
+  segment. After that come the segments of the first 60 s from where Play will start (`at`), one after another as a player asks. If nobody else asked for anything meanwhile, ffmpeg is stopped
   there. Subtitles aren't looked up: that waits for the master, so OpenSubtitles' 20 downloads a day aren't
   spent on titles nobody plays. The torrent is saved for its file list (`torrserver.js keep`).
 - TorrServer closes a torrent 30 s after nobody reads it (`TorrentDisconnectTimeout`) and keeps its pieces in

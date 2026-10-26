@@ -65,11 +65,18 @@
                 if (a.component === 'full' && a.card && a.card.id === card.id && !Lampa.Player.opened()) title(card);
             }, DWELL_MS);
         });
-        var watched = false;
-        Lampa.Player.listener.follow('start', function () { watched = false; });
+        // AFTER_S played since the start, not the position: a resumed episode is past 60 s at once, and the next
+        // one's warm-up then competed with its start (Safari, Breaking Bad S2E8 resumed at 845 s, 2026-10-26: the
+        // first segment past the warm ones took 37.7 s while the next episode opened)
+        // A jump (the resume to the saved place, a seek) starts the count again
+        var watched = false, from = null, last = 0;
+        Lampa.Player.listener.follow('start', function () { watched = false; from = null; });
         Lampa.PlayerVideo.listener.follow('timeupdate', function () {
             var v = Lampa.PlayerVideo.video();
-            if (watched || !v || v.currentTime < AFTER_S || !url()) return;
+            if (watched || !v || v.paused || !url()) return;
+            if (from === null || v.currentTime < last || v.currentTime - last > 5) from = v.currentTime;
+            last = v.currentTime;
+            if (v.currentTime - from < AFTER_S) return;
             watched = true;
             nextEpisode();
         });

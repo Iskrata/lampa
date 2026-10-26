@@ -280,8 +280,13 @@ opened (its start and index kept on disk) and its first 60 s made from where it 
   server's pick, then this screen and connection's resolution), at the episode and place Play would start
   from (`resume.js`). Play then reuses that pick within 5 minutes instead of asking again (`picked`).
 - **For Continue watching:** its first title, once Home has settled (`continue.js`).
-- **While an episode plays:** the next one in the player's playlist, after the first 60 s. Lampa's Next episode
-  and autoplay then open a file whose master and first segments are ready.
+- **While an episode plays:** the next one in the player's playlist, after 60 s of playing (counted from the start
+  or the last jump, not the position: a resumed episode is past 0:60 at once, and the first version warmed the
+  next one right as this one started, so they competed). Lampa's Next episode and autoplay then open a file whose
+  master and first segments are ready.
+
+It warms from where Lampa will resume: the saved time (`at=`, resume.js `time`), not the percent. 30 % of Breaking
+Bad S2E8 was 850 s while Lampa resumed at 845 s, a segment earlier than the warmed ones.
 
 One warm-up at a time per page; a newer one replaces one still waiting, and each is asked for once per page
 load. Only through the remux service, with "Pick torrents for me" on.
@@ -289,8 +294,11 @@ load. Only through the remux service, with "Pick torrents for me" on.
 Measured 2026-10-26 on the home server (server/remux/README.md "Warming up"): Breaking Bad S2 episodes started in
 0.1 s with 60 s of video ready by 0.4 s when warmed, against 63.6-63.9 s to the first picture without. In the
 browser, Better Call Saul's title page warmed its 4K S1E1, and Play reused that pick and moved the video 3.4 s after
-the press (over an SSH tunnel to the Mac). Not checked: Continue watching's warm-up and the next-episode one in a
-real browser (the same /gst/warm; the next episode's by hash and file, as in the measurements), and Safari.
+the press (over an SSH tunnel to the Mac). Checked 2026-10-26 in Safari on the iOS 27 simulator (tools/dev-server.js, the home server's remux and TorrServer
+tunnelled): Continue watching's Breaking Bad warmed S2E8 at the saved 845 s (segments 88-94), a tap on it played
+from 845 s (playing 5.0 s after the player opened, 3.3 s of that the segment crossing the tunnel), and the next
+episode (S2E9) was warmed 60.3 s after playback started. The same day real viewers' iPhones (iOS 18.7 Safari)
+made the first warm-ups on the home server, a next episode among them (5.5 s). Not checked: a TV.
 
 Episode cards are built without a reference to their data, so a click reads the card: the episode number
 and name. The episode is looked up by name in TMDB's own seasons, starting with the season the page shows
