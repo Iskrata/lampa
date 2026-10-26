@@ -271,6 +271,27 @@ episode.
 
 A series' Play continues where you are (`resume.js`, "Where you are in a series" below).
 
+### Warming up
+
+Asked for 2026-10-26 ("load even faster movies and shows"). `warm.js` asks the remux service to warm up what
+Play would start, before Play is pressed (server/remux/README.md "Warming up"): the torrent added, the file
+opened (its start and index kept on disk) and its first 60 s made from where it will start. It does this:
+- **On a title page** you stay on for 1.5 s. It warms the release Play would start (`rubyPlay.choice`: the
+  server's pick, then this screen and connection's resolution), at the episode and place Play would start
+  from (`resume.js`). Play then reuses that pick within 5 minutes instead of asking again (`picked`).
+- **For Continue watching:** its first title, once Home has settled (`continue.js`).
+- **While an episode plays:** the next one in the player's playlist, after the first 60 s. Lampa's Next episode
+  and autoplay then open a file whose master and first segments are ready.
+
+One warm-up at a time per page; a newer one replaces one still waiting, and each is asked for once per page
+load. Only through the remux service, with "Pick torrents for me" on.
+
+Measured 2026-10-26 on the home server (server/remux/README.md "Warming up"): Breaking Bad S2 episodes started in
+0.1 s with 60 s of video ready by 0.4 s when warmed, against 63.6-63.9 s to the first picture without. In the
+browser, Better Call Saul's title page warmed its 4K S1E1, and Play reused that pick and moved the video 3.4 s after
+the press (over an SSH tunnel to the Mac). Not checked: Continue watching's warm-up and the next-episode one in a
+real browser (the same /gst/warm; the next episode's by hash and file, as in the measurements), and Safari.
+
 Episode cards are built without a reference to their data, so a click reads the card: the episode number
 and name. The episode is looked up by name in TMDB's own seasons, starting with the season the page shows
 (the all-episodes page's season, else the latest aired). It doesn't use `Lampa.Api.seasons`: when asked

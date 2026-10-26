@@ -72,7 +72,7 @@
             };
             // the server's pick (the same for every device); a plain TorrServer, or a remux that can't search,
             // gets this browser's own search
-            serverPick(movie, series ? 'tv' : 'movie', target).then(function (list) {
+            picked(movie, series ? 'tv' : 'movie', target).then(function (list) {
                 if (stopped) return;
                 if (list) return ready(list);
                 Lampa.Parser.get(params, function (data) {
@@ -127,6 +127,31 @@
         });
     }
 
+    // The server's pick the warm-up made for this title and episode (warm.js), used once by the next Play within
+    // PICKED_MS: Play then starts the release that was warmed, without asking again (3.5-4.2 s on ruby, 2026-10-26)
+    var PICKED_MS = 5 * 60000, warmPick = null;
+    function pickKey(movie, kind, target) {
+        return [movie.id, kind, target ? target.season + 'x' + target.episode : '', Lampa.Storage.get(ANIME_AUDIO, 'en')].join('|');
+    }
+    function picked(movie, kind, target) {
+        var w = warmPick, key = pickKey(movie, kind, target);
+        warmPick = null;
+        if (w && w.key === key && Date.now() - w.at < PICKED_MS) return w.p;
+        return serverPick(movie, kind, target);
+    }
+    // what Play would start for this title (and episode): the server's pick, then the resolution for this screen
+    // and connection. -> Promise of the release, or null (no server pick, nothing found)
+    function choice(movie, target) {
+        var kind = movie.original_name || movie.name && !movie.title ? 'tv' : 'movie';
+        var p = serverPick(movie, kind, target);
+        warmPick = { key: pickKey(movie, kind, target), at: Date.now(), p: p };
+        return Promise.all([p, speed()]).then(function (x) {
+            var found = x[0];
+            if (!found || !found.list.length) return null;
+            return autoPick(found.list, movie, target, x[1], prefer && prefer.res).best;
+        });
+    }
+
     // This browser's speed to the server (Mbit/s), timed once per session with the remux service's
     // /gst/speedtest (random bytes). null when it can't tell (no remux service, TV, error).
     var SPEED = 'ruby_speed_mbps', speedTest = null;
@@ -165,9 +190,7 @@
         var v = document.createElement('video');
         v.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) { airplayNear = e.availability === 'available'; });
     }
-    function autoPick(list, movie, target, mbps) {
-        var want = prefer && prefer.res;
-        prefer = null;
+    function autoPick(list, movie, target, mbps, want) {
         var exact = list.filter(function (c) { return c.res === want; })[0];
         if (exact) return exact;
         var big = screen.width * (window.devicePixelRatio || 1) >= 2560 || (airplayNear && tv4k());
@@ -189,7 +212,8 @@
             var res = function (r) { return list.filter(function (x) { return x.res === r; })[0]; };
             return play(movie, target, (res(1080) || res(720) || list[0]).best, true);
         }
-        var c = autoPick(list, movie, target, mbps);
+        var c = autoPick(list, movie, target, mbps, prefer && prefer.res);
+        prefer = null;
         current = { movie: movie, list: list, groups: found.groups, res: c.res, audio: audio };
         play(movie, target, c.best);
     }
@@ -477,6 +501,8 @@
     // later(movie, done(notOut)), laterLabel(notOut): a film not out at home yet (resume.js, hero.js)
     rubyPlay.later = later;
     rubyPlay.laterLabel = laterLabel;
+    // choice(movie, target): the release Play would start (warm.js warms it up)
+    rubyPlay.choice = choice;
     rubyPlay.ranked = function (movie) { return current && movie && current.movie.id === movie.id ? current.groups : null; };
 
     var timer = setInterval(function () {

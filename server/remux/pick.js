@@ -153,9 +153,21 @@ function linkHash(link, key) {
         e => { linkHashes.delete(k); console.error(`link hash: ${e.message}`); });
     return p;
 }
-async function resolveLinks(found) {
+// Only links of releases Play could start: rules.ranked over them with the seeders set aside (the real count comes
+// from the trackers, through the hash or a twin). Every link was fetched until 2026-10-26: 830 of Desperate
+// Housewives' 911 results were LimeTorrents links, 16 fetched at once, and LimeTorrents refused bursts of them
+// (Jackett's "Download selectors didn't match", 486 in the minute of 16:58), Play's own release among them.
+function couldPlay(todo, movie, target) {
+    const keep = new Set(), copies = todo.map(r => Object.assign({}, r, { Seeders: 1e9, of: r }));
+    for (const audio of rules.anime(movie) ? ['en', 'ja'] : [null]) {
+        const g = rules.ranked(copies, movie, target, audio);
+        for (const res in g) for (const c of g[res]) keep.add(c.of);
+    }
+    return todo.filter(r => keep.has(r));
+}
+async function resolveLinks(found, movie, target) {
     // only our Jackett's links: the key is added to them
-    const key = jackettKey(), todo = found.filter(r => r.Link && r.Link.startsWith(cfg.jackett + '/') && !rules.hashOf(r));
+    const key = jackettKey(), todo = couldPlay(found.filter(r => r.Link && r.Link.startsWith(cfg.jackett + '/') && !rules.hashOf(r)), movie, target);
     let got = 0;
     await Promise.race([
         Promise.all(todo.map(r => linkHash(r.Link, key).then(h => { if (h) r.InfoHash = h, got++; }, () => {}))),
@@ -191,9 +203,9 @@ async function pick(q) {
     }
     // copies: alive() writes the real seeders into them, and the search stays cached for the next ask
     const found = (await search(movie, kind)).map(r => Object.assign({}, r));
-    const links = await resolveLinks(found);
+    const searched = Date.now(), links = await resolveLinks(found, movie, target), hashed = Date.now();
     const known = rules.twins(found);
-    const alive = rules.alive(found, await swarms.report(known.hashes), known);
+    const alive = rules.alive(found, await swarms.report(known.hashes), known), scraped = Date.now();
     const mem = releases.of(tmdb, kind, rules.key), id = r => rules.hashOf(r);
     // a release still without a hash (its link not resolved in time) is matched by name
     // and one seen to be another film of this name (sameFilm) is left out for this title
@@ -212,7 +224,8 @@ async function pick(q) {
     console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found ` +
         `(${links.got}/${links.asked} link-only hashed), ` +
         `${found.length - alive.length} dead, ${alive.length - usable.length} failed or another film before, ` +
-        choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s`);
+        choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s ` +
+        `(search ${searched - t0} ms, links ${hashed - searched} ms, trackers ${scraped - hashed} ms)`);
     return { audio: best.audio, choices, found: found.length, took };
 }
 

@@ -262,6 +262,57 @@ service with the new player (seg8 only) after an earlier open. Total is from the
 - A first open costs what it did (the probe waits for the start's and the index's pieces), minus segment 0 on a
   resume.
 
+## Warming up (`warm.js`)
+
+**Doing a first open before Play** (the user asked on 2026-10-26 for faster starts). A first open waits for peers, the
+file's start and its index ("Why starting takes longer than a seek"). `GET /gst/warm` does that wait before
+anyone presses Play. The browser asks for it from a title page, for Continue watching's first title and for the
+next episode while one plays (desktop/README.md "Warming up").
+- `?link=<magnet or /gst/link>&season=&episode=&pct=`: the release Play would start. It is added to TorrServer and,
+  once the file list is in, the file is picked the way Play picks it (the episode by `SxxEyy`/`NxNN` in its name,
+  else the largest video).
+- `?hash=&index=`: a file of a torrent already added (the next episode in the player's playlist).
+- The file is then opened as the master opens it (probe and index, kept on disk by `source.js`), with its init
+  segment. After that come the segments of the first 60 s from where Play will start (`pct`, the progress saved
+  for it), one after another as a player asks. If nobody else asked for anything meanwhile, ffmpeg is stopped
+  there. Subtitles aren't looked up: that waits for the master, so OpenSubtitles' 20 downloads a day aren't
+  spent on titles nobody plays. The torrent is saved for its file list (`torrserver.js keep`).
+- TorrServer closes a torrent 30 s after nobody reads it (`TorrentDisconnectTimeout`) and keeps its pieces in
+  memory (`UseDisk` off). So what a warm-up leaves for Play is on disk: the file list, the start and index, the
+  session and those segments.
+- At most 2 at once (429 otherwise), one per torrent (409). A file whose same segments were warmed in the last
+  30 min answers at once (`again`).
+- The log has one line per warm-up: `warm b43df67a:255 S2E3 in 64.4 s: file list 0.1 s, open 23.6 s, seg0-4 40.7 s`.
+
+**Measured** 2026-10-26 on the home server. A test copy of this service (port 8098, its own cache and sources)
+ran on its TorrServer, and a script there did what Play does: pick, add the torrent, wait for its file list, then
+the master, init and segments up to 60 s of video, then `/gst/remove`. Breaking Bad S01-S05 1080p x265
+(`b43df67a`, 515 seeders), season 2. Times are from the press of Play:
+
+| episode | how | first video | 30 s of video | 60 s of video |
+|---|---|---|---|---|
+| E2 | cold, the torrent's first open (pick 2.6 s) | 63.9 s | 64.0 s | 71.7 s |
+| E4 | no warm-up, same pack later (pick 3.2 s) | 63.6 s | 72.6 s | 82.0 s |
+| E3 | warmed (30 s then), Play 40 s later, torrent closed meanwhile | **0.1 s** | 0.3 s | 57.1 s |
+| E5 | warmed (30 s then), Play 10 s later | **0.1 s** | 0.2 s | 41.7 s |
+| E6 | warmed 60 s, Play 40 s later | **0.1 s** | 0.3 s | **0.4 s** |
+| E7 | warmed 60 s, Play 40 s later | **0.1 s** | 0.2 s | **0.3 s** |
+
+- Without a warm-up, the master waited 52 s for the probe (the file's start and Cues pieces at 1.5 MB/s from 20
+  of 354 peers). The second episode's file list came at once (the pack saved in TorrServer's database), but the
+  probe still took 52 s.
+- With one, Play got its master, init and first segments from disk at once. Those warm-ups took 64.5 s (the
+  torrent closed since the last run) and 18.8 s (still connected).
+- The first segment past the warm ones took 41 s with the torrent closed (E3: peers found again) and 19.6 s
+  with it still connected (E5: a new ffmpeg run from there). Warmed 30 s, E3 would have stopped for ~10 s at
+  0:31, so warm-ups make 60 s. E6 and E7's warm-ups took 39.5 and 60.0 s (opening 25.7 and 45.4 s, the segments
+  13.8 and 14.5 s), all of it before Play.
+- In the browser (tools/dev-server.js, TorrServer and the test copy tunnelled from the home server, Chromium on a
+  3456 px screen): Better Call Saul's title page warmed its 4K S1E1 release (`8cfa3d13`) in 115 s: file list 2.1 s,
+  open 26.0 s, 60 s of 4K video 87.4 s. Play then reused the warm-up's pick (no `/gst/pick`), had the file list in
+  0.3 s and the master in 0.24 s. The video moved 3.4 s after Play; 1.9 s of that was the 4K segment crossing the
+  tunnel to the Mac.
+
 ## Loading progress
 
 `/gst/<hash>/heartbeat?index=<file>` adds `Startup: { pct }` (`startup.js`), which the loading card shows as a
@@ -342,7 +393,15 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
 3. **The swarm** (`swarm.js`): the trackers' real seeder counts, and releases seen dead left out. That needs
    each release's info-hash. LimeTorrents and TorrentGalaxyClone give only a `.torrent` link, so `pick.js`
    fetches each such link from Jackett once (16 at a time) and keeps its hash (in memory, the last 20,000
-   links). Jackett answers with a redirect to the magnet (both indexers, 2026-10-20), or with the file,
+   links). Only the links of releases Play could start are fetched: `rubyPick.ranked` over them with the seeders
+   set aside (title, resolution, language, the episode). Until 2026-10-26 every one was: 741-987 links per pick
+   for six series that day, which waited the full 2.5 s (LimeTorrents was refusing the bursts, 0 hashes in time
+   for four of the six), and the bursts made LimeTorrents refuse Play's own release too. Measured the same day on
+   the home server, the deployed service and a test copy with the filter, the same six series (Desperate
+   Housewives S3E4, Friends S5E2, The Office S3E3, Game of Thrones S2E1, Better Call Saul S1E2, The Big Bang
+   Theory S4E5), each picked twice: 0-35 links instead, the pick 1.3-2.4 s on first ask (was 3.9-4.6 s) and
+   0.04-1.3 s with the search cached (was 2.5-2.9 s), the same top release each time. The log line says where a
+   pick's time went: `(search 577 ms, links 300 ms, trackers 627 ms)`. Jackett answers with a redirect to the magnet (both indexers, 2026-10-20), or with the file,
    whose hash is the sha1 of its bencoded `info`. The pick waits at most 2.5 s for these; a link not done
    by then takes a twin's hash (same name and size on another indexer) as before, and is ready for the
    next pick.

@@ -22,6 +22,8 @@
 //                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled, waiting })
 //   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja] -> the releases to play, ranked, per
 //                                                     resolution (pick.js); GET /gst/link?u=: a .torrent link of theirs
+//   GET /gst/warm?link=<magnet>[&season=&episode=][&pct=] or ?hash=&index= -> the file opened and its first
+//                                                     seconds made before anyone plays it (warm.js)
 //   GET /gst/home?tmdb=<film>                      -> { notOut: '' | YYYY-MM-DD | 'soon' }: not out at home yet
 //                                                     (pick.js notOut), for the Play buttons
 //   GET /gst/jackett/api/v2.0/indexers/<x>/results?... -> Lampa's own Jackett search, the key added here and
@@ -44,6 +46,7 @@ const downloads = require('./download');
 const swarms = require('./swarm');   // (swarm() below is the log's peers line)
 const picks = require('./pick');
 const releases = require('./releases');
+const warms = require('./warm');
 
 // a TV on AirPlay asks for nothing while paused, and the phone that sent it may be locked (no heartbeat): its
 // segments stay 2 h, so a resume is served from disk (an AirPlay TV gives up on a segment after 5 s)
@@ -187,6 +190,8 @@ async function handle(req, res) {
         e => { console.error('pick:', e.message); send(res, e.status || 500, JSON.stringify({ error: e.message }), 'application/json'); });
     if (hash === 'home') return picks.home(url.searchParams.get('tmdb')).then(p => send(res, 200, JSON.stringify(p), 'application/json'),
         e => send(res, e.status || 500, JSON.stringify({ error: e.message }), 'application/json'));
+    if (hash === 'warm') return warms.warm(url.searchParams, session).then(w => send(res, 200, JSON.stringify(w), 'application/json'),
+        e => { if (!e.status) console.error('warm:', e.message); send(res, e.status || 500, JSON.stringify({ error: e.message }), 'application/json'); });
     if (hash === 'link') return picks.link(url.searchParams.get('u'), res);
     if (hash === 'jackett') return picks.lampaSearch('/' + parts.slice(1).join('/'), url.search.slice(1), res)
         .catch(e => { console.error('jackett search:', e.message); if (!res.headersSent) send(res, 502, e.message); else res.end(); });

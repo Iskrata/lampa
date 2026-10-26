@@ -48,6 +48,8 @@
         return function (call) {
             inProgress(cards, function (list) {
                 if (!list.length) return call({ results: [] });
+                // the one most likely played next: warmed up once the page has settled (warm.js)
+                if (window.rubyWarm) rubyDesktop.settled(function () { rubyWarm.title(list[0].card, list[0].r); });
                 call({
                     title: 'Continue watching',
                     results: list.slice(0, MAX).map(function (x) {
