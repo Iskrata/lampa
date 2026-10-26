@@ -458,6 +458,16 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
   same moment. Its timecode is set by hand, whatever Settings → Player → timecode says. At most 3 switches.
   - **No peers:** no file list 45 s after the release was opened, while Lampa's loading window is still
     up (Lampa itself gives up at 90 s).
+  - **Couldn't be fetched:** TorrServer refused the add (`Lampa.Torserver.hash` failed: its `.torrent` link
+    failed, `POST /torrents` 400). It switches at once ("This release couldn't be fetched: switching to …").
+    It isn't reported to the server and doesn't count towards the 3, because the link may work again
+    (LimeTorrents refused bursts of requests on 2026-10-26). Before this, Lampa's "no hash" window sat under
+    the loading card, which said "Connecting…" until the 45 s no-peers switch. That happened to Desperate
+    Housewives S1E1 on 2026-10-26, in Caddy's access log: add 400 at 16:54:00, the next release added at
+    16:54:46. Checked in the dev server against a stand-in TorrServer that refuses one link: the next
+    release was added 0.6 s after the refusal and its episode started. With no other release, there was one
+    message and Lampa's window closed. The first version looped there, because closing the window aborts
+    the add and the abort fails the same way, so it now switches once per release.
   - **No video:** the file list came and has nothing Lampa plays (its `formats`: mkv, mp4, avi…). That's a
     fake: on 2026-10-20 all of Clayface's (tmdb 1400940) 1080p releases from `/gst/pick`, four listings
     named "Clayface (2026) 1080p AMZN WEB-DL DDP5 1 H 264-FLUX", were one `.exe` each (1.28, 1.50 and

@@ -80,14 +80,27 @@
             }, LIST_MS);
             return start.apply(this, arguments);
         };
-        // the hash of a release given as a .torrent link (no hash in the search results): TorrServer tells it
+        // the hash of a release given as a .torrent link (no hash in the search results): TorrServer tells it.
+        // TorrServer refusing the add (its link failed: POST /torrents 400) is the next release at once. Lampa's
+        // "no hash" window sat under the loading card, which said "Connecting…" until LIST_MS switched: 45 s
+        // for Desperate Housewives S1E1 on 2026-10-26, its LimeTorrents link failing in Jackett (access log 16:54:00
+        // add 400, 16:54:46 the next release added).
         var hash = Lampa.Torserver.hash;
         Lampa.Torserver.hash = function (params, oncomplite, onerror) {
             var cur = current;
             return hash.call(this, params, function (json) {
                 if (cur && cur === current && json && json.hash) cur.hash = String(json.hash).toLowerCase();
                 oncomplite.apply(this, arguments);
-            }, onerror);
+            }, function () {
+                var r = onerror && onerror.apply(this, arguments);
+                // once: closing Lampa's window aborts the request, which ends here again (it looped when there was
+                // no next release)
+                if (cur && cur === current && !cur.listed && !cur.refused) {
+                    cur.refused = true;
+                    setTimeout(function () { if (current === cur) switchRelease('nolink'); }, 0);
+                }
+                return r;
+            });
         };
         Lampa.Listener.follow('torrent_file', function (e) {
             if (!current) return;
@@ -120,7 +133,8 @@
     // it saw itself.
     function report(c, why) {
         var h = c.hash || rubyPick.hashOf(c.release), movie = c.movie || {};
-        if (!h || !movie.id || why === 'dead' || why === 'other') return;
+        // a link that failed may work again (LimeTorrents refuses bursts): not remembered
+        if (!h || !movie.id || why === 'dead' || why === 'other' || why === 'nolink') return;
         fetch(Lampa.Torserver.url() + '/gst/pick/failed?hash=' + h + '&tmdb=' + movie.id + '&kind=' +
             (movie.original_name || movie.name && !movie.title ? 'tv' : 'movie') + '&why=' + why +
             '&title=' + encodeURIComponent(c.release.Title || c.release.title || ''), { method: 'POST' }).catch(function () {});
@@ -130,11 +144,13 @@
 
     function switchRelease(why) {
         stop();
-        // a switch away from another film isn't the swarm's fault: it doesn't count (the list runs out instead)
-        var c = current, next = c && (why === 'other' || c.switches < MAX_SWITCHES) ? nextRelease(why) : null;
+        // a switch away from another film or a link that failed isn't the swarm's fault and costs no wait: it
+        // doesn't count (the list runs out instead)
+        var free = why === 'other' || why === 'nolink';
+        var c = current, next = c && (free || c.switches < MAX_SWITCHES) ? nextRelease(why) : null;
         var v = Lampa.PlayerVideo.video(), at = v && v.currentTime > 5 ? v.currentTime : c && c.at || 0;
         var what = why === 'dead' ? 'This release stopped sending' : why === 'nopeers' ? 'Nobody is sharing this release' :
-            why === 'nofiles' ? 'This release has no video in it' : why === 'other' ? 'This release is a different film with the same name' :
+            why === 'nofiles' ? 'This release has no video in it' : why === 'nolink' ? "This release couldn't be fetched" : why === 'other' ? 'This release is a different film with the same name' :
             'This release is too slow to play';
         console.log('Ruby swarm', why, c && c.hash, 'at', Math.round(at), 'next:', next && next.Title);
         if (c) report(c, why);
@@ -144,7 +160,7 @@
             if (!Lampa.Player.opened() && Lampa.Controller.enabled().name === 'modal') Lampa.Controller.back();
             return Lampa.Noty.show(what + ', and there is no other ' + (c ? rubyPick.resolution(c.release.Title || '') + 'p' : '') + ' release to switch to');
         }
-        carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + (why === 'other' ? 0 : 1) };
+        carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + (free ? 0 : 1) };
         Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
         if (Lampa.Player.opened()) Lampa.Player.close();
         // the player closes back to Lampa's file list (or it's still the loading window); its Back closes it and
