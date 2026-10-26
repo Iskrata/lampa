@@ -591,7 +591,7 @@ stamped field (`updated`) when a page sends an older one.
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Ten small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Eleven small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -634,6 +634,9 @@ Ten small edits, each marked `Lampa Desktop:`; re-apply them when updating from 
   (`webkitCurrentPlaybackTargetIsWireless`), switching episodes keeps the `<video>` and gives it the next
   stream, as upstream already does in picture-in-picture (`keepPip`). A new element ends the AirPlay session.
   See "Player", "AirPlay".
+- **`window.Lampa` gets `PlayerSegments`** (Lampa's `Segments$1`): skip times can then be set after the player
+  started (`introdb.js` gets them from TheIntroDB, which answers after `start`). Upstream takes them only from
+  the play data (`data.segments`) at `start`.
 
 ## Player
 
@@ -762,12 +765,24 @@ decides.
     know the episode, the card comes in the last 10 s and the next episode starts at the end, as before.
   - **A scene after the credits:** when TheIntroDB's credits end more than 15 s before the file does, the card
     shows "Next episode" from the credits on without counting down, and the episode plays out.
+  - TheIntroDB is asked by `introdb.js` (one ask per episode, shared with the skip button below).
   - Checked 2026-10-26 in the dev server (Chromium, a 60 s and a 20 s clip as a playlist, TheIntroDB's answer
     stubbed, the clips as blob URLs since the dev server can't serve ranges): credits at 45 s → card at 45,
     counted 10 → 1, episode 2 at 55; credits 43-44 s (16 s after) → "Next episode" from 44 without a count,
     episode 2 at the file's end; no answer, and credits at 90 s (past the file) → card at 50, episode 2 at the
     end; the cross at 48 → no card, episode 2 at the end. The real API answered the page (Rick and Morty S1E1:
     credits at 1298 s). Not checked on a real episode end to end.
+- **Skip intro** (`introdb.js`, the user, 2026-10-26): TheIntroDB's intro and recap times for the episode go to
+  Lampa's own skip segments, so its button shows "Skip in 3" before the intro and "Skip" with the time left
+  during it, and the intro is marked on the timeline. Lampa skips a segment by itself unless told otherwise
+  (Settings → Player → Segments, default "auto"); a profile that never chose gets the button ("user"). Times
+  with an end later than 20 min into the file are left out, and so are TheIntroDB's `0/0` "none" entries; a
+  source that brings its own segments keeps them. Upstream reads segments only from the play data at `start`,
+  so `window.Lampa` now carries `PlayerSegments` ("Changes to Lampa itself"). Runs on TVs too. Checked
+  2026-10-26 in the dev server (a 60 s clip, TheIntroDB's answer stubbed with an intro at 5-15 s): "Skip in 3"
+  at 2 s, "Skip" from 5 s, pressing it went from 10 s to 16 s, one segment on the timeline; the next-episode
+  card still came at the credits. Coverage, measured the same day on the same 18 shows × 3 episodes as the
+  credits: an intro or recap known for 37 of 54. Not checked with a real episode end to end.
 - **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: the profile's language as
   above), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
   in the built-in browser: the subtitle layer went away and came back with the downloaded text.

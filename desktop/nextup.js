@@ -1,14 +1,13 @@
 // "Next episode" countdown, as on Netflix (desktop/README.md, "Player"): when an episode's end credits start, a
 // card in the corner counts down LEAD seconds to the next episode in the player's playlist and then starts it,
 // skipping the rest of the credits. "Next episode" starts it now; the cross hides the card and lets the episode
-// play on. Credits times come from TheIntroDB (by TMDB id, season, episode); where it has none, or its time
+// play on. Credits times come from TheIntroDB (introdb.js); where it has none, or its time
 // doesn't fit this file, the card comes in the last LEAD seconds and the next episode starts when this one ends
 // (Lampa's own Settings → Player → "Next episode", playlist_next). When TheIntroDB says something follows the
 // credits (they end before the file does), the card stays without a countdown and the episode plays out.
 // Without playlist_next, or on the last episode, no card. Active only where desktop.js is.
 (function () {
     var LEAD = 10;
-    var API = 'https://api.theintrodb.org/v2/media';
     // a file's own content after the credits this long: a scene to see, not credits to skip
     var AFTER = 15;
     var CSS = [
@@ -25,36 +24,13 @@
     ].join('\n');
 
     var card = null, fill = null, label = null, dismissed = false, showing = false;
-    var credits = null, asked = {}, playing = '', fired = false;   // credits: { start, end } in seconds, for the playing episode
-
-    // TheIntroDB's end credits for a TV episode: the last credits entry that doesn't start at 0 (0/0 is how it
-    // says "none", and opening credits start near 0). Answers are kept for the page's life: one ask per episode.
-    function askCredits(data) {
-        credits = null;
-        playing = '';
-        var c = data && data.card, key;
-        if (!c || !c.id || !(c.name || c.original_name) || !(data.season > 0) || !(data.episode > 0)) return;
-        key = playing = c.id + '/' + data.season + '/' + data.episode;
-        if (key in asked) { credits = asked[key]; return; }
-        asked[key] = null;
-        fetch(API + '?tmdb_id=' + c.id + '&season=' + data.season + '&episode=' + data.episode)
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (j) {
-                var best = null;
-                ((j && j.credits) || []).forEach(function (seg) {
-                    if (seg.start_ms > 0 && (!best || seg.start_ms > best.start)) best = { start: seg.start_ms / 1000, end: seg.end_ms > 0 ? seg.end_ms / 1000 : 0 };
-                });
-                asked[key] = best;
-                if (playing === key) credits = best;
-                console.log('Ruby nextup', 'credits of', key, best ? 'at ' + best.start.toFixed(0) + ' s' : 'unknown');
-            }, function () {});
-    }
+    var fired = false;
 
     // where the card comes and whether it counts down: { at, auto } for a video of `duration` s. TheIntroDB's time
     // is for its own copy: it's used only when it lands in this file's last 30 % (Lampa's own rule for an end
     // segment, app.min.js draw$6) and before its last LEAD s.
     function plan(duration) {
-        var c = credits;
+        var c = window.rubyIntroDB && rubyIntroDB.credits();
         if (c && c.start >= duration * 0.7 && c.start < duration - LEAD)
             return { at: c.start, auto: !(c.end && c.end < duration - AFTER) };
         return { at: duration - LEAD, auto: false };
@@ -122,8 +98,8 @@
         style.textContent = CSS;
         document.head.appendChild(style);
         Lampa.PlayerVideo.listener.follow('timeupdate', update);
-        Lampa.Player.listener.follow('start', function (data) { dismissed = false; fired = false; hide(); askCredits(data); });
-        Lampa.Player.listener.follow('destroy', function () { dismissed = false; fired = false; credits = null; playing = ''; hide(); });
+        Lampa.Player.listener.follow('start', function () { dismissed = false; fired = false; hide(); });
+        Lampa.Player.listener.follow('destroy', function () { dismissed = false; fired = false; hide(); });
     }
 
     var t = setInterval(function () {
