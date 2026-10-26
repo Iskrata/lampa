@@ -35,13 +35,15 @@
         if (!card || !card.id || !url() || !rubyPlay.on()) return;
         var go = function (r) {
             var target = isShow(card) ? { season: r.season, episode: r.episode } : null;
-            var pct = r.state === 'continue' ? Math.round(r.percent || 0) : 0;
+            // where Lampa will resume: its saved time (the percent of its own idea of the length landed a segment late:
+            // 30 % of Breaking Bad S2E8 was 850 s, the saved place 845 s, 2026-10-26); Trakt's progress has only a percent
+            var place = r.state !== 'continue' ? '' : r.time ? '&at=' + Math.floor(r.time) : r.percent ? '&pct=' + Math.round(r.percent) : '';
             rubyPlay.choice(card, target).then(function (rel) {
                 var link = rel && (rel.MagnetUri || rel.Link);
                 if (!link) return;
                 ask(card.id + (target ? ' S' + target.season + 'E' + target.episode : ''), 'link=' + encodeURIComponent(link) +
                     '&title=' + encodeURIComponent(rel.Title || '') + (target ? '&season=' + target.season + '&episode=' + target.episode : '') +
-                    (pct ? '&pct=' + pct : '') + (rubyPlay.audio(card) === 'ja' ? '&lang=ja' : ''));
+                    place + (rubyPlay.audio(card) === 'ja' ? '&lang=ja' : ''));
             });
         };
         if (r) go(r); else if (isShow(card)) rubyResume.where(card, go); else go(rubyResume.film(card));

@@ -68,7 +68,7 @@
             var v = views[at], ep = eps[at];
             if (v.percent < FINISHED) {
                 var left = v.duration ? v.duration - v.time : runtime(d) * (1 - v.percent / 100);
-                return out('continue', ep, { percent: v.percent, left: Math.max(0, Math.round(left)), last: ep, from: 'lampa', updated: latest });
+                return out('continue', ep, { percent: v.percent, time: v.time || 0, left: Math.max(0, Math.round(left)), last: ep, from: 'lampa', updated: latest });
             }
             out(eps[at + 1] ? 'next' : 'done', eps[at + 1] || first, { last: ep, from: 'lampa', updated: latest });
         });
@@ -147,7 +147,7 @@
     function film(card) {
         var v = Lampa.Timeline.view(Lampa.Utils.hash(card.original_title || card.title || ''));
         if (!v || !v.percent || v.percent >= FINISHED) return { state: 'start' };
-        return { state: 'continue', percent: v.percent, left: Math.max(0, (v.duration || (card.runtime || 0) * 60) - (v.time || 0)), updated: v.updated || 0 };
+        return { state: 'continue', percent: v.percent, time: v.time || 0, left: Math.max(0, (v.duration || (card.runtime || 0) * 60) - (v.time || 0)), updated: v.updated || 0 };
     }
 
     var observer = null;

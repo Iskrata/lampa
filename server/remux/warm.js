@@ -1,10 +1,10 @@
 // Warming a file up before anyone plays it (README "Warming up"):
-//   GET /gst/warm?link=<magnet or this service's /gst/link>[&season=&episode=][&pct=][&lang=ja][&title=]
-//   GET /gst/warm?hash=<hash>&index=<file>[&pct=][&lang=ja]        (a file of a torrent already added: the next
+//   GET /gst/warm?link=<magnet or this service's /gst/link>[&season=&episode=][&at=|&pct=][&lang=ja][&title=]
+//   GET /gst/warm?hash=<hash>&index=<file>[&at=|&pct=][&lang=ja]        (a file of a torrent already added: the next
 //                                                                   episode in the player's playlist)
 // adds the torrent to TorrServer, waits for its file list, opens the file as the master does (probe and index,
-// kept on disk by source.js) and makes the segments of the first WARM_S (60) seconds from where it will start (pct,
-// the progress saved for it). TorrServer closes an idle torrent after 30 s (TorrentDisconnectTimeout) and keeps
+// kept on disk by source.js) and makes the segments of the first WARM_S (60) seconds from where it will start (at:
+// the place saved for it in seconds, or pct: a percent). TorrServer closes an idle torrent after 30 s (TorrentDisconnectTimeout) and keeps
 // its pieces in memory, so what lasts is on disk: the file list (TorrServer's database, torrserver.js keep), the
 // file's start and index, the session and those segments. Play then gets its master at once and the first
 // seconds from disk while the torrent connects again.
@@ -72,7 +72,7 @@ async function warm(q, session) {
         const s = await session(hash, index, lang), opened = Date.now();
         await s.init();
         const pct = Math.min(Math.max(+q.get('pct') || 0, 0), 99), b = s.m.bounds;
-        const from = s.index(s.m.duration * pct / 100);
+        const from = s.index(Math.min(+q.get('at') || s.m.duration * pct / 100, s.m.duration));
         let to = from;
         while (to + 1 < b.length - 1 && b[to + 1] - b[from] < WARM_S) to++;
         const done = `${hash}:${index}:${lang}:${from}`;
