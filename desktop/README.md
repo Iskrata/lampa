@@ -744,13 +744,30 @@ decides.
     no subtitle tracks there).
   - Chrome 152 (hls.js): subtitles on in English without touching anything; Left with the bar up went
     37.6 → 17.9 s; the forward/back buttons 17.7 → 39.2 → 19.6 s, one seek per click.
-- **Next episode countdown** (`nextup.js`), as on Netflix: in an episode's last 10 s a card in the corner says
-  "Next episode in 7" with the next item's title, its white fill growing as the seconds run out; the next
-  episode starts when this one ends (Lampa's own Settings → Player → "Next episode"). The button starts it
-  now; the cross hides the card for this episode (seeking back brings it again). No card on the last
-  episode or with "Next episode" off. The user asked for it "when the episode ends" (2026-10-18), not at
-  the credits: credits times exist only for some shows (TheIntroDB). Checked 2026-10-18 in the built-in
-  browser with a two-item playlist: card at 0:10 left, counted down, item 2 started at the end.
+- **Next episode countdown** (`nextup.js`), as on Netflix: **when the end credits start** (the user, 2026-10-26: "at
+  the end of the ep (start of end credits), not the last 10s") a card in the corner says "Next episode in 7"
+  with the next item's title, its white fill growing over 10 s; then the next episode starts, skipping the
+  rest of the credits. The button starts it now; the cross hides the card and the episode plays on (seeking
+  back brings it again), and the next one still starts when it ends (Lampa's own Settings → Player → "Next
+  episode", `playlist_next`). No card on the last episode or with "Next episode" off. On an iPhone in iOS's own
+  full-screen player the card can't be seen, but the countdown and the switch still happen.
+  - **Credits times** come from TheIntroDB (`api.theintrodb.org/v2/media?tmdb_id=&season=&episode=`, no key,
+    CORS open to every origin we serve from, 30 requests per few seconds), asked once per episode when it
+    starts. Measured 2026-10-26 on 18 shows × 3 episodes: credits known for 41 of 54 (Desperate Housewives,
+    Rick and Morty, Game of Thrones, Friends, Breaking Bad, The Boys, Severance, The Last of Us all 3/3; The
+    Office and NCIS none). Its answers need reading: `{start_ms: 0, end_ms: 0}` means none, and some entries
+    start at 0 (opening credits), so the card uses the latest entry starting after 0. The time is for
+    TheIntroDB's copy, not this file, so it's used only when it lands in the file's last 30 % (Lampa's own rule
+    for an end segment, app.min.js `draw$6`) and before its last 10 s; otherwise, and when TheIntroDB doesn't
+    know the episode, the card comes in the last 10 s and the next episode starts at the end, as before.
+  - **A scene after the credits:** when TheIntroDB's credits end more than 15 s before the file does, the card
+    shows "Next episode" from the credits on without counting down, and the episode plays out.
+  - Checked 2026-10-26 in the dev server (Chromium, a 60 s and a 20 s clip as a playlist, TheIntroDB's answer
+    stubbed, the clips as blob URLs since the dev server can't serve ranges): credits at 45 s → card at 45,
+    counted 10 → 1, episode 2 at 55; credits 43-44 s (16 s after) → "Next episode" from 44 without a count,
+    episode 2 at the file's end; no answer, and credits at 90 s (past the file) → card at 50, episode 2 at the
+    end; the cross at 48 → no card, episode 2 at the end. The real API answered the page (Rick and Morty S1E1:
+    credits at 1298 s). Not checked on a real episode end to end.
 - **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: the profile's language as
   above), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
   in the built-in browser: the subtitle layer went away and came back with the downloaded text.
