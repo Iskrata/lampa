@@ -3,37 +3,44 @@
 // six times; the access log shows each drop as the phone loading the video again where the TV was, 20-30 s
 // after the TV stopped asking for segments (a pause?) and, twice, 3 s after the page hid (the phone locked?).
 // What the page saw then (pause, page hidden, the route lost, full screen closed) is only known on the phone:
-// this sends it. Only while the video plays on a screen and for 2 minutes after; a beacon, so a locking phone
-// still sends it.
+// this sends it. One line when a stream opens (so a log without AirPlay lines still says the page sent it), every
+// route change, and every event while an AirPlay screen is around or the video plays on one (and 2 minutes
+// after); a beacon, so a locking phone still sends it.
+// The first version (2026-10-26) sent nothing from an iPhone that AirPlayed to a Mac for a minute: it listened
+// on the element Lampa's `ready` handed it and logged only once `webkitCurrentPlaybackTargetIsWireless` was
+// true. Now media events are caught on the document (capture: they don't bubble), whatever the element.
 (function () {
     'use strict';
 
     var AFTER_MS = 120000, EVENTS = ['play', 'pause', 'playing', 'waiting', 'stalled', 'seeking', 'ended', 'error',
         'emptied', 'loadstart', 'ratechange', 'webkitbeginfullscreen', 'webkitendfullscreen',
-        'webkitcurrentplaybacktargetiswirelesschanged'];
-    var lines = [], timer = 0, wirelessAt = 0, t0 = Date.now();
-
-    function current() { return Lampa.PlayerVideo.video(); }
+        'webkitcurrentplaybacktargetiswirelesschanged', 'webkitplaybacktargetavailabilitychanged'];
+    var ROUTE = /^(webkitcurrentplaybacktargetiswirelesschanged|webkitplaybacktargetavailabilitychanged|loadstart)$/;
+    var lines = [], timer = 0, wirelessAt = 0, t0 = Date.now(), opened = '', screens = false;
 
     function hash(v) {
         var m = /\/gst\/([0-9a-f]{40})\//i.exec((v && v.currentSrc) || '');
         return m ? m[1].slice(0, 8) : '-';
     }
 
-    function note(what, v) {
-        v = v || current();
+    function line(what, v) {
         var wireless = !!(v && v.webkitCurrentPlaybackTargetIsWireless);
-        if (wireless) wirelessAt = Date.now();
-        else if (!wirelessAt || Date.now() - wirelessAt > AFTER_MS) return;
-        lines.push('+' + ((Date.now() - t0) / 1000).toFixed(1) + 's ' + hash(v) + ' ' + what +
+        return '+' + ((Date.now() - t0) / 1000).toFixed(1) + 's ' + hash(v) + ' ' + what +
             (v ? ' t=' + (v.currentTime || 0).toFixed(1) + ' paused=' + (v.paused ? 1 : 0) + ' ready=' + v.readyState +
-                ' rate=' + v.playbackRate : ' no video') +
-            ' wireless=' + (wireless ? 1 : 0) + ' hidden=' + (document.hidden ? 1 : 0) +
-            ' full=' + (v && v.webkitDisplayingFullscreen ? 1 : 0));
+                ' rate=' + v.playbackRate + ' wireless=' + (wireless ? 1 : 0) + ' full=' + (v.webkitDisplayingFullscreen ? 1 : 0) : ' no video') +
+            ' hidden=' + (document.hidden ? 1 : 0);
+    }
+
+    // force: logged whatever the route (a stream opening, a route change). Also while an AirPlay screen is around
+    // (screens): in case Safari doesn't say the video is on one (iOS's own full-screen player has its own button)
+    function note(what, v, force) {
+        v = v || Lampa.PlayerVideo.video();
+        if (v && v.webkitCurrentPlaybackTargetIsWireless) wirelessAt = Date.now();
+        else if (!force && !screens && (!wirelessAt || Date.now() - wirelessAt > AFTER_MS)) return;
+        lines.push(line(what, v));
         // a page going away, or the route changing, can't wait for the batch
-        var now = /^(hidden|pagehide|webkitcurrentplaybacktargetiswirelesschanged|destroy)/.test(what);
         clearTimeout(timer);
-        if (now) send(); else timer = setTimeout(send, 2000);
+        if (force || /^(hidden|pagehide|destroy)/.test(what)) send(); else timer = setTimeout(send, 2000);
     }
 
     function send() {
@@ -43,16 +50,25 @@
         try { navigator.sendBeacon(Lampa.Torserver.url() + '/gst/log', body); } catch (e) {}
     }
 
-    function watch(v) {
-        if (!v || v._rubyApLog) return;
-        v._rubyApLog = true;
-        EVENTS.forEach(function (name) { v.addEventListener(name, function () { note(name, v); }); });
+    function onMedia(e) {
+        var v = e.target;
+        // the player's video, not compat.js's spare one (no source) nor a trailer
+        if (!v || v.tagName !== 'VIDEO' || !/\/gst\//.test(v.currentSrc || '')) return;
+        if (e.type === 'loadstart') {
+            // once per stream: Safari sends loadstart again on a reload of the same source
+            if (opened === v.currentSrc) return;
+            opened = v.currentSrc;
+            var ua = navigator.userAgent, os = / OS (\d+_\d+)/.exec(ua);
+            return note('open ' + ((/\(([^;)]+)/.exec(ua) || [])[1] || '?') + (os ? ' iOS ' + os[1] : '') + ' ' +
+                ((/Version\/[\d.]+/.exec(ua) || [''])[0]), v, true);
+        }
+        if (e.type === 'webkitplaybacktargetavailabilitychanged') screens = e.availability === 'available';
+        note(e.type + (e.type === 'webkitplaybacktargetavailabilitychanged' ? ' ' + e.availability : ''), v, ROUTE.test(e.type));
     }
 
     function start() {
-        // the player's <video> can be new for each stream
-        Lampa.Player.listener.follow('ready', function () { watch(current()); });
-        Lampa.Player.listener.follow('destroy', function () { note('destroy (player closed)'); });
+        EVENTS.forEach(function (name) { document.addEventListener(name, onMedia, true); });
+        Lampa.Player.listener.follow('destroy', function () { note('destroy (player closed)'); opened = ''; });
         document.addEventListener('visibilitychange', function () { note(document.hidden ? 'hidden' : 'visible'); });
         window.addEventListener('pagehide', function () { note('pagehide'); });
     }

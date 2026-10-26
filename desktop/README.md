@@ -879,9 +879,13 @@ decides.
   each media event (`pause`, `playing`, `webkitcurrentplaybacktargetiswirelesschanged`, full screen begin/end…),
   the page hiding/showing and the player closing, with the time, `paused`, `readyState`, `playbackRate` and
   whether the page is hidden, as `navigator.sendBeacon` to `POST /gst/log` (a beacon goes out as the phone
-  locks). They are the `airplay` lines of `lamparemux-service.out.log`. Checked 2026-10-26 in Node with a stubbed
-  video (nothing sent before the route, one batch per change) and against a local remux (lines printed). Not
-  yet seen from a real session.
+  locks). They are the `airplay` lines of `lamparemux-service.out.log`. The first version sent nothing from an
+  iPhone that AirPlayed to a Mac for a minute (2026-10-26, 18:17; no `POST /gst/log` in the access log): it
+  listened on the element Lampa's `ready` gave it, and only once Safari said the video was on a screen. Now media
+  events are caught on the document (capture), a line goes out when a stream opens and on every route or
+  availability change, and every event is logged while an AirPlay screen is around. Checked 2026-10-26 in Safari
+  27.0.1 on a Mac (a test page with this file, a 20 s clip under a `/gst/<hash>/` path, a local log server): open,
+  `available`, playing, pause and the player's close arrived as two beacons.
 - **4K on the TV** (the user's call 2026-10-20). Play picks for the phone's screen (1080p at most), but an
   Apple TV fetches the stream itself and may be on a 4K TV. When AirPlay starts
   (`webkitcurrentplaybacktargetiswirelesschanged`) with a 4K copy found and something smaller playing, a "Play
