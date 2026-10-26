@@ -17,6 +17,7 @@
 //   GET /gst/src/<hash>/<file>[?rec=1]             -> the file's bytes for ffmpeg/ffprobe on this machine, from disk
 //                                                     where its first open read them (source.js)
 //   GET /gst/speedtest?mb=4                        -> random bytes, for the browser to time its connection
+//   POST /gst/log                                  -> lines from a player (desktop/airplay.js), printed in this log
 //   GET /gst/swarm?hash=<hash>,<hash>...           -> real seeder counts from trackers, and the releases seen dead
 //                                                     (swarm.js; the heartbeat says Swarm: { dead, stalled, waiting })
 //   GET /gst/pick?tmdb=<id>&kind=movie|tv[&season=&episode=][&lang=ja] -> the releases to play, ranked, per
@@ -44,7 +45,9 @@ const swarms = require('./swarm');   // (swarm() below is the log's peers line)
 const picks = require('./pick');
 const releases = require('./releases');
 
-const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 10 * 60000, SLOW_MS = 3000;
+// a TV on AirPlay asks for nothing while paused, and the phone that sent it may be locked (no heartbeat): its
+// segments stay 2 h, so a resume is served from disk (an AirPlay TV gives up on a segment after 5 s)
+const IDLE_KILL_MS = 60000, IDLE_DROP_MS = 2 * 3600e3, SLOW_MS = 3000;
 const sec = ms => (ms / 1000).toFixed(1) + ' s';
 
 // every log line with its time: a slow start or a hang is matched to what the player saw
@@ -144,6 +147,17 @@ function sendFile(res, file) {
     fs.createReadStream(file).pipe(res);
 }
 
+// a player's lines (desktop/airplay.js): at most 8 KB, each line cut at 300 characters
+function playerLog(req, res) {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', c => { if (body.length < 8192) body += c; });
+    req.on('end', () => {
+        for (const line of body.slice(0, 8192).split('\n').filter(Boolean)) console.log('airplay', line.slice(0, 300).replace(/[^\x20-\x7e]/g, '?'));
+        send(res, 200, 'ok');
+    });
+}
+
 // waiting for the torrent's data (the probe, a segment): swarm.js tells a dead swarm by such waits. Only while
 // the player still asks (a closed tab's request isn't waiting) and, for a segment, while ffmpeg reads for it
 async function fed(hash, p, res, reading) {
@@ -161,6 +175,7 @@ async function handle(req, res) {
     if (hash === 'src' && /^[0-9a-f]{40}$/i.test(a || '') && /^\d+$/.test(b || '') && !req.headers['x-forwarded-for'])
         return source.handle(req, res, a.toLowerCase(), b, url.searchParams.get('rec') === '1');
     if (hash === 'speedtest') return speedtest(res, url.searchParams.get('mb'));
+    if (hash === 'log' && req.method === 'POST') return playerLog(req, res);
     if (hash === 'swarm') return send(res, 200, JSON.stringify(await swarms.report(url.searchParams.get('hash') || '')), 'application/json');
     if (hash === 'pick' && a === 'failed' && req.method === 'POST') {
         const q = url.searchParams, h = q.get('hash') || '';
@@ -249,11 +264,40 @@ setInterval(() => {
     }, () => {});
 }, 15000);
 
+// The segments made before a restart (a deploy) stay, so a player is served from disk across it: on 2026-10-24
+// a deploy at 14:17:48 wiped them, the next process had to read the torrent again (79 s for seg137, the torrent
+// at 0 MB/s), and the TV on AirPlay asked four times, 5 s each, and stopped. Kept only when this code is the
+// one that made them (its files' hash in VERSION: a change to how segments are cut would mix two kinds), and a
+// session not used for IDLE_DROP_MS is deleted as it would have been. A segment is written whole (renamed from
+// .tmp), so a killed run leaves no half segment.
+function keepCache() {
+    const code = ['session.js', 'media.js', 'mp4.js', 'mp4index.js', 'mkv.js']
+        .map(f => fs.readFileSync(path.join(__dirname, f))).join('');
+    const version = require('crypto').createHash('sha256').update(code).digest('hex').slice(0, 16);
+    const stamp = path.join(cfg.cache, 'VERSION');
+    let same = false;
+    try { same = fs.readFileSync(stamp, 'utf8') === version; } catch (e) {}
+    if (!same) fs.rmSync(cfg.cache, { recursive: true, force: true });
+    fs.mkdirSync(cfg.cache, { recursive: true });
+    fs.writeFileSync(stamp, version);
+    let kept = 0;
+    for (const d of fs.readdirSync(cfg.cache, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue;
+        const dir = path.join(cfg.cache, d.name);
+        try {
+            const files = fs.readdirSync(dir), newest = Math.max(0, ...files.map(f => fs.statSync(path.join(dir, f)).mtimeMs));
+            if (Date.now() - newest > IDLE_DROP_MS) { fs.rmSync(dir, { recursive: true, force: true }); continue; }
+            for (const f of files) if (f.endsWith('.tmp')) fs.rmSync(path.join(dir, f), { force: true });
+            kept++;
+        } catch (e) { console.error(`cache ${d.name}: ${e.message}`); }
+    }
+    console.log(same ? `cache: ${kept} session(s) kept from before the restart` : 'cache: emptied (new segment code)');
+}
+
 // a failed request or a file that won't delete must not stop the service
 process.on('unhandledRejection', e => console.error('unhandled:', e && e.message || e));
 
-fs.rmSync(cfg.cache, { recursive: true, force: true });
-fs.mkdirSync(cfg.cache, { recursive: true });
+keepCache();
 downloads.start(hash => forHash(hash).length > 0);
 // torrents saved for their file list and not played for a month leave TorrServer's list
 forget().catch(() => {});

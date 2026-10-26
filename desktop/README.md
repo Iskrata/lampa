@@ -41,6 +41,7 @@ see "Touch devices and phones".
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `swarm.js` | real seeder counts in every torrent list, dead releases left out; switches to the next release of the same resolution when the playing one stops sending or is too slow ("Dead swarms") |
 | `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
+| `airplay.js` | while the video plays on an AirPlay screen, what it does (pause, page hidden, route lost) goes to the remux's log ("AirPlay") |
 | `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a tap readies the player's `<video>` (Safari), a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
 
@@ -801,6 +802,23 @@ decides.
   dev server (Chromium, two 6 s clips as a playlist, `webkitCurrentPlaybackTargetIsWireless` set on the video):
   at the end and on the panel's Next episode the same element went on to episode 2 and played; without it, a
   new element as before. Not checked with a real Apple TV (that Safari keeps the route when `src` changes).
+- **Drops from the TV** (the user, 2026-10-25: "it disconnects sometimes, it needs to be open… when I pause
+  the TV stops"). The TV is a Samsung "65\" QLED" (AirPlay 2, `User-Agent: AirPlay/2.0 … MFi_AirPlay_Device`),
+  which fetches the stream itself. In ruby's `access-public.log` of 2026-10-24/25 (Caddy, read 2026-10-26) the
+  TV played six times, and each drop looks the same: the TV asks for two 6 s segments every 12 s, misses one
+  such ask (paused), and 20-30 s later the phone asks for `init.mp4` and the segment where the TV was (the video
+  came back to the phone, same element: no new master). Twice (14:10, 10:40) the phone's heartbeat had stopped
+  1-3 s before, so the page had just hidden (locked or left); twice (14:02, 10:32) it was still visible. Two
+  other drops were the TV giving up on a slow segment: it waits 5 s per request (`499` after 4.98 s, four tries),
+  once after a remux restart that had wiped its segments (fixed: server/remux/README.md "Restarts"). Two more
+  were an episode's end (since 83c9978 the next episode stays on the TV). What the phone did at a pause-drop
+  isn't in any server log, so `airplay.js` sends it: while the video is on an AirPlay screen and 2 minutes after,
+  each media event (`pause`, `playing`, `webkitcurrentplaybacktargetiswirelesschanged`, full screen begin/end…),
+  the page hiding/showing and the player closing, with the time, `paused`, `readyState`, `playbackRate` and
+  whether the page is hidden, as `navigator.sendBeacon` to `POST /gst/log` (a beacon goes out as the phone
+  locks). They are the `airplay` lines of `lamparemux-service.out.log`. Checked 2026-10-26 in Node with a stubbed
+  video (nothing sent before the route, one batch per change) and against a local remux (lines printed). Not
+  yet seen from a real session.
 - **4K on the TV** (the user's call 2026-10-20). Play picks for the phone's screen (1080p at most), but an
   Apple TV fetches the stream itself and may be on a 4K TV. When AirPlay starts
   (`webkitcurrentplaybacktargetiswirelesschanged`) with a 4K copy found and something smaller playing, a "Play

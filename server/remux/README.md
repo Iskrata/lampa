@@ -72,9 +72,21 @@ A deploy restarts this service while people watch, and nobody should notice:
 - **Caddy covers the gap** (`lb_try_duration 30s` on `/gst/`):
   - A request arriving while nothing listens waits until the next process does.
   - A GET whose connection closed before an answer is sent again.
-- **The next process starts from the request.** Its cache is empty. It rebuilds the session from the first
-  segment asked for, and the title id in the path brings OpenSubtitles back too (below). The player sees one
-  slow segment.
+- **The next process starts from the request,** with the segments made before the restart. It rebuilds the
+  session from the first segment asked for (the probe and index are kept on disk, `REMUX_SOURCES`), and the
+  title id in the path brings OpenSubtitles back too (below). Segments already made are served from disk, so
+  the player sees nothing; one past them waits for a new ffmpeg run.
+- **The cache is kept** while the code that cuts segments is the same (`session.js`, `media.js`, `mp4.js`,
+  `mp4index.js`, `mkv.js`: their hash is in `<cache>/VERSION`; any change empties it, so two kinds of segment
+  never mix). A segment is written whole (`.tmp`, then renamed); leftover `.tmp` files and sessions unused for 2
+  h are deleted at start. Until 2026-10-26 a restart emptied the cache: on 2026-10-24 a deploy at 14:17:48
+  (EEST) did, the next process read seg137 from the torrent again in 79 s, and the TV on AirPlay, which gives up
+  on a request after 5 s (four tries in `access-public.log`), stopped. Checked 2026-10-26 on the Mac against
+  ruby's TorrServer (Desperate Housewives S01 720p, file 1): seg0-2 made, SIGINT, a new process served seg2 in
+  0.003 s (the same bytes) and seg1 in 0.17 s, with no ffmpeg run.
+- **Idle sessions:** ffmpeg stops after 60 s without a request or heartbeat; the session and its segments go
+  after 2 h (10 min until 2026-10-26). A TV on AirPlay asks for nothing while paused, and the phone that sent
+  it may be locked, so with 10 min a longer pause came back to a torrent read from scratch, past the TV's 5 s.
 
 Tested 2026-10-19 on the Mac, with:
 - Lampa's hls.js 1.4.7 with Lampa's settings, playing Big Buck Bunny from the home server's TorrServer;
