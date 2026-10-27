@@ -95,4 +95,13 @@ function of(tmdb, kind, nameKey) {
     return { played, failed: bad, failedNames: names, wrong: wrongs, wrongNames };
 }
 
-module.exports = { watching, sent, failed, wrong, of };
+// when the release last played for any title (0: never). swarm.js: one that played after it was seen dead isn't
+// dead (23609c03, Desperate Housewives S2 720p, was called dead at 07:32:59 on 2026-10-27, played 120 s ten
+// seconds later, and stayed hidden as dead, so S2E12 had nothing left to play)
+function lastPlayed(hash) {
+    let ok = 0;
+    for (const t of Object.values(titles)) if (t[hash]) ok = Math.max(ok, t[hash].ok || 0);
+    return ok;
+}
+
+module.exports = { watching, sent, failed, wrong, of, lastPlayed };

@@ -92,11 +92,11 @@ function save() {
     for (const h of Object.keys(dead)) if (now - dead[h].at > DEAD_KEEP_MS) delete dead[h];
     fs.writeFile(cfg.swarm, JSON.stringify(dead), () => {});
 }
+// a release that played after it was seen dead isn't dead any more (releases.js lastPlayed)
+function isDead(h) { return !!dead[h] && Date.now() - dead[h].at <= DEAD_KEEP_MS && releases.lastPlayed(h) < dead[h].at; }
 function deadList() {
-    const now = Date.now();
-    return Object.keys(dead).filter(h => now - dead[h].at <= DEAD_KEEP_MS).map(h => ({ hash: h, title: dead[h].title, size: dead[h].size }));
+    return Object.keys(dead).filter(isDead).map(h => ({ hash: h, title: dead[h].title, size: dead[h].size }));
 }
-function isDead(h) { return !!dead[h] && Date.now() - dead[h].at <= DEAD_KEEP_MS; }
 
 // requests waiting on a torrent: hash -> { waits, since, idleAt, bytes, grewAt }. waits: a request's "is the
 // torrent asked for data now?" each (a run held back asks it for nothing, session.js reading())

@@ -351,7 +351,11 @@ What Lampa's lists show and what the player switches on (desktop/README.md, "Dea
   12–16 s ("Why starting takes longer than a seek"), hence 25 s. Sampled every 5 s. A player retrying within
   5 s keeps the wait going: Lampa gives up on a master after 20 s and asks again (Caddy's 499s in the
   Vikings case below). Before marking, a tracker must answer, so this server's own outage never counts. Dead
-  releases are kept 7 days in `REMUX_SWARM`, for everyone. The heartbeat adds `Swarm: { dead, stalled, waiting }` (`waiting`: requests held for the torrent now; desktop/swarm.js calls a release too slow only while one is, since a player that asks for nothing makes any torrent look slow).
+  releases are kept 7 days in `REMUX_SWARM`, for everyone, unless one plays (120 s, releases.js) after it was
+  seen dead: then it isn't. On 2026-10-27 `23609c03` (Desperate Housewives S2 720p PROTON) was called dead at
+  07:32:59 and played 120 s ten seconds later, `167a5870` (the S01-08 720p pack) the same at 13:20, and both
+  stayed hidden as dead, so S2E12 had nothing to offer. A test copy on the home server with the real memory
+  offered both for S2E12 again. The heartbeat adds `Swarm: { dead, stalled, waiting }` (`waiting`: requests held for the torrent now; desktop/swarm.js calls a release too slow only while one is, since a player that asks for nothing makes any torrent look slow).
   - The count compared is "changed", not "grew": a torrent closed for being idle and added again starts
     at 0. The first version compared "grew". It called WiKi dead while it downloaded 2.6 → 11.7 MB, because
     its count from an earlier try was higher.
@@ -418,6 +422,12 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
      a torrent that sends nothing does so whatever it was opened for. A later "played" (picked by hand
      from the list) clears it. Matched by hash; a release whose hash isn't known (its link not resolved
      in time, no twin) is matched by the failed release's name (`rubyPick.key`), which the report sends.
+     **Unless nothing else is left:** when every release the ranking would offer failed once, those are
+     offered again (the log line says `(offered again: nothing else left)`). "Too slow" and "dead" describe a
+     moment: on 2026-10-27 Desperate Housewives S2E12 said "no good English copy" because both S2 1080p packs
+     (`739a093b` SiGMA, `4b3e45fe` KONTRAST) had played for the title and then each had one slow minute.
+     Checked the same day with a test copy on the home server and the real memory, with the two 720p releases
+     marked failed: S2E12 got 1080p 2 and 720p 3 instead of nothing.
 6. **The answer:** each resolution's releases, best first, at most 10, one listing per torrent (several
    indexers list the same one). Each is what Lampa's torrent flow reads (`Title`, `Size`, `Seeders`,
    `MagnetUri` or `Link`, `InfoHash`, `played`). Jackett's `.torrent` links carry its key

@@ -209,10 +209,16 @@ async function pick(q) {
     const mem = releases.of(tmdb, kind, rules.key), id = r => rules.hashOf(r);
     // a release still without a hash (its link not resolved in time) is matched by name
     // and one seen to be another film of this name (sameFilm) is left out for this title
-    const usable = alive.filter(r => id(r) ? !mem.failed.has(id(r)) && !mem.wrong.has(id(r)) :
-        !mem.failedNames.has(rules.key(r.Title)) && !mem.wrongNames.has(rules.key(r.Title)));
+    const wrong = r => id(r) ? mem.wrong.has(id(r)) : mem.wrongNames.has(rules.key(r.Title));
+    const failed = r => id(r) ? mem.failed.has(id(r)) : mem.failedNames.has(rules.key(r.Title));
+    const usable = alive.filter(r => !wrong(r) && !failed(r));
     const audio = rules.anime(movie) ? (q.get('lang') === 'ja' ? 'ja' : 'en') : null;
-    const best = rules.best(usable, movie, target, audio);
+    let best = rules.best(usable, movie, target, audio);
+    // every release left failed once: those again rather than nothing. A release called too slow or dead
+    // was so at that moment; Desperate Housewives S2's two 1080p packs had played for the title before one
+    // slow minute each, and S2E12 was "no good English copy" on 2026-10-27
+    const retry = !Object.keys(best.groups).length;
+    if (retry) best = rules.best(alive.filter(r => !wrong(r)), movie, target, audio);
     const choices = [2160, 1080, 720].filter(res => best.groups[res]).map(res => {
         // one torrent is listed by several indexers: once is enough (the best-ranked listing)
         const seen = new Set(), g = best.groups[res].filter(r => { const k = id(r) || rules.key(r.Title); return !seen.has(k) && seen.add(k); });
@@ -223,7 +229,7 @@ async function pick(q) {
     const took = Date.now() - t0;
     console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found ` +
         `(${links.got}/${links.asked} link-only hashed), ` +
-        `${found.length - alive.length} dead, ${alive.length - usable.length} failed or another film before, ` +
+        `${found.length - alive.length} dead, ${alive.length - usable.length} failed or another film before${retry ? ' (offered again: nothing else left)' : ''}, ` +
         choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s ` +
         `(search ${searched - t0} ms, links ${hashed - searched} ms, trackers ${scraped - hashed} ms)`);
     return { audio: best.audio, choices, found: found.length, took };
