@@ -27,7 +27,7 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
 | `GET /gst/pick?tmdb=<id>&kind=movie\|tv[&season=&episode=][&lang=ja]` | the releases to play, ranked: `{ audio, choices: [{ res, label, releases }], found, took }` ("Picking a release" below) |
-| `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow): never offered again (by hash; by `title` where a listing's hash isn't known) |
+| `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow, no video): not offered for 6 h (no video: never) (by hash; by `title` where a listing's hash isn't known) |
 | `GET /gst/link?u=<Jackett .torrent link without its key>` | that link fetched from Jackett with the key, for TorrServer |
 | `GET /gst/jackett/api/v2.0/indexers/<x>/results?...` | Lampa's own Jackett search, with the key added here and removed from the answer (every download link becomes a `/gst/link` one); other Jackett paths 404 |
 | `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
@@ -351,7 +351,7 @@ What Lampa's lists show and what the player switches on (desktop/README.md, "Dea
   12–16 s ("Why starting takes longer than a seek"), hence 25 s. Sampled every 5 s. A player retrying within
   5 s keeps the wait going: Lampa gives up on a master after 20 s and asks again (Caddy's 499s in the
   Vikings case below). Before marking, a tracker must answer, so this server's own outage never counts. Dead
-  releases are kept 7 days in `REMUX_SWARM`, for everyone, unless one plays (120 s, releases.js) after it was
+  releases are kept a day in `REMUX_SWARM` (7 days until 2026-10-27), for everyone, unless one plays (120 s, releases.js) after it was
   seen dead: then it isn't. On 2026-10-27 `23609c03` (Desperate Housewives S2 720p PROTON) was called dead at
   07:32:59 and played 120 s ten seconds later, `167a5870` (the S01-08 720p pack) the same at 13:20, and both
   stayed hidden as dead, so S2E12 had nothing to offer. A test copy on the home server with the real memory
@@ -418,8 +418,11 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
      once. The title comes from the master's `tmdb`/`kind`, or the `.t<id>` / `.m<id>` in a segment's
      path. A played release comes first in its resolution for that title.
    - **Failed:** `swarm.js` saw it dead, or a player switched away from it and said so
-     (`/gst/pick/failed`: no peers within 45 s, or too slow). It is never offered again, for any title:
-     a torrent that sends nothing does so whatever it was opened for. A later "played" (picked by hand
+     (`/gst/pick/failed`: no peers within 45 s, too slow, no video in it). It isn't offered again, for any
+     title, for a while (`FAIL_KEEP_MS`): too slow and no peers 6 h, dead 1 day, no video never, any other
+     reason 1 day. A torrent that sends nothing does so whatever it was opened for, but only at that time:
+     seeders come and go, and this server's download is shared. Until 2026-10-27 every failure was for good
+     (the user's call that day to make them expire). A later "played" (picked by hand
      from the list) clears it. Matched by hash; a release whose hash isn't known (its link not resolved
      in time, no twin) is matched by the failed release's name (`rubyPick.key`), which the report sends.
      **Unless nothing else is left:** when every release the ranking would offer failed once, those are
@@ -427,7 +430,9 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
      moment: on 2026-10-27 Desperate Housewives S2E12 said "no good English copy" because both S2 1080p packs
      (`739a093b` SiGMA, `4b3e45fe` KONTRAST) had played for the title and then each had one slow minute.
      Checked the same day with a test copy on the home server and the real memory, with the two 720p releases
-     marked failed: S2E12 got 1080p 2 and 720p 3 instead of nothing.
+     marked failed: S2E12 got 1080p 2 and 720p 3 instead of nothing. With the failures expiring, the same
+     copy gave S2E12 1080p 2 (SiGMA and KONTRAST, failed slow 21-27 h before) and 720p 2 without the
+     fallback; `0b667957`, failed slow 4.9 h before, was still left out.
 6. **The answer:** each resolution's releases, best first, at most 10, one listing per torrent (several
    indexers list the same one). Each is what Lampa's torrent flow reads (`Title`, `Size`, `Seeders`,
    `MagnetUri` or `Link`, `InfoHash`, `played`). Jackett's `.torrent` links carry its key

@@ -470,7 +470,7 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     (fakes take a real release's name in other sizes); until 2026-10-20 only the last one listed did, and
     Clayface's TorrentGalaxy link matched none of its three same-named twins.
   - Releases are left out when the trackers know them with 0 seeders, or when Ruby saw them dead in the
-    last 7 days (by hash, or by name and size for those without one).
+    last day (7 days until 2026-10-27) (by hash, or by name and size for those without one).
   - Play's minimums (15 / 5 / 3) apply to the real count. WiKi (5 real) still shows in the manual list
     with its true number.
   - Without an answer within 2.5 s, the results stay as they were.

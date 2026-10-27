@@ -18,7 +18,8 @@ const releases = require('./releases');
 const SCRAPE_MS = 1000, SCRAPE_KEEP_MS = 15 * 60000, PER_PACKET = 70;
 // starting takes 12-16 s of swarm warm-up on the home server before any byte comes (README "Why starting a
 // torrent takes longer than a seek"), so a little more than that
-const STALL_MS = 25000, SAMPLE_MS = 5000, GAP_MS = 5000, DEAD_KEEP_MS = 7 * 24 * 3600e3;
+// a dead release is hidden for a day, as releases.js keeps it out (FAIL_KEEP_MS.dead; 7 days until 2026-10-27)
+const STALL_MS = 25000, SAMPLE_MS = 5000, GAP_MS = 5000, DEAD_KEEP_MS = 24 * 3600e3;
 
 // one tracker's counts for hashes (hex): Map hash -> { seeders, leechers, completed }, empty when it doesn't answer
 function scrapeTracker(tracker, hashes) {
