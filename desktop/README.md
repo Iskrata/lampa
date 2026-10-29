@@ -41,7 +41,7 @@ see "Touch devices and phones".
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `swarm.js` | real seeder counts in every torrent list, dead releases left out; switches to the next release of the same resolution when the playing one stops sending or is too slow ("Dead swarms") |
 | `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
-| `airplay.js` | while the video plays on an AirPlay screen, what it does (pause, page hidden, route lost) goes to the remux's log ("AirPlay") |
+| `airplay.js` | while the video plays on an AirPlay screen, and while a start hasn't played yet, what it does (pause, page hidden, route lost, stuck loading) goes to the remux's log ("AirPlay") |
 | `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a tap readies the player's `<video>` (Safari), a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
 
@@ -894,6 +894,14 @@ decides.
   availability change, and every event is logged while an AirPlay screen is around. Checked 2026-10-26 in Safari
   27.0.1 on a Mac (a test page with this file, a 20 s clip under a `/gst/<hash>/` path, a local log server): open,
   `available`, playing, pause and the player's close arrived as two beacons.
+  **Starts too** (2026-10-29): every event from a stream's opening until its first `playing`, a "not playing yet
+  after Ns, buffered …" line every 10 s while it doesn't, and errors (code and message), AirPlay or not. Why:
+  Choko boko's iPhone (iOS 18.7) opened Desperate Housewives S2E13 (`739a093b`, 1080p HEVC, `hvc1`) at its saved
+  place 1587 s twice (19:37, 19:39 local) and didn't play: segments 266-267 were sent, over and over, the log said
+  `ready=2` and nothing more. Not the codec: the same phone had played this file 1014-1587 s that morning, the
+  segments decode cleanly (ffmpeg) and are where the playlist says, and Mac Safari 27 (a test page on the master)
+  played from 1587 s within 1.4 s. The third try, after a page reload (the page had been in the background since
+  the morning), played. What the video did on the two failed tries is what this sends next time.
 - **4K on the TV** (the user's call 2026-10-20). Play picks for the phone's screen (1080p at most), but an
   Apple TV fetches the stream itself and may be on a 4K TV. When AirPlay starts
   (`webkitcurrentplaybacktargetiswirelesschanged`) with a 4K copy found and something smaller playing, a "Play
