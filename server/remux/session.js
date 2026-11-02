@@ -44,6 +44,7 @@ class Session {
         this.picks = {};
         this.found = {};
         this.osLines = {};
+        this.osPick = {};   // the pick osLines were downloaded from
         this.osFit = {};   // per language: { lines: English lines at the last fit, cues }
         // subtitle 0 is English when the file has English ones (media.js puts them first)
         this.english = !!media.subs.length && media.subs[0].lang === 'en';
@@ -288,15 +289,21 @@ class Session {
         if (!this.osLines[lang]) {
             // a failed download is tried again in 10 min, not on the player's next subtitle request (once a second:
             // f3647aee:15 bg, 2026-10-20)
-            this.osLines[lang] = opensubs.download(pick).catch(e => {
+            // (find: past garbled downloads, so the pick may change)
+            const f = Object.assign({ hash: this.m.hash, index: this.m.index, url: this.m.url }, this.source);
+            this.osLines[lang] = opensubs.find(f, lang, pick).then(r => {
+                if (r) console.log(`${tag} ${lang} subtitles from OpenSubtitles: "${r.release}"${r.match ? ' (made for this file)' : ''}`);
+                this.osPick[lang] = r;
+                return r ? r.cues : [];
+            }).catch(e => {
                 console.error(e.message);
                 setTimeout(() => { delete this.osLines[lang]; }, 10 * 60e3).unref();
                 return [];
             });
-            console.log(`${tag} ${lang} subtitles from OpenSubtitles: "${pick.release}"${pick.match ? ' (made for this file)' : ''}`);
         }
-        const cues = await this.osLines[lang], map = this.fitMap;
-        const same = map && this.ext && String(this.ext.release).toLowerCase() === String(pick.release).toLowerCase();
+        const cues = await this.osLines[lang], map = this.fitMap, got = this.osPick[lang];
+        if (!got) return [];
+        const same = map && this.ext && String(this.ext.release).toLowerCase() === String(got.release).toLowerCase();
         if (same) return cues.map(c => ({ start: map(c.start), end: map(c.end), text: c.text })).filter(c => c.end > c.start);
         if (this.english) this.readCues(0);
         const ref = this.better || (this.english ? [...this.cues[0].values()].sort((a, b) => a.start - b.start) : []);
@@ -305,7 +312,7 @@ class Session {
             fit.lines = ref.length;
             // the file's own TV captions come up late (fit())
             const a = opensubs.alignTiming(cues, ref, !this.better && shouty.has(this.m.hash) ? opensubs.CAPTION_LAG : 0);
-            console.log(`${tag} ${lang} "${pick.release}" against ${ref.length} English lines by timing: ${a.anchors} anchors` +
+            console.log(`${tag} ${lang} "${got.release}" against ${ref.length} English lines by timing: ${a.anchors} anchors` +
                 (a.cues ? `, speed ${a.speed.toFixed(4)}, shift ${a.from.toFixed(1)} -> ${a.to.toFixed(1)} s` : a.misfit ? ', not this video: no lines' : ', no fit yet, as it is'));
             if (a.cues) fit.cues = a.cues;
             else if (a.misfit) fit.cues = [];

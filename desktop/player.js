@@ -241,6 +241,81 @@
         });
     }
 
+    // Subtitles above the control bar while it shows (they were under it, half hidden by its shade). Safari
+    // draws the stream's cues itself, at the bottom of the picture: a cue's line, a percentage of the picture's
+    // height, moves it. Lampa's own subtitle box (hls.js, Chrome) moves up 3.6em in its CSS, less than this bar
+    // is tall: placed above it too.
+    function subsAbovePanel() {
+        var raised = false, GAP = 12;
+        // where the bar's time row rests: the bar (fixed to the bottom) slides in with a transform, which
+        // offsets leave out
+        function barTop() {
+            var panel = document.querySelector('.player-panel'), el = document.querySelector('.player-panel__line-one'), y = 0;
+            if (!panel || !el || !el.offsetHeight) return null;
+            for (; el && el !== panel; el = el.offsetParent) y += el.offsetTop;
+            return el === panel ? window.innerHeight - panel.offsetHeight + y - GAP : null;
+        }
+        // the picture's box in the element (object-fit contain letterboxes it, cover overflows it)
+        function picture(video) {
+            var r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight;
+            if (!vw || !vh) return r;
+            var fit = getComputedStyle(video).objectFit, k = r.width / vw, kh = r.height / vh;
+            k = fit === 'cover' ? Math.max(k, kh) : fit === 'fill' ? 0 : Math.min(k, kh);
+            if (!k) return r;
+            var h = vh * k;
+            return { top: r.top + (r.height - h) / 2, height: h };
+        }
+        // only cues at the default place: one the file puts somewhere (at the top, over a sign) stays there
+        function lift(cue, line) {
+            if (!cue._rubyLifted && cue.line !== 'auto') return;
+            if (line == null) {
+                if (!cue._rubyLifted) return;
+                cue._rubyLifted = false;
+                cue.snapToLines = true;
+                cue.line = 'auto';
+            } else if (cue._rubyLifted !== line) {
+                cue._rubyLifted = line;
+                cue.snapToLines = false;
+                cue.lineAlign = 'end';
+                cue.line = line;
+            }
+        }
+        function place() {
+            var video = Lampa.PlayerVideo.video(), top = raised ? barTop() : null;
+            if (!video) return;
+            var line = null;
+            if (top != null) {
+                var p = picture(video), pct = Math.round((top - p.top) / p.height * 100);
+                if (pct < 100) line = Math.max(10, pct);
+            }
+            [].forEach.call(video.textTracks || [], function (t) {
+                if (t.mode !== 'showing' || !t.activeCues) return;
+                [].forEach.call(t.activeCues, function (c) { if ('line' in c) lift(c, line); });
+            });
+            var box = document.querySelector('.player-video__subtitles');
+            if (box) {
+                box.style.transform = top != null ? 'none' : '';
+                box.style.bottom = top != null ? Math.max(0, window.innerHeight - top) + 'px' : '';
+                box.style.marginBottom = top != null ? '0' : '';
+            }
+        }
+        function watch() {
+            var video = Lampa.PlayerVideo.video();
+            if (!video || !video.textTracks || video._rubyLift) return;
+            video._rubyLift = true;
+            var on = function (t) { t.addEventListener('cuechange', place); };
+            [].forEach.call(video.textTracks, on);
+            video.textTracks.addEventListener('addtrack', function (e) { on(e.track); });
+            video.textTracks.addEventListener('change', place);
+        }
+        Lampa.PlayerPanel.listener.follow('visible', function (e) {
+            raised = !!e.status;
+            place();
+        });
+        Lampa.Player.listener.follow('ready', watch);
+        window.addEventListener('resize', place);
+    }
+
     function mediaKeys() {
         var ms = navigator.mediaSession;
         if (!ms || !ms.setActionHandler) return;
@@ -409,6 +484,7 @@
         Lampa.Params.defaults.player_rewind = '10';
         seekWithoutPause();
         iphoneFullscreen();
+        subsAbovePanel();
         Lampa.PlayerVideo.listener.follow('subs', function (e) {
             var video = Lampa.PlayerVideo.video();
             if (video) video._rubySubsSeen = true;

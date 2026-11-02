@@ -575,6 +575,15 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   Found 2026-10-20: Friends S01E01 in the S01-S10 Silence pack (1a6558e5, file 68) got the hash match "124 -
   The One Where Rachel Finds Out", S1E24's lines ("Here's little Ben nodding off"); the file has no captions
   of its own, so nothing lined them up. Its Bulgarian (S01E01, hash match) and Russian picks were right.
+- **Garbled text is skipped.** Some old uploads are text read off a DVD's subtitle pictures and never
+  checked: words glued where the lines broke ("Look,I thinkhe's just developed a normal curiosityabout the
+  human body."), names in lower case ("andrew van de kamp"), "haven'T". Desperate.Housewives.S02.DVDRip.XviD-FoV
+  (2009, trusted, 19,417 downloads) is like that, and won for the S01-08 pack 167a5870 (2026-11-02, S2E19):
+  its file names have no source or tags, so nothing favoured the ION10 WEBRips other torrents got. Two
+  people talking at once never showed together either: the file has no overlapping lines (0 of 844). A
+  download with a letter, a comma and a letter (`\p{L},\p{L}`) in over 5 % of its lines is left out of every
+  later search (`REMUX_SUBS/garbled.json`) and the next best is downloaded, up to 3 downloads. Measured
+  2026-11-02 on the 44 downloads kept on ruby: the three FoV files 24-29 %, every other file 0.0 %.
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.

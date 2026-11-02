@@ -756,6 +756,14 @@ decides.
   OpenSubtitles"). `play.js` adds the title's TMDB id to the stream URL for it: the page's card, else the
   title Play opened (a start from Continue watching is on Home, which has no card: Desperate Housewives S1E15
   went without one on 2026-10-20, so no OpenSubtitles and no release memory for it).
+- **Subtitles above the control bar** while it shows (they were under it, half hidden by its shade, 2026-11-02).
+  Safari draws HLS subtitles itself at the bottom of the picture: `player.js` gives each cue on screen a
+  `line` (a percentage of the picture, letterboxing counted) just above the bar's time row, and the default
+  place back when the bar hides. Cues the file places itself (at the top) stay put. Lampa's own subtitle box
+  (hls.js, Chrome) moves up 3.6em in its CSS, less than this bar: placed above the row too. Checked
+  2026-11-02 in Playwright's WebKit 26 (the Mac WebKit port, the same cue renderer as Safari) with a page
+  running this code on a 16:9 video in a 16:10 window: two cues at once both went above the row and came
+  back down, a `line:5%` cue stayed at the top.
 - **Subtitles on by default, in the profile's language.** `player.js` sets Lampa's defaults for Settings →
   Player → Subtitles (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps
   its choice. English, Bulgarian and Russian (what the remux service offers) are at the top of that list, and

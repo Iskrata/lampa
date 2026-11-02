@@ -3,7 +3,7 @@
 // Russian ones for a file without its own. Downloads cost quota (OpenSubtitles counts them per account per
 // day), so each is made once, only when wanted, and kept in cfg.subs for everyone.
 //   search({ hash, index, url, size, tmdb, kind, name }, lang) -> { id, release, match } | null
-//   download(pick) -> cues; find(f, lang): both
+//   download(pick) -> cues; find(f, lang, pick?) -> { cues, id, release, match } | null: both, past garbled ones
 //   align(cues, ref) -> { cues, anchors, speed, from, to } | null: moved onto the file's own captions' timing
 //   alignTiming(cues, ref, lag) -> the same, or { cues: null, misfit }: another language, by the lines' timing
 'use strict';
@@ -134,7 +134,7 @@ function parseSrt(text) {
         if (!m) continue;
         const start = t(m[1]), end = t(m[2]);
         // drop SSA styling ({\an8}) and the tags WebVTT doesn't know; keep <i> <b> <u>
-        const body = m[3].replace(/\{\\[^}]*\}/g, '').replace(/<(?!\/?[ibu]>)[^>]*>/gi, '').trim();
+        const body = m[3].replace(/\r/g, '').replace(/\{\\[^}]*\}/g, '').replace(/<(?!\/?[ibu]>)[^>]*>/gi, '').trim();
         if (start != null && end > start && body) cues.push({ start, end, text: body });
     }
     return cues;
@@ -158,8 +158,9 @@ async function search(f, lang) {
     const cacheFile = path.join(cfg.subs, `pick-${f.hash}-${f.index}-${lang}.json`);
     try {
         const kept = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        if (!otherEpisode(kept, ep)) return kept;
-        console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} kept pick "${kept.release}" is another episode: picking again`);
+        const why = otherEpisode(kept, ep) ? 'another episode' : garbledIds().has(kept.id) ? 'garbled text' : null;
+        if (!why) return kept;
+        console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} kept pick "${kept.release}" is ${why}: picking again`);
     } catch (e) { /* not picked yet */ }
     const hash = await fileHash(f);
     // the API answers only with its parameters in alphabetical order (else a redirect)
@@ -167,7 +168,9 @@ async function search(f, lang) {
         f.kind === 'tv' ? { parent_tmdb_id: f.tmdb, season_number: ep.season, episode_number: ep.episode } : { tmdb_id: f.tmdb });
     const qs = Object.keys(q).sort().map(k => `${k}=${encodeURIComponent(q[k])}`).join('&');
     const found = await request(API, '/subtitles?' + qs, {});
-    const pick = best((found.data || []).filter(x => !otherEpisode(x.attributes || {}, ep)), f.name);
+    const bad = garbledIds();
+    const pick = best((found.data || []).filter(x => !otherEpisode(x.attributes || {}, ep) &&
+        !bad.has(x.attributes && x.attributes.files && x.attributes.files[0] && x.attributes.files[0].file_id)), f.name);
     if (!pick) console.log(`opensubtitles: nothing for ${qs}`);
     const a = pick && pick.attributes;
     const out = pick ? { id: a.files[0].file_id, release: a.release, match: !!a.moviehash_match } : null;
@@ -202,9 +205,34 @@ async function download(pick) {
     return parseSrt(srt);
 }
 
-async function find(f, lang) {
-    const pick = await search(f, lang);
-    return pick && Object.assign({ cues: await download(pick) }, pick);
+// Text read off a DVD's subtitle pictures and never checked: words glued where the lines broke ("Look,I
+// thinkhe's just developed a normal curiosityabout the human body."), names in lower case ("andrew van de
+// kamp"), "haven'T". Desperate.Housewives.S02.DVDRip.XviD-FoV is like that (2009, trusted, 19,417 downloads),
+// and won for the S01-08 pack 167a5870, whose file names have no source or tags to prefer the ION10 WEBRips
+// by (S2E19 on 2026-11-02). Measured that day on the 44 downloads kept on ruby: the three FoV files have a
+// letter, a comma and a letter in 24-29 % of their lines, every other file in 0.0 %.
+const GLUED = /\p{L},\p{L}/u;
+const garbled = cues => cues.length >= 50 && cues.filter(c => GLUED.test(c.text)).length / cues.length > 0.05;
+const garbledFile = () => path.join(cfg.subs, 'garbled.json');
+function garbledIds() {
+    try { return new Set(JSON.parse(fs.readFileSync(garbledFile(), 'utf8'))); } catch (e) { return new Set(); }
+}
+
+// The best pick's lines (`pick`: one search() already made); a garbled download is left out of every later
+// search, and the next best is tried, up to TRIES downloads (each counts against the daily quota)
+const TRIES = 3;
+async function find(f, lang, pick) {
+    for (let i = 0; i < TRIES; i++) {
+        if (i || !pick) pick = await search(f, lang);
+        if (!pick) return null;
+        const cues = await download(pick);
+        if (!garbled(cues)) return Object.assign({ cues }, pick);
+        const bad = garbledIds().add(pick.id);
+        fs.mkdirSync(cfg.subs, { recursive: true });
+        fs.writeFileSync(garbledFile(), JSON.stringify([...bad]));
+        console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} "${pick.release}" (${pick.id}) is garbled text: trying the next`);
+    }
+    return null;
 }
 
 // The downloaded lines moved onto the file's own captions, which are in step with the video. Both are
@@ -380,4 +408,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, search, download, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };
+module.exports = { find, search, download, garbled, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };
