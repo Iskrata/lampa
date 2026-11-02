@@ -4,7 +4,8 @@
 // the profile service on the server says who's watching from those (GET ./sync/watching)
 // when playback starts, every minute while it goes on, and { at: 0 } when it stops. Only with ./sync/
 // (store.js): without it there is nobody else to see. Writing runs everywhere (a TV counts as watching);
-// the top-bar part only where nav.js is.
+// the top-bar part only where nav.js is. A host can show it to some profiles only: window.lampa_presence_viewers,
+// a list of profile ids set by its lampa-init.js (unset: every profile sees it).
 (function () {
     var BEAT_MS = 60000, READ_MS = 30000, FRESH_MS = 3 * 60000;
     var playing = null, beat = 0;
@@ -70,9 +71,15 @@
 
     // the profile service answers who's watching in one request (server/sync, GET /watching); a plain folder
     // has each profile's file read instead
+    function mayView(me) {
+        var ids = window.lampa_presence_viewers;
+        return !Array.isArray(ids) || !!(me && ids.indexOf(me.id) >= 0);
+    }
+
     function read(box) {
         if (document.hidden) return;
         var me = rubyProfiles.current();
+        if (!mayView(me)) return render(box, []);
         rubyStore.getAsync('watching').then(function (text) {
             var all = null;
             try { all = JSON.parse(text || 'null'); } catch (e) { all = null; }

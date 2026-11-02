@@ -142,6 +142,9 @@ profile's file is read instead.
 every minute while it goes on, and `{at: 0}` when it stops. The top bar shows the other profiles that wrote
 one in the last 3 minutes: an avatar with a green dot, "Vik is watching Breaking Bad · S5 E14" on hover,
 the title page on click. A TV writes too; only the top bar reads.
+A host can show the top bar to some profiles only with `window.lampa_presence_viewers` (a list of profile
+ids, set in its init script like `lampa_brand`); the others still write their presence. It only hides the
+display: `GET ./sync/watching` still answers anyone signed in.
 
 **Pictures.** Edit Profile offers rows of drawn characters, not photos of real people: The Simpsons
 (thesimpsonsapi.com CDN), Rick and Morty (rickandmortyapi.com) and Pokémon (PokeAPI's official artwork on
