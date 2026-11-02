@@ -210,9 +210,16 @@ async function download(pick) {
 // kamp"), "haven'T". Desperate.Housewives.S02.DVDRip.XviD-FoV is like that (2009, trusted, 19,417 downloads),
 // and won for the S01-08 pack 167a5870, whose file names have no source or tags to prefer the ION10 WEBRips
 // by (S2E19 on 2026-11-02). Measured that day on the 44 downloads kept on ruby: the three FoV files have a
-// letter, a comma and a letter in 24-29 % of their lines, every other file in 0.0 %.
-const GLUED = /\p{L},\p{L}/u;
-const garbled = cues => cues.length >= 50 && cues.filter(c => GLUED.test(c.text)).length / cues.length > 0.05;
+// letter, a comma and a letter in 24-29 % of their lines, every other file in 0.0 %. Another FoV file (S2E20,
+// 1359663) isn't glued but all in lower case ("i'm sorry.", "karl couldn't help"): "i" as a word is 233 of 233
+// there and 64 of 270 in a glued one, at most 1 of ~270 in every other file.
+const GLUED = /\p{L},\p{L}/u, LOWER_I = /(^|[\s"(-])i('|\s)/g, UPPER_I = /\bI\b/g;
+function garbled(cues) {
+    if (cues.length < 50) return false;
+    const text = cues.map(c => c.text.replace(/<[^>]+>/g, ' ')).join('\n');
+    const i = (text.match(LOWER_I) || []).length, I = (text.match(UPPER_I) || []).length;
+    return cues.filter(c => GLUED.test(c.text)).length / cues.length > 0.05 || (i + I >= 20 && i / (i + I) > 0.05);
+}
 const garbledFile = () => path.join(cfg.subs, 'garbled.json');
 function garbledIds() {
     try { return new Set(JSON.parse(fs.readFileSync(garbledFile(), 'utf8'))); } catch (e) { return new Set(); }

@@ -581,9 +581,12 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   (2009, trusted, 19,417 downloads) is like that, and won for the S01-08 pack 167a5870 (2026-11-02, S2E19):
   its file names have no source or tags, so nothing favoured the ION10 WEBRips other torrents got. Two
   people talking at once never showed together either: the file has no overlapping lines (0 of 844). A
-  download with a letter, a comma and a letter (`\p{L},\p{L}`) in over 5 % of its lines is left out of every
-  later search (`REMUX_SUBS/garbled.json`) and the next best is downloaded, up to 3 downloads. Measured
-  2026-11-02 on the 44 downloads kept on ruby: the three FoV files 24-29 %, every other file 0.0 %.
+  download with a letter, a comma and a letter (`\p{L},\p{L}`) in over 5 % of its lines, or "i" as a word in
+  over 5 % of its i/I (20 or more), is left out of every later search (`REMUX_SUBS/garbled.json`) and the next
+  best is downloaded, up to 3 downloads. Measured 2026-11-02 on the 45 downloads kept on ruby: glued, the
+  three FoV files 24-29 %, every other file 0.0 %; lower-case "i", FoV's S2E20 (1359663, all lower case, not
+  glued) 233 of 233 and a glued FoV file 64 of 270, every other file at most 1 of ~270. One FoV file (1355004)
+  is clean and stays. Live that day: S2E19 went from FoV to "...S02E19 Don't Look at Me.DVDRip.NonHI.cc.en.BNVST".
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
