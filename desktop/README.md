@@ -767,6 +767,12 @@ decides.
   version never attached there. Checked 2026-11-02 in Playwright's WebKit 26 (the Mac WebKit port, the same cue
   renderer as Safari) on `tools/dev-server.js` with ruby's remux: Desperate Housewives S2E20 at 16:50, the cue's
   bottom went from under the time row to 16 px above it with the bar up, and back to `auto` when it hid.
+- **The bar hides again.** Lampa shows the control bar on any `mousemove` over the player, and a browser sends
+  one with the pointer standing still when something under it moves: with the subtitles going up and down with
+  the bar, the bar never hid in the user's Safari (2026-11-02). `player.js` drops a `mousemove` whose screen
+  position is the last one's while the player is open. For the same day's "still under the bar" in Safari 27
+  (WebKit 26 lifted them), the first lifts of each video go to the remux's log (`subs-lift`: the cue's type,
+  line before and after).
 - **Subtitles on by default, in the profile's language.** `player.js` sets Lampa's defaults for Settings →
   Player → Subtitles (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps
   its choice. English, Bulgarian and Russian (what the remux service offers) are at the top of that list, and

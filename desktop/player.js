@@ -255,9 +255,21 @@
             for (; el && el !== panel; el = el.offsetParent) y += el.offsetTop;
             return el === panel ? window.innerHeight - panel.offsetHeight + y - GAP : null;
         }
+        // Debug (2026-11-02): the user's Safari still showed them under the bar while WebKit 26 lifted them. The
+        // first lifts of each video go to the remux's log (POST /gst/log), what the cue said before and after.
+        var told = 0;
+        function tell(cue, line, before) {
+            if (told > 6) return;
+            told++;
+            var s = 'subs-lift ' + (cue.constructor && cue.constructor.name) + ' want=' + line + ' before=' + before +
+                ' after=' + cue.line + '/' + cue.snapToLines + '/' + cue.lineAlign + ' vh=' + window.innerHeight +
+                ' bar=' + raised + ' ' + navigator.userAgent.replace(/^.*\) /, '');
+            try { navigator.sendBeacon(Lampa.Torserver.url() + '/gst/log', s); } catch (e) {}
+        }
         // only cues at the default place: one the file puts somewhere (at the top, over a sign) stays there
         function lift(cue, line) {
-            if (!cue._rubyLifted && cue.line !== 'auto') return;
+            var before = cue.line + '/' + cue.snapToLines;
+            if (!cue._rubyLifted && cue.line !== 'auto') return tell(cue, line, before + ' skipped');
             if (line == null) {
                 if (!cue._rubyLifted) return;
                 cue._rubyLifted = false;
@@ -268,7 +280,8 @@
                 cue.snapToLines = false;
                 cue.lineAlign = 'end';
                 cue.line = line;
-            }
+            } else return;
+            tell(cue, line, before);
         }
         function place() {
             var video = Lampa.PlayerVideo.video(), top = raised ? barTop() : null;
@@ -296,6 +309,7 @@
             var video = Lampa.PlayerVideo.video();
             if (!video || !video.textTracks || video._rubyLift) return;
             video._rubyLift = true;
+            told = 0;
             var on = function (t) { t.addEventListener('cuechange', place); };
             [].forEach.call(video.textTracks, on);
             video.textTracks.addEventListener('addtrack', function (e) { on(e.track); });
@@ -479,6 +493,16 @@
         seekWithoutPause();
         iphoneFullscreen();
         subsAbovePanel();
+        // Lampa shows the control bar on any mousemove over the player, and a browser sends one with the pointer
+        // standing still when something under it moves (the subtitles going up and down with the bar): the bar
+        // never hid (2026-11-02, Safari). Only a pointer that moved counts.
+        var lastX = null, lastY = null;
+        window.addEventListener('mousemove', function (e) {
+            var still = e.screenX === lastX && e.screenY === lastY;
+            lastX = e.screenX;
+            lastY = e.screenY;
+            if (still && Lampa.Player.opened()) e.stopImmediatePropagation();
+        }, true);
         Lampa.PlayerVideo.listener.follow('subs', function (e) {
             var video = Lampa.PlayerVideo.video();
             if (video) video._rubySubsSeen = true;
