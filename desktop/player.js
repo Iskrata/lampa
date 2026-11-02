@@ -242,7 +242,7 @@
     }
 
     // Subtitles above the control bar while it shows (they were under it, half hidden by its shade). Safari
-    // draws the stream's cues itself, at the bottom of the picture: a cue's line, a percentage of the picture's
+    // draws the stream's cues itself, at the bottom of the picture: a cue's line, a percentage of the video element's
     // height, moves it. Lampa's own subtitle box (hls.js, Chrome) moves up 3.6em in its CSS, less than this bar
     // is tall: placed above it too.
     function subsAbovePanel() {
@@ -254,16 +254,6 @@
             if (!panel || !el || !el.offsetHeight) return null;
             for (; el && el !== panel; el = el.offsetParent) y += el.offsetTop;
             return el === panel ? window.innerHeight - panel.offsetHeight + y - GAP : null;
-        }
-        // the picture's box in the element (object-fit contain letterboxes it, cover overflows it)
-        function picture(video) {
-            var r = video.getBoundingClientRect(), vw = video.videoWidth, vh = video.videoHeight;
-            if (!vw || !vh) return r;
-            var fit = getComputedStyle(video).objectFit, k = r.width / vw, kh = r.height / vh;
-            k = fit === 'cover' ? Math.max(k, kh) : fit === 'fill' ? 0 : Math.min(k, kh);
-            if (!k) return r;
-            var h = vh * k;
-            return { top: r.top + (r.height - h) / 2, height: h };
         }
         // only cues at the default place: one the file puts somewhere (at the top, over a sign) stays there
         function lift(cue, line) {
@@ -283,9 +273,12 @@
         function place() {
             var video = Lampa.PlayerVideo.video(), top = raised ? barTop() : null;
             if (!video) return;
+            watch();
             var line = null;
             if (top != null) {
-                var p = picture(video), pct = Math.round((top - p.top) / p.height * 100);
+                // a percentage of the video element, letterboxing included (WebKit 26: a 16:9 video in a 1440x900
+                // element put line 92's bottom at 828 px)
+                var r = video.getBoundingClientRect(), pct = Math.floor((top - r.top) / r.height * 100);
                 if (pct < 100) line = Math.max(10, pct);
             }
             [].forEach.call(video.textTracks || [], function (t) {
@@ -312,7 +305,8 @@
             raised = !!e.status;
             place();
         });
-        Lampa.Player.listener.follow('ready', watch);
+        // not on the player's 'ready': a listener before this one may throw there, and Lampa then skips the rest
+        Lampa.PlayerVideo.listener.follow('subs', place);
         window.addEventListener('resize', place);
     }
 

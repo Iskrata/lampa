@@ -109,6 +109,13 @@ function titleWords(s) {
 // recorded in a cinema: the timing of a cinema copy, not of a WEB or disc release
 const CAM = /\b(cam|hdcam|camrip|ts|hdts|telesync|tc|telecine)\b/i;
 
+// A file whose name says no source (the S01-08 pack 167a5870: "Season 2/...S02E20...") is taken for a WEB copy:
+// that pack is one. Measured 2026-11-02 against the speech in S2E20's audio (loudness every 0.1 s, the best
+// shift per 5 min): ION10's WEBRip stayed within -0.5..+0.3 s from 5 min to the end, the DVD rips drifted
+// (BNVST 0.3 -> 4.1 -> 11.6 -> -9.6 s, FoV 2.4 -> 5.4 -> 9.7 -> -6.7 s): "sometimes earlier, sometimes later".
+// Without this, trusted + most downloaded won (FoV, then BNVST). Picks made before (no `v`) are made again.
+const WEB_UNNAMED = 20, PICK_V = 2;
+
 // the subtitle most likely to fit this file: the same file (hash) first, then the same title, the same source
 // (WEB vs DVD timings and cuts differ) and tags, not from a cinema copy, not for the hearing impaired ([door
 // slams]), then the most downloaded
@@ -118,7 +125,7 @@ function best(list, name) {
     const other = r => { const w = titleWords(r); return !!(title.size && w && w.some(x => !title.has(x))); };
     const score = a => (a.moviehash_match ? 1000 : 0) +
         (other(a.release) ? -100 : 0) + (CAM.test(String(a.release).replace(/[._-]/g, ' ')) && !CAM.test(file.replace(/[._-]/g, ' ')) ? -30 : 0) +
-        (src && source(a.release) === src ? 40 : 0) +
+        (src && source(a.release) === src ? 40 : 0) + (!src && source(a.release) === 'web' ? WEB_UNNAMED : 0) +
         [...tags(a.release)].filter(w => mine.has(w)).length * 10 +
         (a.hearing_impaired ? -15 : 0) + (a.from_trusted ? 5 : 0) + Math.log10(1 + (a.download_count || 0));
     return list.filter(s => s.attributes.files && s.attributes.files.length)
@@ -158,7 +165,8 @@ async function search(f, lang) {
     const cacheFile = path.join(cfg.subs, `pick-${f.hash}-${f.index}-${lang}.json`);
     try {
         const kept = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        const why = otherEpisode(kept, ep) ? 'another episode' : garbledIds().has(kept.id) ? 'garbled text' : null;
+        const why = otherEpisode(kept, ep) ? 'another episode' : garbledIds().has(kept.id) ? 'garbled text' :
+            kept.v !== PICK_V && !kept.match ? 'from older rules' : null;
         if (!why) return kept;
         console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} kept pick "${kept.release}" is ${why}: picking again`);
     } catch (e) { /* not picked yet */ }
@@ -173,7 +181,7 @@ async function search(f, lang) {
         !bad.has(x.attributes && x.attributes.files && x.attributes.files[0] && x.attributes.files[0].file_id)), f.name);
     if (!pick) console.log(`opensubtitles: nothing for ${qs}`);
     const a = pick && pick.attributes;
-    const out = pick ? { id: a.files[0].file_id, release: a.release, match: !!a.moviehash_match } : null;
+    const out = pick ? { id: a.files[0].file_id, release: a.release, match: !!a.moviehash_match, v: PICK_V } : null;
     // nothing found is asked again next time: subtitles get uploaded after a release
     if (out) { fs.mkdirSync(cfg.subs, { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify(out)); }
     return out;

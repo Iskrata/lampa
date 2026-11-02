@@ -587,6 +587,14 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   three FoV files 24-29 %, every other file 0.0 %; lower-case "i", FoV's S2E20 (1359663, all lower case, not
   glued) 233 of 233 and a glued FoV file 64 of 270, every other file at most 1 of ~270. One FoV file (1355004)
   is clean and stays. Live that day: S2E19 went from FoV to "...S02E19 Don't Look at Me.DVDRip.NonHI.cc.en.BNVST".
+- **A file that names no source is taken for a WEB copy** (Desperate Housewives S01-08 pack 167a5870, file
+  names like "Season 2/...S02E20..."): a WEB release gets 20 points, as much as trust and downloads together.
+  Measured 2026-11-02 against the speech in S2E20's audio (ffmpeg: 300-3400 Hz, loudness every 0.1 s, the
+  louder half as speech; the shift with the most agreement, per 5 min): ION10's WEBRip stayed within -0.5..+0.3 s
+  from 5 min to the end (the first 5 min are the recap and titles); the DVD rips drifted, BNVST 0.3 -> 4.1 ->
+  11.6 -> -9.6 s and FoV 2.4 -> 5.4 -> 9.7 -> -6.7 s ("sometimes earlier, sometimes later"). Picks kept from
+  before this (no `v` in the pick file, not a hash match) are made again; the search is free, a download only
+  if the pick changes.
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.

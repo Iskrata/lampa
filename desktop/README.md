@@ -757,13 +757,16 @@ decides.
   title Play opened (a start from Continue watching is on Home, which has no card: Desperate Housewives S1E15
   went without one on 2026-10-20, so no OpenSubtitles and no release memory for it).
 - **Subtitles above the control bar** while it shows (they were under it, half hidden by its shade, 2026-11-02).
-  Safari draws HLS subtitles itself at the bottom of the picture: `player.js` gives each cue on screen a
-  `line` (a percentage of the picture, letterboxing counted) just above the bar's time row, and the default
-  place back when the bar hides. Cues the file places itself (at the top) stay put. Lampa's own subtitle box
-  (hls.js, Chrome) moves up 3.6em in its CSS, less than this bar: placed above the row too. Checked
-  2026-11-02 in Playwright's WebKit 26 (the Mac WebKit port, the same cue renderer as Safari) with a page
-  running this code on a 16:9 video in a 16:10 window: two cues at once both went above the row and came
-  back down, a `line:5%` cue stayed at the top.
+  Safari draws HLS subtitles itself: `player.js` gives each cue on screen a `line` just above the bar's time
+  row and the default place back when the bar hides. WebKit takes that percentage of the whole video element,
+  letterboxing included (WebKit 26: a 16:9 video in a 1440x900 element put line 92's bottom at 828 px). Cues
+  the file places itself (at the top) stay put. Lampa's own subtitle box (hls.js, Chrome) moves up 3.6em in its
+  CSS, less than this bar: placed above the row too. It hooks the video on Lampa's `subs` event and on each
+  bar change, not on the player's `ready`: Lampa's Subscribe stops at the first listener that throws, and its
+  own subtitle listener there threw in a scripted start (`PlayerVideo.video()` not made yet), so the first
+  version never attached there. Checked 2026-11-02 in Playwright's WebKit 26 (the Mac WebKit port, the same cue
+  renderer as Safari) on `tools/dev-server.js` with ruby's remux: Desperate Housewives S2E20 at 16:50, the cue's
+  bottom went from under the time row to 16 px above it with the bar up, and back to `auto` when it hid.
 - **Subtitles on by default, in the profile's language.** `player.js` sets Lampa's defaults for Settings →
   Player → Subtitles (`subtitles_start` on, `subtitles_lang` `en`), so a profile that changes them there keeps
   its choice. English, Bulgarian and Russian (what the remux service offers) are at the top of that list, and
