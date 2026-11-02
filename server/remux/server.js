@@ -65,7 +65,7 @@ function session(hash, index, lang) {
     const key = `${hash}:${index}:${lang}`;
     if (!sessions.has(key)) {
         const p = media.load(hash, index, lang).then(m => {
-            const s = new Session(m, path.join(cfg.cache, `${hash}-${index}-${lang}`));
+            const s = new Session(m, path.join(cacheDir, `${hash}-${index}-${lang}`));
             console.log(`${hash.slice(0, 8)}:${index} ${m.video.codec_name} ${m.resolution}, audio ${m.audio ? m.audio.codec_name + ' ' + ((m.audio.tags || {}).language || '?') : 'none'}` +
                 `, subtitles ${m.subs.map(x => x.lang).join(' ') || 'none'}, ${m.bounds.length - 1} segments (${m.cuesUsed ? 'keyframes' : 'fixed'})`);
             return s;
@@ -196,6 +196,11 @@ async function handle(req, res) {
     if (hash === 'jackett') return picks.lampaSearch('/' + parts.slice(1).join('/'), url.search.slice(1), res)
         .catch(e => { console.error('jackett search:', e.message); if (!res.headersSent) send(res, 502, e.message); else res.end(); });
     if (hash === 'echo') return send(res, 200, '{"remux":true}', 'application/json');   // Lampa parses it as JSON
+    // (loopback only, like everything here: Caddy publishes /gst/, so its proxied requests are refused)
+    if (hash === 'handover' && req.method === 'POST' && !req.headers['x-forwarded-for']) {
+        send(res, 200, JSON.stringify({ sessions: sessions.size, waiting: waiting.size - 1 }), 'application/json');
+        return handover();
+    }
     if (hash === 'remove') {
         const h = url.searchParams.get('hash') || '';
         for (const p of forHash(h)) p.then(s => s.close(), () => {});
@@ -271,44 +276,104 @@ setInterval(() => {
 
 // The segments made before a restart (a deploy) stay, so a player is served from disk across it: on 2026-10-24
 // a deploy at 14:17:48 wiped them, the next process had to read the torrent again (79 s for seg137, the torrent
-// at 0 MB/s), and the TV on AirPlay asked four times, 5 s each, and stopped. Kept only when this code is the
-// one that made them (its files' hash in VERSION: a change to how segments are cut would mix two kinds), and a
-// session not used for IDLE_DROP_MS is deleted as it would have been. A segment is written whole (renamed from
-// .tmp), so a killed run leaves no half segment.
+// at 0 MB/s), and the TV on AirPlay asked four times, 5 s each, and stopped. They are kept in a folder per
+// version of the code that cuts them (its files' hash: a change to how segments are cut would mix two kinds), so
+// a new process never deletes a folder the one handing over to it still writes into. A session (or a version's
+// folder) not used for IDLE_DROP_MS is deleted as it would have been, and so are leftovers of the layout before
+// version folders. A segment is written whole (renamed from .tmp), so a killed run leaves no half segment; a
+// .tmp is deleted only once a minute old (the other process may be writing it).
+let cacheDir;
 function keepCache() {
     const code = ['session.js', 'media.js', 'mp4.js', 'mp4index.js', 'mkv.js']
         .map(f => fs.readFileSync(path.join(__dirname, f))).join('');
     const version = require('crypto').createHash('sha256').update(code).digest('hex').slice(0, 16);
-    const stamp = path.join(cfg.cache, 'VERSION');
-    let same = false;
-    try { same = fs.readFileSync(stamp, 'utf8') === version; } catch (e) {}
-    if (!same) fs.rmSync(cfg.cache, { recursive: true, force: true });
-    fs.mkdirSync(cfg.cache, { recursive: true });
-    fs.writeFileSync(stamp, version);
+    cacheDir = path.join(cfg.cache, version);
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const newest = dir => {
+        let t = fs.statSync(dir).mtimeMs;
+        for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+            const f = path.join(dir, d.name);
+            t = Math.max(t, d.isDirectory() ? newest(f) : fs.statSync(f).mtimeMs);
+        }
+        return t;
+    };
+    const stale = dir => Date.now() - newest(dir) > IDLE_DROP_MS;
     let kept = 0;
     for (const d of fs.readdirSync(cfg.cache, { withFileTypes: true })) {
-        if (!d.isDirectory()) continue;
-        const dir = path.join(cfg.cache, d.name);
+        const f = path.join(cfg.cache, d.name);
         try {
-            const files = fs.readdirSync(dir), newest = Math.max(0, ...files.map(f => fs.statSync(path.join(dir, f)).mtimeMs));
-            if (Date.now() - newest > IDLE_DROP_MS) { fs.rmSync(dir, { recursive: true, force: true }); continue; }
-            for (const f of files) if (f.endsWith('.tmp')) fs.rmSync(path.join(dir, f), { force: true });
+            if (!d.isDirectory()) { if (d.name === 'VERSION') fs.rmSync(f, { force: true }); continue; }
+            if (f === cacheDir) continue;
+            if (stale(f)) fs.rmSync(f, { recursive: true, force: true });
+        } catch (e) { console.error(`cache ${d.name}: ${e.message}`); }
+    }
+    for (const d of fs.readdirSync(cacheDir, { withFileTypes: true })) {
+        if (!d.isDirectory()) continue;
+        const dir = path.join(cacheDir, d.name);
+        try {
+            if (stale(dir)) { fs.rmSync(dir, { recursive: true, force: true }); continue; }
+            for (const f of fs.readdirSync(dir)) {
+                const tmp = path.join(dir, f);
+                if (f.endsWith('.tmp') && Date.now() - fs.statSync(tmp).mtimeMs > 60000) fs.rmSync(tmp, { force: true });
+            }
             kept++;
         } catch (e) { console.error(`cache ${d.name}: ${e.message}`); }
     }
-    console.log(same ? `cache: ${kept} session(s) kept from before the restart` : 'cache: emptied (new segment code)');
+    console.log(`cache: ${kept} session(s) kept from before (segment code ${version})`);
 }
 
 // a failed request or a file that won't delete must not stop the service
 process.on('unhandledRejection', e => console.error('unhandled:', e && e.message || e));
 
+// An install a deploy didn't make current (the file cfg.activeFile names another) stays idle: Windows starts
+// both installs' services at boot, and only one may answer
+const active = !cfg.activeFile || !cfg.slot || (() => {
+    try { return fs.readFileSync(cfg.activeFile, 'utf8').trim() === cfg.slot; } catch (e) { return true; }
+})();
+if (!active) {
+    console.log(`standby: install ${cfg.slot} isn't the current one (${cfg.activeFile}), not listening`);
+    setInterval(() => {}, 3600e3);
+    return;
+}
+
 keepCache();
-downloads.start(hash => forHash(hash).length > 0);
-// torrents saved for their file list and not played for a month leave TorrServer's list
-forget().catch(() => {});
-setInterval(() => forget().catch(() => {}), 86400000).unref();
+// The background work (downloads, TorrServer's list) is one process's: while the other install still listens
+// (a deploy just started this one, the other hands over), it stays there; then this one reads the state the
+// other saved last and carries on
+function background() {
+    swarms.reload();
+    releases.reload();
+    downloads.start(hash => forHash(hash).length > 0);
+    // torrents saved for their file list and not played for a month leave TorrServer's list
+    forget().catch(() => {});
+    setInterval(() => forget().catch(() => {}), 86400000).unref();
+}
+function peerListens() {
+    return new Promise(resolve => {
+        if (!cfg.peerPort) return resolve(false);
+        const c = require('net').connect(cfg.peerPort, '127.0.0.1');
+        c.setTimeout(2000);
+        c.on('connect', () => { c.destroy(); resolve(true); });
+        c.on('error', () => resolve(false));
+        c.on('timeout', () => { c.destroy(); resolve(false); });
+    });
+}
+(async function takeOver() {
+    let told = false;
+    while (await peerListens()) {
+        if (!told) console.log(`the other install (port ${cfg.peerPort}) still answers: background work stays there`);
+        told = true;
+        await new Promise(r => setTimeout(r, 2000));
+    }
+    if (told) console.log('the other install stopped answering: background work here now');
+    background();
+})();
+
 const waiting = new Set();   // responses not started yet (most wait for ffmpeg to write a segment)
+let draining = false;
 const server = http.createServer((req, res) => {
+    // handing over: Caddy's connections close after each answer, so its next request opens one to the other install
+    if (draining) res.setHeader('Connection', 'close');
     waiting.add(res);
     const orig = res.writeHead;
     res.writeHead = function () { waiting.delete(res); return orig.apply(this, arguments); };
@@ -332,5 +397,32 @@ function shutdown(sig) {
     for (const p of sessions.values()) p.then(s => s.stop(), () => {});
     setTimeout(() => process.exit(0), 5000).unref();
 }
+// Handover to the other install (a deploy, README "Restarts"): stop listening, so Caddy sends new requests to the
+// other one, but answer every request already here, and keep each ffmpeg run going ahead (Session.drain) into
+// the folders both share, so the other serves those segments from disk instead of reading the torrent again.
+// Downloads stop and start over there; the dead list and release memory are saved a last time. Then this
+// process stays, idle, until the next deploy stops it (exiting would be a crash to WinSW, which restarts).
+function handover() {
+    if (draining) return;
+    draining = true;
+    const t0 = Date.now();
+    console.log(`handover: ${sessions.size} session(s), ${waiting.size} waiting request(s); not listening any more`);
+    server.close();
+    server.closeIdleConnections();
+    downloads.stop();
+    swarms.freeze();
+    releases.freeze();
+    for (const p of sessions.values()) p.then(s => s.drain(), () => {});
+    const check = setInterval(async () => {
+        const all = await Promise.all([...sessions.values()].map(p => p.then(s => s.drained(), () => true)));
+        if (waiting.size || all.some(d => !d)) return;
+        clearInterval(check);
+        for (const p of sessions.values()) p.then(s => s.stop(), () => {});
+        console.log(`handover: done in ${sec(Date.now() - t0)}, idle until stopped`);
+    }, 2000);
+    // a run that never gets DRAIN_AHEAD further (a stalled torrent) doesn't keep reading forever
+    setTimeout(() => { clearInterval(check); for (const p of sessions.values()) p.then(s => s.stop(), () => {}); }, 15 * 60e3).unref();
+}
+
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);

@@ -64,31 +64,54 @@ Node 18.15+ (no dependencies; `fs.statfs`), plus ffmpeg and ffprobe 8.x. Environ
 
 ## Restarts
 
-A deploy restarts this service while people watch, and nobody should notice:
-- **On SIGINT/SIGTERM** (a Windows service stop is a Ctrl+C, which Node sees as SIGINT):
-  1. It stops listening.
-  2. It closes the requests it hasn't started answering. Most of these are waiting for ffmpeg to write a segment.
-  3. It lets the segments it is already sending finish, stops ffmpeg and exits. That takes 0.1 s.
-- **Caddy covers the gap** (`lb_try_duration 30s` on `/gst/`):
-  - A request arriving while nothing listens waits until the next process does.
-  - A GET whose connection closed before an answer is sent again.
-- **The next process starts from the request,** with the segments made before the restart. It rebuilds the
-  session from the first segment asked for (the probe and index are kept on disk, `REMUX_SOURCES`), and the
-  title id in the path brings OpenSubtitles back too (below). Segments already made are served from disk, so
-  the player sees nothing; one past them waits for a new ffmpeg run.
-- **The cache is kept** while the code that cuts segments is the same (`session.js`, `media.js`, `mp4.js`,
-  `mp4index.js`, `mkv.js`: their hash is in `<cache>/VERSION`; any change empties it, so two kinds of segment
-  never mix). A segment is written whole (`.tmp`, then renamed); leftover `.tmp` files and sessions unused for 2
-  h are deleted at start. Until 2026-10-26 a restart emptied the cache: on 2026-10-24 a deploy at 14:17:48
-  (EEST) did, the next process read seg137 from the torrent again in 79 s, and the TV on AirPlay, which gives up
-  on a request after 5 s (four tries in `access-public.log`), stopped. Checked 2026-10-26 on the Mac against
-  ruby's TorrServer (Desperate Housewives S01 720p, file 1): seg0-2 made, SIGINT, a new process served seg2 in
-  0.003 s (the same bytes) and seg1 in 0.17 s, with no ffmpeg run.
+A deploy replaces this service while people watch, and nobody should notice. Since 2026-11-02 there are two
+installs (on the home server: `LampaRemux` on 8092 and `LampaRemux2` on 8098, each with its own app, node and
+ffmpeg); Caddy lists both and takes the first that accepts a connection (`lb_policy first`, a refused one skipped
+for 10 s, `lb_try_duration 30s`). A deploy puts the new code into the idle install, starts it, then hands over:
+- **`POST /gst/handover`** (loopback only: a request through Caddy carries `X-Forwarded-For` and is refused) to the
+  current one. It stops listening, so Caddy's next request goes to the new one; its answers close their
+  connections, so Caddy's kept-alive ones move too. Every request it already holds is answered.
+- **Its ffmpeg runs keep going** up to 75 segments (about 5 min) past each session's last request, into the cache
+  folder both share. Each run writes `producer.json` (pid, first and last segment it will make, the `delay`) every
+  second. The new process serves those segments from disk and waits for one the old run is about to write instead
+  of starting its own run; only past them, or once the file is 4 s old, does it read the torrent itself. Before,
+  a restart killed ffmpeg and the next process read the torrent again from the requested segment: 1.5 s on a
+  healthy torrent, but on a slow one (739a093b, 6 peers, its master took 26 s) the player gave up on the release
+  38 s after the deploy of 2026-11-02 17:40 and switched to another.
+- **The background work moves** once the old process stops listening: the new one waits while the other port
+  still accepts connections (`REMUX_PEER_PORT`), then reads the dead list and release memory the old one saved
+  last (`swarms.freeze`, `releases.freeze`: saved once more at the handover, never after) and starts the downloads.
+  An unfinished download starts over there, as after a restart.
+- **The old process stays, idle** ("handover: done in N s, idle until stopped"), until the next deploy stops it
+  before reusing its install: exiting on its own is a crash to WinSW, which would start it again. If Windows starts
+  both at boot, the one `REMUX_ACTIVE` (`active.txt`) doesn't name logs "standby" and never listens.
+
+A plain **SIGINT/SIGTERM** (a service stop, or the first deploy from the single install) still works as before:
+it stops listening, closes the requests it hasn't started answering (Caddy sends them again, to whichever process
+listens), lets the segments being sent finish, stops ffmpeg and exits in about 0.1 s.
+
+- **The next process starts from the request,** with the segments made before. It rebuilds the session from the
+  first segment asked for (the probe and index are kept on disk, `REMUX_SOURCES`), and the title id in the path
+  brings OpenSubtitles back too (below).
+- **The cache is kept** in a folder per version of the code that cuts segments (`<cache>/<hash of session.js,
+  media.js, mp4.js, mp4index.js, mkv.js>/`): two kinds of segment never mix, and a new process never deletes a
+  folder the old one still writes into (until 2026-11-02 a changed hash emptied the whole cache at start). A
+  segment is written whole (`.tmp`, then renamed); `.tmp` files over a minute old, sessions unused for 2 h and
+  other versions' folders unused for 2 h are deleted at start. Until 2026-10-26 a restart emptied the cache: on
+  2026-10-24 a deploy at 14:17:48 (EEST) did, the next process read seg137 from the torrent again in 79 s, and the
+  TV on AirPlay, which gives up on a request after 5 s (four tries in `access-public.log`), stopped.
 - **Idle sessions:** ffmpeg stops after 60 s without a request or heartbeat; the session and its segments go
   after 2 h (10 min until 2026-10-26). A TV on AirPlay asks for nothing while paused, and the phone that sent
   it may be locked, so with 10 min a longer pause came back to a torrent read from scratch, past the TV's 5 s.
 
-Tested 2026-10-19 on the Mac, with:
+**Handover tested 2026-11-02 on the Mac** against ruby's TorrServer: Caddy 2.11.7 with the two-port route, two
+processes of this code, Big Buck Bunny (file 2) fetched at playing pace with 30 s buffered. Handover at 47.6 s:
+process A logged "1 session(s), 0 waiting request(s)", kept its run going and was done 14.0 s later; process B
+served seg12-25 from A's segments with no ffmpeg run of its own (the slowest 0.64 s, its session being built)
+and took the background work 2 s after A stopped listening. No stall. An install not named in `active.txt`
+logged "standby" and didn't listen.
+
+Single-process restart tested 2026-10-19 on the Mac, with:
 - Lampa's hls.js 1.4.7 with Lampa's settings, playing Big Buck Bunny from the home server's TorrServer;
 - Caddy 2.11.7 with the home server's `/gst/` route;
 - SIGINT, then a new process at once.

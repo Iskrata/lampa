@@ -15,6 +15,11 @@ const swarm = require('./swarm');
 const cfg = require('./config');
 
 const AHEAD = 30, BEHIND = 40, WAIT_MS = 90000, JUMP = 6, SLACK_S = 0.05;
+// Handover (README "Restarts"): a process handing over to the next one (a deploy) keeps its ffmpeg runs going
+// up to DRAIN_AHEAD segments past the last request (about 5 min), into the folder both processes share. Each
+// running ffmpeg says so in `producer.json` every BEAT_MS; the other process serves those segments from disk
+// instead of reading the torrent again with a run of its own, until the file is older than BEAT_STALE_MS.
+const DRAIN_AHEAD = 75, BEAT_MS = 1000, BEAT_STALE_MS = 4000;
 // torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
 const shouty = new Set();
 
@@ -80,6 +85,12 @@ class Session {
         this.lastReq = n;
         this.prune();
         if (this.has(n)) { this.flow(); return this.file(n); }
+        // the other process's ffmpeg is making it (a handover): wait for its file, start our own run only if
+        // that run ends or stops short of n
+        if (this.peerMakes(n)) {
+            await this.until(() => this.has(n) || !this.peerMakes(n), WAIT_MS, BEAT_MS);
+            if (this.has(n)) return this.file(n);
+        }
         // a missing segment behind the one ffmpeg writes was pruned (or another tab is further on): only a new run
         // makes it again. Waiting for it held ffmpeg back for good (flow() with lastReq far behind), so nothing read
         // the torrent and swarm.js called a live swarm dead: VisionQuest on 2026-10-20 at 14:29, a new tab asking
@@ -89,6 +100,40 @@ class Session {
         else this.flow();
         await this.until(() => this.has(n), WAIT_MS);
         return this.file(n);
+    }
+
+    // another process's live ffmpeg run covers segment n (its producer.json is fresh)
+    peerMakes(n) {
+        try {
+            const f = path.join(this.dir, 'producer.json'), p = JSON.parse(fs.readFileSync(f, 'utf8'));
+            if (p.pid === process.pid || Date.now() - fs.statSync(f).mtimeMs >= BEAT_STALE_MS) return false;
+            // the same for every run of this file: the subtitle cues its run wrote are placed by it (readCues)
+            if (this.delay == null && p.delay != null) this.delay = p.delay;
+            return n >= p.start && n <= p.upto;
+        } catch (e) { return false; }
+    }
+
+    // ours: written while a run is alive, deleted when it ends
+    beat() {
+        const j = this.job, f = path.join(this.dir, 'producer.json');
+        try {
+            if (!j || j.ended) return fs.rmSync(f, { force: true });
+            const tmp = f + '.' + process.pid;
+            fs.writeFileSync(tmp, JSON.stringify({ pid: process.pid, start: j.start, cur: j.cur, upto: this.lastReq + this.ahead(), delay: this.delay }));
+            fs.renameSync(tmp, f);
+        } catch (e) { /* the next beat */ }
+    }
+
+    ahead() { return this.draining ? DRAIN_AHEAD : AHEAD; }
+
+    // Handover: run ahead further, and say whether this session's work is done (no run, or one held back)
+    drain() {
+        this.draining = true;
+        this.flow();
+    }
+    drained() {
+        const j = this.job;
+        return !j || j.ended || j.paused;
     }
 
     // is ffmpeg reading the torrent for segment n now? (a run held back by flow() asks it for nothing: swarm.js)
@@ -118,6 +163,9 @@ class Session {
             this.notify();
         });
         this.job = j;
+        clearInterval(this.beating);
+        this.beating = setInterval(() => { this.beat(); if (j.ended) clearInterval(this.beating); }, BEAT_MS);
+        this.beat();
         console.log(`${m.hash.slice(0, 8)}:${m.index} ffmpeg from segment ${n} (${m.bounds[n].toFixed(1)}s)`);
     }
 
@@ -125,6 +173,8 @@ class Session {
         const j = this.job;
         if (j && !j.ended) { j.killed = true; j.proc.kill(); }
         this.job = null;
+        clearInterval(this.beating);
+        this.beat();
     }
 
     // a fragment starts at a video keyframe; it belongs to the segment whose start is at or before it.
@@ -164,9 +214,9 @@ class Session {
     flow() {
         const j = this.job;
         if (!j || j.ended) return;
-        const ahead = j.cur - this.lastReq;
-        if (!j.paused && ahead > AHEAD && j.cur > this.subWant) { j.paused = true; j.proc.stdout.pause(); }
-        else if (j.paused && (ahead < AHEAD - 10 || j.cur <= this.subWant)) { j.paused = false; j.proc.stdout.resume(); }
+        const ahead = j.cur - this.lastReq, max = this.ahead();
+        if (!j.paused && ahead > max && j.cur > this.subWant) { j.paused = true; j.proc.stdout.pause(); }
+        else if (j.paused && (ahead < max - 10 || j.cur <= this.subWant)) { j.paused = false; j.proc.stdout.resume(); }
     }
 
     prune() {
@@ -177,10 +227,13 @@ class Session {
         }
     }
 
-    until(test, ms) {
+    // poll: also look every `poll` ms (another process's files tell nothing to notify())
+    until(test, ms, poll) {
         if (test()) return Promise.resolve();
         return new Promise((resolve, reject) => {
-            const w = { test, resolve, reject, timer: setTimeout(() => { this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout')); }, ms) };
+            const w = { test, resolve: () => { clearInterval(w.poll); resolve(); }, reject: e => { clearInterval(w.poll); reject(e); },
+                timer: setTimeout(() => { clearInterval(w.poll); this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout')); }, ms) };
+            if (poll) w.poll = setInterval(() => this.notify(), poll);
             this.waiters.push(w);
         });
     }

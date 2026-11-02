@@ -72,12 +72,14 @@ async function create(p) {
     return j;
 }
 
+let handing = false;
 function next() {
+    if (handing) return;
     const running = [...jobs.values()].filter(j => j.state === 'fetching').length;
     const queued = [...jobs.values()].filter(j => j.state === 'queued').sort((a, b) => a.created - b.created);
     queued.slice(0, Math.max(0, RUNNING_MAX - running)).forEach(j => {
         run(j).catch(e => {
-            if (j.cancelled) return;
+            if (j.cancelled || j.handedOver) return;
             console.error(`download ${j.id}: ${e.message}`);
             Object.assign(j, { state: 'failed', error: e.message, failed: Date.now() });
             save(j);
@@ -286,4 +288,11 @@ function start(isWatched) {
     expire();
 }
 
-module.exports = { start, handle, reading };
+// Handover (server.js): this process's unfinished jobs stop, and the next process starts them over, as after a
+// restart (their .json files still say they're unfinished)
+function stop() {
+    handing = true;
+    for (const j of jobs.values()) if (j.proc) { j.handedOver = true; j.proc.kill(); }
+}
+
+module.exports = { start, stop, handle, reading };

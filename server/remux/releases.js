@@ -20,12 +20,20 @@ const PLAYED_S = 120;
 const HOUR = 3600e3, FAIL_KEEP_MS = { slow: 6 * HOUR, nopeers: 6 * HOUR, dead: 24 * HOUR, nofiles: Infinity };
 const failKeep = why => FAIL_KEEP_MS[why] || 24 * HOUR;
 
-let titles = {};
-try { titles = JSON.parse(fs.readFileSync(cfg.releases, 'utf8')); } catch (e) {}
+let titles = {}, frozen = false;
+function load() { try { titles = JSON.parse(fs.readFileSync(cfg.releases, 'utf8')); } catch (e) {} }
+load();
 let saving = null;
 function save() {
-    if (saving) return;
-    saving = setTimeout(() => { saving = null; fs.writeFile(cfg.releases, JSON.stringify(titles), () => {}); }, 1000);
+    if (saving || frozen) return;
+    saving = setTimeout(() => { saving = null; if (!frozen) fs.writeFile(cfg.releases, JSON.stringify(titles), () => {}); }, 1000);
+}
+// handover (server.js): the process handing over saves once more and then never, the next one reads it again
+function freeze() {
+    clearTimeout(saving);
+    saving = null;
+    fs.writeFileSync(cfg.releases, JSON.stringify(titles));
+    frozen = true;
 }
 
 const titleKey = (tmdb, kind) => (kind === 'movie' ? 'm' : 't') + tmdb;
@@ -113,4 +121,4 @@ function lastPlayed(hash) {
     return ok;
 }
 
-module.exports = { watching, sent, failed, wrong, of, lastPlayed };
+module.exports = { watching, sent, failed, wrong, of, lastPlayed, freeze, reload: load };

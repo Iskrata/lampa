@@ -6,11 +6,16 @@ const path = require('path');
 module.exports = {
     port: parseInt(process.env.REMUX_PORT || '8092', 10),
     host: process.env.REMUX_HOST || '127.0.0.1',
+    // Handover between two installs (README "Restarts"): this install's name ("a", "b"), the file naming the
+    // install a deploy made current (one that isn't stays idle when Windows starts it), and the other one's port
+    slot: process.env.REMUX_SLOT || '',
+    activeFile: process.env.REMUX_ACTIVE || '',
+    peerPort: parseInt(process.env.REMUX_PEER_PORT || '0', 10),
     torrserver: (process.env.TORRSERVER || 'http://127.0.0.1:8090').replace(/\/$/, ''),
     ffmpeg: process.env.FFMPEG || 'ffmpeg',
     ffprobe: process.env.FFPROBE || 'ffprobe',
     cache: process.env.REMUX_CACHE || path.join(os.tmpdir(), 'lampa-remux'),
-    // subtitles downloaded from OpenSubtitles: kept across restarts (the cache above is wiped at start)
+    // subtitles downloaded from OpenSubtitles: kept across restarts
     subs: process.env.REMUX_SUBS || path.join(os.tmpdir(), 'lampa-remux-subs'),
     // what each file's first open read (its start and index) and its probe, so it opens again without waiting
     // for those pieces (source.js): kept across restarts, the oldest dropped past sourcesMax bytes

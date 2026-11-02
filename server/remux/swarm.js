@@ -86,12 +86,16 @@ async function seeders(hashes, fresh) {
 }
 
 // releases seen dead: { hash: { at, title, size } }, kept across restarts
-let dead = {};
-try { dead = JSON.parse(fs.readFileSync(cfg.swarm, 'utf8')); } catch (e) {}
-function save() {
+let dead = {}, frozen = false;
+function load() { try { dead = JSON.parse(fs.readFileSync(cfg.swarm, 'utf8')); } catch (e) {} }
+load();
+// handover (server.js): the process handing over saves once more and then never, the next one reads it again
+function freeze() { save(true); frozen = true; }
+function save(sync) {
+    if (frozen) return;
     const now = Date.now();
     for (const h of Object.keys(dead)) if (now - dead[h].at > DEAD_KEEP_MS) delete dead[h];
-    fs.writeFile(cfg.swarm, JSON.stringify(dead), () => {});
+    if (sync) fs.writeFileSync(cfg.swarm, JSON.stringify(dead)); else fs.writeFile(cfg.swarm, JSON.stringify(dead), () => {});
 }
 // a release that played after it was seen dead isn't dead any more (releases.js lastPlayed)
 function isDead(h) { return !!dead[h] && Date.now() - dead[h].at <= DEAD_KEEP_MS && releases.lastPlayed(h) < dead[h].at; }
@@ -163,4 +167,4 @@ async function report(list) {
     return { seeders: s.seeders, dead: deadList() };
 }
 
-module.exports = { waiting, progress, state, report };
+module.exports = { waiting, progress, state, report, freeze, reload: load };
