@@ -128,7 +128,7 @@ The waiting segment 27 was handed on. Caddy answered the player's retry with it 
 | `mkv.js` / `mp4index.js` | keyframe times from the file's own index (Matroska Cues / MP4 `stss`), read with a few HTTP range requests |
 | `session.js` | one playing file: runs ffmpeg from the segment asked for, writes segments, follows seeks |
 | `mp4.js` | splits ffmpeg's fragmented MP4 into the init segment and fragments, and fixes their times |
-| `server.js` | the HTTP side |
+| `server.js` | the HTTP side. Segments answer Range requests (206): Safari resumes a segment whose download broke mid-way with `bytes=<got>-`, and before 2026-11-03 got the whole file back, which froze playback for good (S2E20-21 on the public host, seg270, 14:01; Caddy's log: the first download stopped at 8,231,645 of 9,732,689 bytes) |
 | `startup.js` | how far a file is from playing, for the loading card (below, "Loading progress") |
 | `download.js` | a file made into one MP4 to keep (below, "Downloads") |
 | `torrserver.js` | what the service asks TorrServer besides the stream (a torrent's files, drop) |

@@ -143,11 +143,25 @@ function send(res, status, body, type) {
     res.end(body);
 }
 
-function sendFile(res, file) {
+// A Range is answered with just that part: Safari resumes a segment whose download broke with "bytes=<got>-",
+// and on 2026-11-03 14:01 the whole file (200) came back for seg270's resume; playback stayed frozen at 25:54
+function sendFile(res, file, range) {
     const size = fs.statSync(file).size;
-    res.writeHead(200, { 'Content-Type': TYPES[file.split('.').pop()], 'Content-Length': size, 'Cache-Control': 'no-store',
-        'Access-Control-Allow-Origin': '*' });
-    fs.createReadStream(file).pipe(res);
+    const headers = { 'Content-Type': TYPES[file.split('.').pop()], 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*' };
+    const r = /^bytes=(\d*)-(\d*)$/.exec(range || '');
+    let start = 0, end = size - 1;
+    if (r && (r[1] || r[2])) {
+        if (r[1]) { start = +r[1]; if (r[2]) end = Math.min(+r[2], size - 1); }
+        else start = Math.max(0, size - +r[2]);   // the last N bytes
+        if (start > end) {
+            res.writeHead(416, Object.assign(headers, { 'Content-Range': `bytes */${size}` }));
+            return res.end();
+        }
+        headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+    }
+    res.writeHead(headers['Content-Range'] ? 206 : 200, Object.assign(headers, { 'Content-Length': end - start + 1 }));
+    fs.createReadStream(file, { start, end }).pipe(res);
 }
 
 // a player's lines (desktop/airplay.js): at most 8 KB, each line cut at 300 characters
@@ -250,10 +264,10 @@ async function handle(req, res) {
     }
     let m;
     if (b === 'video.m3u8') return send(res, 200, playlist(s, i => `seg${i}.m4s`, 'init.mp4'), TYPES.m3u8);
-    if (b === 'init.mp4') return sendFile(res, await fed(hash, s.init(), res));
+    if (b === 'init.mp4') return sendFile(res, await fed(hash, s.init(), res), req.headers.range);
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) {
         const t0 = Date.now(), file = await fed(hash, s.segment(+m[1]), res, () => s.reading(+m[1])), bd = s.m.bounds;
-        sendFile(res, file);
+        sendFile(res, file, req.headers.range);
         releases.sent(hash, s.m.index, +m[1], (bd[+m[1] + 1] - bd[+m[1]]) || 0);
         // the player waited for this one (the first segment, a seek, or the download falling behind)
         if (Date.now() - t0 > SLOW_MS) console.log(`${hash.slice(0, 8)}:${s.m.index} seg${m[1]} in ${sec(Date.now() - t0)} (${await swarm(hash)})`);
