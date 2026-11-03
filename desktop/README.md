@@ -41,6 +41,7 @@ see "Touch devices and phones".
 | `download.js` | `rubyDownload`: Download on title pages, a film or episode made into an MP4 to keep, for watching offline |
 | `swarm.js` | real seeder counts in every torrent list, dead releases left out; switches to the next release of the same resolution when the playing one stops sending or is too slow ("Dead swarms") |
 | `player.js` | the player's labelled Subtitles button, the Quality menu and an AirPlay button |
+| `iosplayer.js` | on iPhones, inside iOS's own full-screen player: "Skip intro" and "Next episode in 7" as a line in the picture, and its 10 s forward button skips the intro or starts the next episode ("Skip intro and Next episode on iPhones and while AirPlaying") |
 | `airplay.js` | while the video plays on an AirPlay screen, and while a start hasn't played yet, what it does (pause, page hidden, route lost, stuck loading) goes to the remux's log ("AirPlay") |
 | `compat.js` | `rubyCompat`: plays on this device or says why: releases it can't decode left out, HDR it can't show as the video playlist, a tap readies the player's `<video>` (Safari), a stuck start ends in an error |
 | `presence.js` | who's watching now, in the top bar (the shared `./sync/` folder) |
@@ -673,9 +674,10 @@ Eleven small edits, each marked `Lampa Desktop:`; re-apply them when updating fr
   seconds after the tap, and upstream made a new element for each start, so every start was refused
   (`play()`: NotAllowedError). See "Player", "A start Safari refused".
 - **Player, playlist `select`:** while the video plays on an AirPlay screen
-  (`webkitCurrentPlaybackTargetIsWireless`), switching episodes keeps the `<video>` and gives it the next
-  stream, as upstream already does in picture-in-picture (`keepPip`). A new element ends the AirPlay session.
-  See "Player", "AirPlay".
+  (`webkitCurrentPlaybackTargetIsWireless`) or in iOS's own full-screen player (`webkitDisplayingFullscreen`),
+  switching episodes keeps the `<video>` and gives it the next stream, as upstream already does in
+  picture-in-picture (`keepPip`). A new element ends the AirPlay session, and in iOS's player Safari refuses to
+  play one without a tap. See "Player", "AirPlay" and "Skip intro and Next episode on iPhones".
 - **`window.Lampa` gets `PlayerSegments`** (Lampa's `Segments$1`): skip times can then be set after the player
   started (`introdb.js` gets them from TheIntroDB, which answers after `start`). Upstream takes them only from
   the play data (`data.segments`) at `start`.
@@ -812,7 +814,11 @@ decides.
   rest of the credits. The button starts it now; the cross hides the card and the episode plays on (seeking
   back brings it again), and the next one still starts when it ends (Lampa's own Settings → Player → "Next
   episode", `playlist_next`). No card on the last episode or with "Next episode" off. On an iPhone in iOS's own
-  full-screen player the card can't be seen, but the countdown and the switch still happen.
+  full-screen player the card can't be seen: see "Skip intro and Next episode on iPhones" below. On phones the
+  card moves above the control bar while it shows (`true--mobile`, 16em up): the bar with Lampa's "Next episode"
+  line reaches 157 px = 14.8em (iPhone 17 Pro simulator, 2026-11-03), and at 7.5em the card sat on its time row,
+  where Lampa's touch zone (`.player-panel__time-touch-zone`) seeks to where you tap: a tap on the card once
+  went to 1697 s of 2620 (63 %, the tap's x).
   - **Credits times** come from TheIntroDB (`api.theintrodb.org/v2/media?tmdb_id=&season=&episode=`, no key,
     CORS open to every origin we serve from, 30 requests per few seconds), asked once per episode when it
     starts. Measured 2026-10-26 on 18 shows × 3 episodes: credits known for 41 of 54 (Desperate Housewives,
@@ -842,6 +848,45 @@ decides.
   at 2 s, "Skip" from 5 s, pressing it went from 10 s to 16 s, one segment on the timeline; the next-episode
   card still came at the credits. Coverage, measured the same day on the same 18 shows × 3 episodes as the
   credits: an intro or recap known for 37 of 54. Not checked with a real episode end to end.
+- **Skip intro and Next episode on iPhones and while AirPlaying** (`iosplayer.js`, player.js, nextup.js; asked
+  2026-11-03: neither showed on phones nor while AirPlaying). Why: on an iPhone every stream plays in iOS's own
+  full-screen player (see "Full screen on iPhones"), which covers the page, and while AirPlaying from a phone that
+  player stays up saying the video is on the TV. Lampa's Skip button and the card were there underneath:
+  measured in the iOS 26 simulator (iPhone 17 Pro, Safari 26.0) 9.7 s into an episode, the button's class was
+  `player-skip selector` (shown) and the video `webkitDisplayingFullscreen`. iPhone Safari has no element full
+  screen (`webkitRequestFullscreen` undefined), so a page can't put anything of its own over that player.
+  What it can do, all measured there the same day:
+  - **A line in the picture.** iOS shows a video's text tracks in its player, so `iosplayer.js` adds a track of
+    its own ("Ruby", marked so player.js's subtitle code ignores it) with one cue at the top of the picture:
+    "Skip intro: tap ↻10" while Lampa would offer its Skip button (segments set to "user"), "Next episode in 7:
+    tap ↻10" during nextup.js's countdown (it counts down with it). The stream's own subtitles stay on at the
+    bottom: with an HLS English rendition showing, both lines were on screen together.
+  - **iOS's "10 s forward" button acts.** It isn't a Media Session action (no `seekforward` handler was
+    called): it's a plain seek, `seeking` 5.0 → 15.0. So a forward seek that starts inside such a segment and
+    lands inside it goes on to its end (log: `skip 4.3 -> 25.0`, TheIntroDB's recap 3-25 s of Desperate Housewives
+    S2E20), and one during the countdown starts the next episode now (`next episode at 2572.8` → episode 2 at
+    5 s, still in iOS's player). A late segment (Lampa's end rule, start past 70 %) starts the next episode, as
+    Lampa's button does there.
+  - **The next episode keeps playing in iOS's player.** Before, the countdown's switch made a new `<video>`
+    and Safari refused to play it (`play promise error: The request is not allowed…`): episode 2 sat paused at
+    0 s outside iOS's player. Lampa now keeps the element there, as in picture-in-picture ("Changes to Lampa
+    itself"): after the countdown the same element played episode 2 from 0, still in iOS's player, and its own
+    intro line came up.
+  - **AirPlay: the page is the remote.** When the video goes to a TV
+    (`webkitcurrentplaybacktargetiswirelesschanged` with `webkitCurrentPlaybackTargetIsWireless`), player.js
+    closes iOS's player, and doesn't open it for the next episode while AirPlaying; when the picture comes back
+    to the phone it opens it again. Leaving it paused the video 0.4 s later (with the picture on the phone), so
+    a video that was playing is played again 1.5 s on. Checked with the state an AirPlay session gives the page
+    (the property set to true on the video and the event sent; the simulator has no AirPlay screens): iOS's player
+    closed, the video played on, the in-picture line went away, and with real taps Lampa's Skip button went from
+    16 s to 35 s and the card (bar up, above it at 501-544 px; the bar's touch zone starts at 611) started episode
+    2 on the same element from 0 s, playing. Turning it back off opened iOS's player again
+    (`webkitbeginfullscreen`).
+  The test stream: a 43-minute generated HLS (testsrc, 10 s segments, an English WebVTT rendition) served as
+  `/ts/gst/<hash>/master.m3u8` behind tools/dev-server.js, two episodes as a playlist with Desperate Housewives'
+  TMDB id so TheIntroDB answered for real (S2E20: recap 3-25 s, credits 2568 s). Desktop unchanged: in Chromium
+  the card still started episode 2 and no track was added. Not checked: a real iPhone, a real AirPlay session
+  (that iOS keeps the route when its player closes, and whether it pauses then), landscape (the line's place).
 - **F** toggles fullscreen, as in other web players; **C** turns subtitles off and on (on: the profile's language as
   above), the way Lampa's own menu switches them, with a note "Subtitles off/on". Checked 2026-10-18
   in the built-in browser: the subtitle layer went away and came back with the downloaded text.

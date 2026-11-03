@@ -135,13 +135,33 @@
         document.addEventListener('playing', function (e) {
             var v = e.target;
             if (!native() || v !== Lampa.PlayerVideo.video() || v.webkitDisplayingFullscreen || v.currentSrc === autoSrc) return;
+            if (v.webkitCurrentPlaybackTargetIsWireless) return;
             autoSrc = v.currentSrc;
             enter(v);
             // the next episode's call comes while the last one's full screen is closing, and iOS sometimes ignores
             // it (no error, no webkitbeginfullscreen; 2 of 4 runs): a second try a second later caught it
             setTimeout(function () {
-                if (native() && v === Lampa.PlayerVideo.video() && !v.webkitDisplayingFullscreen && !v.paused) enter(v);
+                if (native() && v === Lampa.PlayerVideo.video() && !v.webkitDisplayingFullscreen && !v.paused && !v.webkitCurrentPlaybackTargetIsWireless) enter(v);
             }, 1000);
+        }, true);
+        // AirPlay: the picture is on the TV, and iOS's player over the page only says so, hiding Lampa's Skip
+        // button, nextup.js's card and the panel (the user, 2026-11-03: not visible while AirPlaying). The page
+        // is the remote then: iOS's player closes when the video goes to a TV (each episode stays out of it, above)
+        // and opens again when the picture comes back to the phone.
+        document.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', function (e) {
+            var v = e.target;
+            if (!native() || v !== Lampa.PlayerVideo.video()) return;
+            console.log('Ruby', 'AirPlay', v.webkitCurrentPlaybackTargetIsWireless ? 'on' : 'off', 'full', v.webkitDisplayingFullscreen);
+            if (!v.webkitCurrentPlaybackTargetIsWireless) {
+                if (!v.paused && !v.webkitDisplayingFullscreen) enter(v);
+            } else if (v.webkitDisplayingFullscreen) {
+                var playing = !v.paused;
+                try { v.webkitExitFullscreen(); } catch (err) { console.log('Ruby', 'iOS full screen exit:', err.name); }
+                // leaving paused the video 0.4 s later (iOS 26 simulator, 2026-11-03, the picture on the phone)
+                if (playing) setTimeout(function () {
+                    if (v.paused && v.webkitCurrentPlaybackTargetIsWireless) v.play().catch(function () {});
+                }, 1500);
+            }
         }, true);
     }
 
@@ -236,7 +256,8 @@
         video._rubySubs = true;
         video.textTracks.addEventListener('addtrack', function () {
             if (video._rubySubsSeen || video.readyState < 2) return;
-            var list = [].filter.call(video.textTracks, function (t) { return t.kind === 'subtitles' || t.kind === 'captions'; });
+            // not iosplayer.js's line in iOS's player
+            var list = [].filter.call(video.textTracks, function (t) { return (t.kind === 'subtitles' || t.kind === 'captions') && !t._rubyHint; });
             if (list.length) Lampa.PlayerVideo.listener.send('subs', { subs: list });
         });
     }
@@ -295,7 +316,7 @@
                 if (pct < 100) line = Math.max(10, pct);
             }
             [].forEach.call(video.textTracks || [], function (t) {
-                if (t.mode !== 'showing' || !t.activeCues) return;
+                if (t.mode !== 'showing' || !t.activeCues || t._rubyHint) return;
                 [].forEach.call(t.activeCues, function (c) { if ('line' in c) lift(c, line); });
             });
             var box = document.querySelector('.player-video__subtitles');

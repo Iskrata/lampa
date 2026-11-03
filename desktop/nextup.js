@@ -11,7 +11,10 @@
     // a file's own content after the credits this long: a scene to see, not credits to skip
     var AFTER = 15;
     var CSS = [
-        '.ruby-nextup{position:absolute;right:3%;bottom:7.5em;z-index:40;display:flex;align-items:center;gap:.6em;opacity:0;transform:translateY(.6em);transition:opacity .3s,transform .3s;pointer-events:none}',
+        '.ruby-nextup{position:absolute;right:3%;bottom:7.5em;z-index:40;display:flex;align-items:center;gap:.6em;opacity:0;transform:translateY(.6em);transition:opacity .3s,transform .3s,bottom .3s;pointer-events:none}',
+        // a phone's control bar, with Lampa's "Next episode" line over it, reaches 14.8em up (iPhone, 2026-11-03): the
+        // card sat on its time row, where a tap also seeks (Lampa's touch zone), as Lampa's own Skip button moves up
+        'body.true--mobile .player--panel-visible .ruby-nextup{bottom:16em}',
         '.ruby-nextup--on{opacity:1;transform:none;pointer-events:auto}',
         '.ruby-nextup__go{position:relative;overflow:hidden;display:flex;align-items:center;gap:.55em;padding:.75em 1.3em;border-radius:.35em;background:rgba(255,255,255,.28);color:#fff;font-size:1.3em;font-weight:600;cursor:pointer}',
         '.ruby-nextup__go svg{width:1.1em!important;height:1.1em!important}',
@@ -25,6 +28,8 @@
 
     var card = null, fill = null, label = null, dismissed = false, showing = false;
     var fired = false;
+    // what the card says now, for iosplayer.js (iOS's own player covers the card): { title, left } or null
+    var now = null;
 
     // where the card comes and whether it counts down: { at, auto } for a video of `duration` s. TheIntroDB's time
     // is for its own copy: it's used only when it lands in this file's last 30 % (Lampa's own rule for an end
@@ -53,7 +58,7 @@
         card.querySelector('.ruby-nextup__x svg').style.transform = 'rotate(45deg)';
         fill = card.querySelector('.ruby-nextup__fill');
         label = card.querySelector('.ruby-nextup__label');
-        card.querySelector('.ruby-nextup__go').addEventListener('click', function () { hide(); Lampa.PlayerPlaylist.next(); });
+        card.querySelector('.ruby-nextup__go').addEventListener('click', go);
         card.querySelector('.ruby-nextup__x').addEventListener('click', function () { dismissed = true; hide(); });
         root.appendChild(card);
         return card;
@@ -61,16 +66,23 @@
 
     // left: seconds until the next episode, or null when it comes only with the end of this one
     function show(item, left) {
-        if (!build()) return;
         var title = item.title && item.title.length < 60 ? item.title : '';
+        now = { title: title, left: left == null ? null : Math.max(0, Math.ceil(left)) };
+        if (!build()) return;
         label.innerHTML = (left == null ? 'Next episode' : 'Next episode in ' + Math.max(0, Math.ceil(left))) +
             (title ? '<div class="ruby-nextup__title">' + title.replace(/</g, '&lt;') + '</div>' : '');
         fill.style.transform = 'scaleX(' + (left == null ? 0 : Math.min(1, Math.max(0, 1 - left / LEAD))) + ')';
         if (!showing) { showing = true; card.classList.add('ruby-nextup--on'); }
     }
 
+    function go() {
+        hide();
+        Lampa.PlayerPlaylist.next();
+    }
+
     function hide() {
         showing = false;
+        now = null;
         if (card) card.classList.remove('ruby-nextup--on');
     }
 
@@ -86,8 +98,7 @@
         show(item, left);
         if (p.auto && left <= 0 && !fired) {
             fired = true;
-            hide();
-            Lampa.PlayerPlaylist.next();
+            go();
         }
     }
 
@@ -101,6 +112,13 @@
         Lampa.Player.listener.follow('start', function () { dismissed = false; fired = false; hide(); });
         Lampa.Player.listener.follow('destroy', function () { dismissed = false; fired = false; hide(); });
     }
+
+    window.rubyNextUp = {
+        // the card's state while it's up ({ title, left: whole seconds to the switch, or null }), else null
+        state: function () { return now; },
+        // what its button does: the next episode now
+        go: go
+    };
 
     var t = setInterval(function () {
         if (!window.Lampa || !Lampa.Player || !Lampa.PlayerVideo || !Lampa.PlayerPlaylist || !window.rubyDesktop || !rubyDesktop.active || !window.rubyIcons) return;
