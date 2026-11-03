@@ -83,7 +83,8 @@ for 10 s, `lb_try_duration 30s`). A deploy puts the new code into the idle insta
   last (`swarms.freeze`, `releases.freeze`: saved once more at the handover, never after) and starts the downloads.
   An unfinished download starts over there, as after a restart.
 - **The old process stays, idle** ("handover: done in N s, idle until stopped"), until the next deploy stops it
-  before reusing its install: exiting on its own is a crash to WinSW, which would start it again. If Windows starts
+  before reusing its install, rather than exiting: WinSW's `onfailure restart` might start it again on the old code
+  (not checked for an exit with code 0; staying idle avoids the question). If Windows starts
   both at boot, the one `REMUX_ACTIVE` (`active.txt`) doesn't name logs "standby" and never listens.
 
 A plain **SIGINT/SIGTERM** (a service stop, or the first deploy from the single install) still works as before:

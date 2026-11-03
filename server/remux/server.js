@@ -401,7 +401,7 @@ function shutdown(sig) {
 // other one, but answer every request already here, and keep each ffmpeg run going ahead (Session.drain) into
 // the folders both share, so the other serves those segments from disk instead of reading the torrent again.
 // Downloads stop and start over there; the dead list and release memory are saved a last time. Then this
-// process stays, idle, until the next deploy stops it (exiting would be a crash to WinSW, which restarts).
+// process stays, idle, until the next deploy stops it (exiting, WinSW's onfailure restart might start it again).
 function handover() {
     if (draining) return;
     draining = true;
