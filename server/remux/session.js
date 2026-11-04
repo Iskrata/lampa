@@ -22,11 +22,16 @@ const AHEAD = 30, BEHIND = 40, WAIT_MS = 90000, JUMP = 6, SLACK_S = 0.05;
 const DRAIN_AHEAD = 75, BEAT_MS = 1000, BEAT_STALE_MS = 4000;
 // torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
 const shouty = new Set();
+// dir -> the Session using it: a player closed and opened again within close()'s 3 s gets a new Session on the
+// same folder, which the old one must not delete (2026-11-04 21:00: S3E4 reopened 2 s after /gst/remove, its
+// segments went missing and every request got 500 ENOENT)
+const live = new Map();
 
 class Session {
     constructor(media, dir) {
         this.m = media;
         this.dir = dir;
+        live.set(dir, this);
         this.job = null;
         this.delay = null;
         this.lastReq = 0;
@@ -444,7 +449,9 @@ class Session {
         // (/gst/remove) requests waiting for its segments get an answer now, not after WAIT_MS
         for (const w of this.waiters) { clearTimeout(w.timer); w.reject(new Error('closed')); }
         this.waiters = [];
+        if (live.get(this.dir) === this) live.delete(this.dir);
         const rm = retry => setTimeout(() => {
+            if (live.has(this.dir)) return;   // a new session took the folder over
             try { fs.rmSync(this.dir, { recursive: true, force: true }); }
             catch (e) { if (retry) rm(false); else console.error(`could not delete ${this.dir}: ${e.message}`); }
         }, 3000);
