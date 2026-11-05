@@ -652,7 +652,7 @@ stamped field (`updated`) when a page sends an older one.
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Eleven small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Twelve small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -699,6 +699,13 @@ Eleven small edits, each marked `Lampa Desktop:`; re-apply them when updating fr
 - **`window.Lampa` gets `PlayerSegments`** (Lampa's `Segments$1`): skip times can then be set after the player
   started (`introdb.js` gets them from TheIntroDB, which answers after `start`). Upstream takes them only from
   the play data (`data.segments`) at `start`.
+- **Torrent, file `hover:enter`:** an Android browser (not Lampa's APK) plays the file. Upstream returned
+  `Platform.install('apk')` there, so a torrent never played in Chrome on Android. The window asking to
+  install the APK opened under the loading card (facts.js), so the screen sat at "Connecting…" forever. Found
+  2026-11-05: an Android 10 phone on the public host got its file list for Copycat (1995) and Little Women, then
+  only heartbeats, no player `start` and no stream request. Reproduced in Chromium with an Android user agent
+  (the window's text read "We noticed that you use MediaStationX…"); with this edit the same start plays
+  through the remux (hls.js, 18 s in after 20 s).
 
 ## Player
 
