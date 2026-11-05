@@ -233,6 +233,12 @@ episode.
    - **Runtime:** the bitrate comes from size and runtime (TMDB's episode runtime, else the last aired
      episode's; the episode count of the seasons a pack covers).
    - **Seeders:** count half as much as quality. They still have to pass the minimum and the speed check.
+   - **A swarm too thin for its bitrate:** up to −1 when its seeders can't carry the release, at about
+     0.15 Mbit/s per seeder (2026-11-05: Little Women 2019's 1080p Blu-ray x265 YAWNTiC, 7.8 GB = 7.7 Mbit/s,
+     17 seeders, sent 2.6 Mbit/s to ruby with 6 connected; ranked first, it never started on an Android 10
+     device). The 93-seeder YTS BRRip (2.6 Mbit/s) now comes first. Checked in Node against the day's
+     `/gst/pick` answers: Inception keeps its 4K Blu-ray (46 seeders, 24 Mbit/s, which starts) and its 1080p
+     YAWNTiC (88 seeders). Up to −2 put a 6 Mbit/s YTS rip over that 4K Blu-ray.
    - **Penalties:** a real bitrate above the band (too heavy to stream), Dolby Vision without HDR10, AV1.
    - **Season packs:** a small bonus.
    - **Edgerunners S1:** the 1080p Blu-ray x265 (16 GB, 197 seeders) now beats the Netflix WEB H.264
@@ -512,6 +518,18 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     says so ("This release has no video in it, and there is no other 1080p release to switch to"), so
     Lampa's own text never shows, nor its "Timeout expired" at 90 s after a no-peers give-up.
   - **Dead:** the heartbeat says `Swarm.dead` and the video hasn't moved for 5 s.
+  - **Too slow to open:** from `Lampa.Torrent.start` until the player opens, while Lampa's window is up: the
+    torrent has downloaded slower than the release's bitrate for 60 s while something reads it (TorrServer's
+    `Readers`: the warm-up, the master's probe, a segment). A torrent nothing reads downloads nothing, so a
+    wait with no readers isn't counted. 2026-11-05 11:21-11:23 UTC: Little Women's YAWNTiC (above) sat on the
+    loading card at 0 % for 110 s on an Android 10 device, its file list in at 11:21:14, with no player start
+    and no master request, until it was closed. The player-phase checks below never ran. Checked in the dev
+    server with `Lampa.Player.play` held back and the size raised 30× (232 Mbit/s needed): with the warm-up
+    reading at 2.9 Mbit/s it switched at 61 s to the 93-seeder Blu-ray H.264; with nothing reading it didn't
+    switch in 80 s. Each step of an opening (start, hash, file list, file entered, player start, a too-slow
+    switch, the window closed early) goes to the remux's log as an `airplay open +<s>s …` line with the
+    device, since that Android device's console can't be reached and why its player never started is
+    unknown.
   - **Too slow:** the video has waited 30 s (60 s before it ever played, counted from when the player has its
     stream, not from opening it), not paused, while the remux holds one of its requests waiting on the torrent
     (heartbeat `Swarm.waiting`) and the torrent downloads slower than the release's bitrate. If the torrent

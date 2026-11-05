@@ -30,7 +30,7 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow, no video): not offered for 6 h (no video: never) (by hash; by `title` where a listing's hash isn't known) |
 | `GET /gst/link?u=<Jackett .torrent link without its key>` | that link fetched from Jackett with the key, for TorrServer |
 | `GET /gst/jackett/api/v2.0/indexers/<x>/results?...` | Lampa's own Jackett search, with the key added here and removed from the answer (every download link becomes a `/gst/link` one); other Jackett paths 404 |
-| `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it) |
+| `GET /gst/remove?hash=<hash>` | stop, and drop the torrent from TorrServer (kept while a download reads it). The session's folder goes 3 s later, unless a new session took it over (a player reopened within those 3 s: 2026-11-04 21:00, S3E4 on an iPhone reopened 2 s after a close and every seg8 got 500 ENOENT). A request that got the session before the close (a master still probing) starts no ffmpeg run and gets "closed" (the dev server on 2026-11-05: a master that ended 20 s after its close wrote into the deleted folder). Checked in Node with a stand-in media object |
 | `GET /gst/src/<hash>/<file>[?rec=1]` | the file's bytes (HTTP ranges) for ffmpeg and ffprobe on this machine, not through Caddy (below, "Opening a file again") |
 | `GET /gst/src/<hash>/<file>[?rec=1]` | the file's bytes (HTTP ranges) for ffmpeg and ffprobe on this machine; not through Caddy (below, "Opening a file again") |
 | `POST /gst/download` `{hash, index, lang, tmdb, kind, season, episode, name}` | start a download (below); the job |

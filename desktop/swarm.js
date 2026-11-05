@@ -35,6 +35,17 @@
             .then(function (r) { return r.ok ? r.json() : null; }, function () { return null; }), timeout]);
     }
 
+    // Each step of opening a release, to the remux's log (POST /gst/log, "airplay open ..." lines): an Android 10
+    // device on 2026-11-05 had its file list at 11:21:14 and then sat on the loading card for 110 s without
+    // the player starting or asking for the master, and its console can't be reached
+    var trailT0 = 0;
+    function trail(what) {
+        if (!remux()) return;
+        if (what.indexOf('start ') === 0) trailT0 = Date.now();
+        var line = 'open +' + ((Date.now() - trailT0) / 1000).toFixed(1) + 's ' + what + ' | ' + navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 60);
+        try { navigator.sendBeacon(Lampa.Torserver.url() + '/gst/log', line); } catch (e) {}
+    }
+
     // real seeders in, dead releases out (rubyPick.alive)
     function check(results) {
         var known = rubyPick.twins(results);
@@ -78,6 +89,8 @@
             listTimer = setTimeout(function () {
                 if (current === cur && !cur.listed && !Lampa.Player.opened() && Lampa.Modal.opened()) switchRelease('nopeers');
             }, LIST_MS);
+            opening(cur);
+            trail('start ' + (release.Title || release.title || '').slice(0, 80));
             return start.apply(this, arguments);
         };
         // the hash of a release given as a .torrent link (no hash in the search results): TorrServer tells it.
@@ -90,6 +103,7 @@
             var cur = current;
             return hash.call(this, params, function (json) {
                 if (cur && cur === current && json && json.hash) cur.hash = String(json.hash).toLowerCase();
+                if (cur && cur === current) trail('hash ' + (cur.hash || 'none').slice(0, 8));
                 oncomplite.apply(this, arguments);
             }, function () {
                 var r = onerror && onerror.apply(this, arguments);
@@ -104,7 +118,8 @@
         };
         Lampa.Listener.follow('torrent_file', function (e) {
             if (!current) return;
-            if (e.type === 'list_open') current.listed = true;
+            if (e.type === 'list_open') { current.listed = true; trail('files ' + (e.items || []).length); }
+            if (e.type === 'onenter') trail('file entered');
             // nothing Lampa can play in it: it shows "Empty" right after this, which the switch closes
             if (e.type === 'list_open' && !(e.items || []).length) {
                 var cur = current;
@@ -171,6 +186,34 @@
         }, 300);
     }
 
+    // Before the player has its stream (Lampa's torrent window, the loading card): begin() only watches once the
+    // player starts, so a release too slow to open sat there. Little Women 2019 1080p x265 (17 seeders, 7.7 Mbit/s
+    // needed) sent 2.6 Mbit/s: the card stayed at 0 % for 110 s with no player start until it was closed
+    // (2026-11-05 11:21-11:23 UTC, an Android 10 device). Too slow for START_STUCK_MS without a break: the next one.
+    function opening(c) {
+        stop();
+        var need = rubyPick.bitrate(c.release, c.movie || {}, c.target) || 0, slowSince = Date.now();
+        if (!need) return;
+        watch = setInterval(function () {
+            // the player took over (begin), or Lampa's window was backed out of (play.js tells it the same way)
+            if (current !== c || Lampa.Player.opened() || !document.querySelector('.modal')) {
+                if (current === c && !Lampa.Player.opened()) trail('window closed before the player opened');
+                return stop();
+            }
+            if (!c.hash) return;
+            ask(c.hash + '/heartbeat').then(function (h) {
+                if (!h || current !== c || !watch || Lampa.Player.opened()) return;
+                var mbps = (h.Torrent && h.Torrent.download_speed || 0) * 8 / 1e6;
+                // only while something reads the torrent (TorrServer's readers: the warm-up, the master's probe, a
+                // segment; the warm-up isn't in Swarm.waiting): a torrent nothing reads downloads nothing (0.0 Mbit/s
+                // in the dev server with the player held back)
+                var read = (h.Readers && h.Readers.length) || (h.Swarm && h.Swarm.waiting > 0);
+                if (mbps >= need || !read) slowSince = Date.now();
+                else if (Date.now() - slowSince > START_STUCK_MS) { trail('too slow while opening: ' + mbps.toFixed(1) + ' of ' + need.toFixed(1) + ' Mbit/s'); switchRelease('slow'); }
+            });
+        }, POLL_MS);
+    }
+
     // While the player is open: the remux's heartbeat says when the torrent is dead; a video that waits for the
     // torrent (the remux holds one of its requests: Swarm.waiting) while it downloads slower than the release's
     // bitrate is too slow. A video that waits while the torrent keeps up is this device's own connection, and
@@ -226,7 +269,7 @@
     function init() {
         wrapParser();
         wrapStart();
-        Lampa.Player.listener.follow('start', begin);
+        Lampa.Player.listener.follow('start', function (data) { trail('player start'); begin(data); });
         Lampa.Player.listener.follow('destroy', stop);
     }
 

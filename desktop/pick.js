@@ -147,6 +147,11 @@
         return dub || dual ? 1 : -0.5;
     }
 
+    // What a swarm sends, roughly, from its seeders: 17 seeders (6 connected) sent 2.6 Mbit/s to ruby
+    // (Little Women 2019 1080p BluRay x265 YAWNTiC, 7.7 Mbit/s, 2026-11-05: ranked first, never started)
+    var MBPS_PER_SEEDER = 0.15;
+    function swarmMbps(r) { return (r.Seeders || 0) * MBPS_PER_SEEDER; }
+
     function score(r, res, movie, target, audio) {
         var t = r.Title, rate = bitrate(r, movie, target), band = RATE[res], ideal = band.high * 0.7;
         var s = Math.log(1 + (r.Seeders || 0)) / Math.LN10 * 1.5 + source(t);
@@ -154,6 +159,9 @@
         if (/\b10[ .-]?bits?\b|\bhdr/i.test(t)) s += 0.3;
         if (rate < band.low) s -= (band.low - rate) / band.low * 3;
         if (rate > band.high) s -= Math.min(6, (rate - band.high) / band.high * 6);
+        // a swarm too thin for its bitrate never keeps up: up to -1 when its seeders can't carry the release
+        // (-2 also put a 6 Mbit/s YTS rip over Inception's 4K Blu-ray with 46 seeders, which starts fine)
+        if (rate > 0) s -= Math.max(0, 1 - swarmMbps(r) / rate);
         // Dolby Vision without an HDR10 base layer shows wrong colours on everything but a DV screen
         if (/\b(dv|dovi|dolby[ .]?vision)\b/i.test(t) && !/\bhdr/i.test(t)) s -= 5;
         if (/\bav1\b/i.test(t)) s -= 2;                         // no hardware decoding on older Macs/PCs

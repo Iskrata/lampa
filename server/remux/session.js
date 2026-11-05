@@ -68,6 +68,7 @@ class Session {
 
     // the init segment: a one-second ffmpeg run from the start (same settings as every job)
     init() {
+        if (this.closed) return Promise.reject(new Error('closed'));
         const file = path.join(this.dir, 'init.mp4');
         if (fs.existsSync(file)) return Promise.resolve(file);
         if (this.initing) return this.initing;
@@ -86,6 +87,7 @@ class Session {
     }
 
     async segment(n) {
+        if (this.closed) throw new Error('closed');
         this.used = Date.now();
         this.lastReq = n;
         this.prune();
@@ -149,6 +151,10 @@ class Session {
 
     start(n) {
         this.stop();
+        // a request that got this session before /gst/remove closed it (a master still probing): no ffmpeg in a
+        // folder about to be deleted (2026-11-05 dev server: the 4K remux's master ended 57 s in, 20 s after the
+        // close, and its ffmpeg wrote into the deleted folder: ENOENT)
+        if (this.closed) return;
         this.subWant = 0;
         const m = this.m, j = { start: n, cur: n, frags: [], ended: false, paused: false };
         const subFiles = runFiles(m, this.dir, n);
@@ -445,6 +451,7 @@ class Session {
 
     // On Windows a killed ffmpeg holds its files open for a moment: delete a little later, and retry once
     close() {
+        this.closed = true;
         this.stop();
         // (/gst/remove) requests waiting for its segments get an answer now, not after WAIT_MS
         for (const w of this.waiters) { clearTimeout(w.timer); w.reject(new Error('closed')); }
