@@ -670,6 +670,14 @@ sync again", Choko boko, 2026-10-24).
   TorrServer (UTF-8, else Windows-1251 for Bulgarian/Russian and Windows-1252 otherwise), not from ffmpeg's
   runs. KONTRAST's are TV captions (ALL CAPS), so OpenSubtitles' English is lined up with them by words as
   above.
+- **Read once, kept** in `REMUX_SUBS` (`side-<hash>-<file id>.srt`), and **a subtitle segment waits at most 4 s**
+  for one, then gets what is known. Found 2026-11-07 18:08 UTC (Mac Safari, S3E6 of the KONTRAST S03 pack, 1 peer
+  at 0.0 MB/s): the .srt, already read when S3E6 played that night, was read from the swarm again and took 49 s.
+  Every subtitle request waited for it; the access log has `sub0-0.vtt` 499 six times, about 6 s each (Safari
+  gives up), and the video stalled at 3 s on segments the folder already had (Safari loads nothing more after
+  subtitle requests time out, "A subtitle segment the player waits for" above). No subtitles until 50 s in.
+  Checked in Node against a stand-in TorrServer: the second read made no request, and a hanging one got an
+  empty answer in 4.0 s.
 - **A dropped torrent lists no files**: once nobody has read it for a while, TorrServer's `get` answers "in db"
   without `file_stats` until something reads the torrent, and a reopen reads nothing before this (the probe is
   kept, `source.js`). The first local test after TorrServer dropped it said "subtitles none". One byte of the

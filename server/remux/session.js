@@ -20,6 +20,10 @@ const AHEAD = 30, BEHIND = 40, WAIT_MS = 90000, JUMP = 6, SLACK_S = 0.05;
 // running ffmpeg says so in `producer.json` every BEAT_MS; the other process serves those segments from disk
 // instead of reading the torrent again with a run of its own, until the file is older than BEAT_STALE_MS.
 const DRAIN_AHEAD = 75, BEAT_MS = 1000, BEAT_STALE_MS = 4000;
+// A subtitle segment waits at most this long for the torrent's subtitle files (sidecar.js): Safari gives up on one
+// after about 6 s and, after two, loads nothing more, video too. S3E6 (2026-11-07 18:08 UTC): its .srt took 49 s
+// from a swarm of 1 peer, sub0-0.vtt went unanswered six times and the video stalled on segments it had on disk.
+const SIDECAR_WAIT_MS = 4000;
 // torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
 const shouty = new Set();
 // dir -> the Session using it: a player closed and opened again within close()'s 3 s gets a new Session on the
@@ -295,7 +299,7 @@ class Session {
             if (n <= this.job.cur + JUMP) { this.subWant = Math.max(this.subWant, n + 1); this.flow(); }
             await this.until(passed, WAIT_MS).catch(() => {});
         }
-        const cues = (await this.allCues(id)).filter(c => c.end > from && c.start < to);
+        const cues = (await this.allCues(id, SIDECAR_WAIT_MS)).filter(c => c.end > from && c.start < to);
         return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' + vtt(cues);
     }
 
@@ -307,8 +311,9 @@ class Session {
         return 'WEBVTT\n\n' + vtt(await this.allCues(id));
     }
 
-    async allCues(id) {
-        await this.sidecars;
+    // (ms: wait no longer than that for the torrent's subtitle files, then answer with what is known)
+    async allCues(id, ms) {
+        await (ms ? Promise.race([this.sidecars, new Promise(r => setTimeout(r, ms).unref())]) : this.sidecars);
         if (this.ownEnglish(id)) id = 'sub0';
         const own = /^sub(\d+)$/.exec(id);
         let all;

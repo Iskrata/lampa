@@ -6,6 +6,8 @@
 //     names that aren't the video's (what says the language: "eng", "English", "SDH")
 //   cues(hash, id, lang) -> cues
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const cfg = require('./config');
 const { post } = require('./torrserver');
 const { parseSrt, episodeOf } = require('./opensubs');
@@ -47,10 +49,16 @@ function decode(buf, lang) {
     }
 }
 
+// Read from the torrent once, then from cfg.subs: a few KB, but from a swarm that may barely move. S3E6 of the
+// KONTRAST pack (2026-11-07 18:08 UTC, 1 peer, 0.0 MB/s) took 49 s, read again though S3E6 had played that night.
 async function cues(hash, id, lang) {
+    const file = path.join(cfg.subs, `side-${hash.toLowerCase()}-${id}.srt`);
+    try { return parseSrt(fs.readFileSync(file, 'utf8')); } catch (e) { /* not read yet */ }
     const r = await fetch(stream(hash, id));
     if (!r.ok) throw new Error(`subtitle file ${id}: TorrServer HTTP ${r.status}`);
-    return parseSrt(decode(Buffer.from(await r.arrayBuffer()), lang));
+    const text = decode(Buffer.from(await r.arrayBuffer()), lang);
+    try { fs.mkdirSync(cfg.subs, { recursive: true }); fs.writeFileSync(file, text); } catch (e) { console.error(e.message); }
+    return parseSrt(text);
 }
 
 module.exports = { files, cues };
