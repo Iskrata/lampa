@@ -1280,6 +1280,11 @@ checked on a real iPhone or in iPad Safari.
   (Lampa's `Arrays.extend` keeps values already set), so neither list is fetched. Checked in the dev server
   2026-11-10: Brokeback Mountain (142) with the block switch on opens; with a list entry injected by hand the
   same page shows "Content Restricted", so the check is the one switched off.
+- **CUB as the catalogue.** That error page (and an empty category page) offers "Change source to CUB", which
+  stores `source = 'cub'`; CUB's rows and titles are Russian whatever `tmdb_lang` says (dev server
+  2026-11-10: "В кинотеатрах", Cyrillic titles with tmdb_lang `en`). The same iPhone was then Russian
+  everywhere. profiles.js sets `source` to `tmdb` on every load, like the language. Checked: a reload with
+  `source = 'cub'` stored shows the English TMDB rows.
 
 - **Trakt plugin card badges.** The Trakt plugin marks cards in your watchlist (bookmark), watched (tick) or
   in progress (half-filled) with a purple circle centred on the poster's bottom edge, half outside it. The

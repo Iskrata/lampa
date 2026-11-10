@@ -153,6 +153,10 @@
         var lang = LANGS.indexOf(ls.getItem('ruby_language')) >= 0 ? ls.getItem('ruby_language') : 'en';
         ls.setItem('language', lang);
         ls.setItem('tmdb_lang', lang);
+        // TMDB is the only catalogue: CUB (Lampa's own) answers in Russian whatever the language, and upstream's
+        // "Change source to CUB" button on an empty or blocked page pinned a phone to it (2026-11-10: every
+        // title and row in Russian). Set on every load, like the language.
+        ls.setItem('source', 'tmdb');
         save();
     } catch (e) {
         console.error('profiles: start failed', e);
