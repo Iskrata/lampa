@@ -129,6 +129,14 @@ audio, autoplaying the next episode, and trailers with or without sound (Setting
 used to belong to the browser, shared by whoever used it. A device that had its own values before this
 change sends them to its profile once, if the profile doesn't have them yet ("settings kept for this
 profile" in the logs), instead of losing them to the server's copy.
+
+**Language, per profile** (2026-11-10, `ruby_language`, Settings → Language): English (the default) or
+Bulgarian. `profiles.js` sets Lampa's `language` and `tmdb_lang` from it at every page start, so Lampa's own
+menus and TMDB's titles, descriptions and genres are in it; the page reloads on a change. The fork's own text
+(top bar, Play, Settings, player messages) stays English: the user's call for Ira, who wanted Bulgarian titles.
+Before, every page was forced to English (2026-10-20: a friend's browser in Bulgarian had half-translated
+screens). Torrent searches still go by the original title (`parse_lang` "df"), Play by the TMDB id. Checked in
+the dev server: Bulgarian rows and title page after picking it in Settings, the key in the server's copy.
 - Checked 2026-10-20 in `tools/dev-server.js`. A device with Bulgarian subtitles and autoplay off kept
   both and gave them to the profile. A second device then picked the profile and got both.
 
