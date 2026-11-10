@@ -8,6 +8,7 @@
 (function () {
     var PIN = 'ruby_admin_pin';
     var SUBS = { off: 'Off', en: 'English', bg: 'Bulgarian', ru: 'Russian' };
+    var LANGS = { en: 'English', bg: 'Български (Bulgarian)' };
 
     function local(k, v) {
         try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; }
@@ -18,6 +19,7 @@
     function open() {
         var back = Lampa.Controller.enabled().name;
         var subs = Lampa.Storage.field('subtitles_start') ? Lampa.Storage.field('subtitles_lang') || 'en' : 'off';
+        var lang = Lampa.Storage.get('ruby_language', 'en') === 'bg' ? 'bg' : 'en';
         var anime = Lampa.Storage.get('ruby_anime_audio', 'en') === 'ja' ? 'Japanese with English subtitles' : 'English dub';
         var items = [
             { title: 'Subtitles', subtitle: SUBS[subs] || subs, run: function () {
@@ -29,6 +31,15 @@
             { title: 'Anime audio', subtitle: anime, run: function () {
                 choose('Anime audio', [{ title: 'English dub', value: 'en', selected: anime === 'English dub' },
                     { title: 'Japanese with English subtitles', value: 'ja', selected: anime !== 'English dub' }], function (v) { Lampa.Storage.set('ruby_anime_audio', v); });
+            } },
+            // this profile's language: Lampa's menus and the titles and descriptions (profiles.js sets it at the
+            // page's start, so the page reloads; the change goes to the server as it closes)
+            { title: 'Language', subtitle: LANGS[lang] || LANGS.en, run: function () {
+                choose('Language', Object.keys(LANGS).map(function (k) { return { title: LANGS[k], value: k, selected: k === lang }; }), function (v) {
+                    if (v === lang) return;
+                    Lampa.Storage.set('ruby_language', v);
+                    setTimeout(function () { location.reload(); }, 300);
+                });
             } },
             toggle('Play the next episode automatically', 'playlist_next'),
             toggle('Trailers', 'ruby_hero_trailers'),

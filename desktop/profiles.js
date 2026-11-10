@@ -21,7 +21,8 @@
     var OWN_PREFIX = ['file_view_', 'trakt', 'ruby_ratings'];
     // the viewer's settings (settings.js), per profile since 2026-10-20: each person's subtitles and autoplay
     // on every device, instead of one set per browser shared by whoever uses it
-    var SETTINGS = ['subtitles_start', 'subtitles_lang', 'ruby_anime_audio', 'playlist_next', 'ruby_hero_trailers', 'ruby_trailer_sound'];
+    var SETTINGS = ['subtitles_start', 'subtitles_lang', 'ruby_anime_audio', 'playlist_next', 'ruby_hero_trailers', 'ruby_trailer_sound', 'ruby_language'];
+    var LANGS = ['en', 'bg'];
     OWN = OWN.concat(SETTINGS);
     var SHARED = ['trakt_client_id', 'trakt_client_secret'];
     var MAX = 10;
@@ -132,11 +133,8 @@
     // page must start with the target's data. Everything else is checked in the background (syncList).
     var state = load();
     try {
-        // English everywhere (user's call 2026-10-20): the fork's own text is English only, so another language
-        // gave half-translated screens (a friend's browser in Bulgarian). Set on every load, also over an earlier
-        // choice; lang_use false is Lampa's own switch that drops its first-run picker and the Interface row.
-        ls.setItem('language', 'en');
-        ls.setItem('tmdb_lang', 'en');
+        // lang_use false is Lampa's own switch that drops its first-run picker and the Interface row: the
+        // language is the profile's (below)
         window.lampa_settings = window.lampa_settings || {};
         window.lampa_settings.lang_use = false;
         var target = ls.getItem(SWITCH);
@@ -148,6 +146,13 @@
             state.current = target;
             state.chosen = true;
         }
+        // The language is the profile's (ruby_language, Settings → Language), English unless it says Bulgarian:
+        // Lampa's own menus and TMDB's titles and descriptions in it. The fork's own text stays English (the
+        // user's call 2026-11-10, for Ira; English everywhere since 2026-10-20 because another language gave
+        // half-translated screens). Set on every load, over a language chosen in Lampa before.
+        var lang = LANGS.indexOf(ls.getItem('ruby_language')) >= 0 ? ls.getItem('ruby_language') : 'en';
+        ls.setItem('language', lang);
+        ls.setItem('tmdb_lang', lang);
         save();
     } catch (e) {
         console.error('profiles: start failed', e);
