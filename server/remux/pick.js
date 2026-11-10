@@ -278,18 +278,30 @@ async function link(u, res) {
 // Lampa's own Jackett search (its parser, the manual torrent list) comes here instead of to Jackett (Caddy routes
 // /jackett/api/ here): the key is added here and taken out of the answer, where every download link carries
 // it, so browsers never hold it (asked for 2026-10-20: it was in every browser's settings and in search URLs).
+// The answer is kept SEARCH_KEEP_MS per query, also when the browser stopped waiting: Lampa gives a search 15 s
+// (its parse_timeout) and this Jackett takes 20-30 s, so "Desperate Housewives" came back empty four times in a
+// row on an iPhone (2026-11-09 21:03-21:05 UTC, 499 after 15.0 s each); now the second try gets the first's answer.
+const lampaSearches = new Map();
 async function lampaSearch(path, query, res) {
     const key = jackettKey();
     if (!key || !/^\/api\/v2\.0\/indexers\/[\w:.-]+\/results$/.test(path)) { res.writeHead(404); return res.end(); }
     const q = new URLSearchParams(query);
-    q.set('apikey', key);
-    const r = await fetch(`${cfg.jackett}${path}?${q}`, { signal: AbortSignal.timeout(SEARCH_MS) });
-    const text = await r.text();
-    let j;
-    try { j = JSON.parse(text); } catch (e) { res.writeHead(502); return res.end(); }
-    if (Array.isArray(j.Results)) for (const x of j.Results) if (x.Link) x.Link = keyless(x.Link);
-    res.writeHead(r.status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify(j).split(key).join('hidden'));
+    q.delete('apikey');
+    q.sort();
+    const asked = path + '?' + q;
+    let a;
+    try {
+        a = await cached(lampaSearches, asked, SEARCH_KEEP_MS, async () => {
+            q.set('apikey', key);
+            const r = await fetch(`${cfg.jackett}${path}?${q}`, { signal: AbortSignal.timeout(SEARCH_MS * 2) });
+            const j = JSON.parse(await r.text());
+            if (!r.ok) throw new Error(`Jackett answered ${r.status}`);
+            if (Array.isArray(j.Results)) for (const x of j.Results) if (x.Link) x.Link = keyless(x.Link);
+            return JSON.stringify(j).split(key).join('hidden');
+        });
+    } catch (e) { res.writeHead(502); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(a);
 }
 
 module.exports = { pick, home, link, lampaSearch, sameFilm, rules };

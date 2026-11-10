@@ -183,10 +183,37 @@
                         'The server couldn\'t open the file: the torrent sent too little to read. Pick another release.');
                 }
                 if (o.error) return fail(o.error);
-                url.call(self, o.url || src);
-                if (o.subs && o.subs.length) Lampa.Player.subtitles(o.subs);
+                return started(src, c).then(function (go) {
+                    if (!go) return;
+                    url.call(self, o.url || src);
+                    if (o.subs && o.subs.length) Lampa.Player.subtitles(o.subs);
+                });
             });
         };
+    }
+
+    // Safari's own HLS gives up on a first segment that is slow to come: it asks again every 5 s and after ~35 s
+    // stops with "media failed to decode", which said "this iPhone can't play HEVC" (Iskrata's iPhone, Desperate
+    // Housewives S3E7, 2026-11-09 17:30 UTC: the torrent cold, seg0 written after 55 s, error at 36 s; the same
+    // file played a minute later). So it gets the stream once the remux has written the start (heartbeat
+    // Startup.pct 100), at most START_MS: until then the player shows its loading, and swarm.js and the watch
+    // (begin) handle a torrent that doesn't come. hls.js waits on its own (MSE).
+    function started(src, c) {
+        if (usesMse(document.createElement('video')) || !/[?&]index=\d+/.test(src)) return Promise.resolve(true);
+        var t0 = Date.now();
+        return new Promise(function (done) {
+            (function poll() {
+                if (c && c !== current) return done(false);
+                heartbeat(src).then(function (h) {
+                    if (c && c !== current) return done(false);
+                    if (!h || !h.Startup || h.Startup.pct >= 100 || Date.now() - t0 > START_MS) {
+                        if (Date.now() - t0 > 1500) console.log('Ruby compat', 'start written after', Math.round((Date.now() - t0) / 1000), 's: playing');
+                        return done(true);
+                    }
+                    setTimeout(poll, 1500);
+                });
+            })();
+        });
     }
 
     // the selected subtitle file again (Lampa's mode setter loads its url)
@@ -279,16 +306,19 @@
         setInterval(reloadSubs, 30000);
         Lampa.Player.listener.follow('start', begin);
         Lampa.Player.listener.follow('destroy', stopWatching);
-        // a decoding error from the video itself: Lampa's "Failed to decode video", with the codec said
+        // a decoding error from the video itself: Lampa's "Failed to decode video", with the codec said, unless it
+        // never played and the server hasn't written its start: then the torrent was too slow (started())
         Lampa.PlayerVideo.listener.follow('error', function (e) {
             if (!current || !e.fatal || e.ruby || !current.codecs) return;
             var c = current;
-            setTimeout(function () {
+            (c.played ? Promise.resolve(null) : heartbeat(c.url)).then(function (h) {
                 if (current !== c) return;
                 stopWatching();
-                Lampa.PlayerVideo.listener.send('error', { fatal: true, ruby: true,
-                    error: 'This ' + device() + ' couldn\'t play this release\'s ' + codecName(c.codecs) + ' video. ' + pickOther(c.codecs) });
-            }, 0);
+                var slow = h && h.Startup && h.Startup.pct < 100;
+                Lampa.PlayerVideo.listener.send('error', { fatal: true, ruby: true, error: slow ?
+                    'This ' + device() + ' stopped waiting for the video: ' + why(h, false, false, true) :
+                    'This ' + device() + ' couldn\'t play this release\'s ' + codecName(c.codecs) + ' video. ' + pickOther(c.codecs) });
+            });
         });
     }, 100);
 })();

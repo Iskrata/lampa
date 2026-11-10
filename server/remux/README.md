@@ -619,6 +619,14 @@ pieces. Their timing is right: on 37 s of S1E12 the speech energy lined up best 
   11.6 -> -9.6 s and FoV 2.4 -> 5.4 -> 9.7 -> -6.7 s ("sometimes earlier, sometimes later"). Picks kept from
   before this (no `v` in the pick file, not a hash match) are made again; the search is free, a download only
   if the pick changes.
+- **Not in parts, accents dropped** (`PICK_V` 3, 2026-11-10). Ira's Amélie (2026-11-08, YTS 1080p BRRip,
+  Bulgarian): the pick was "le fabuleux destin dam", a 2-CD subtitle (9,646 downloads). Only its first file is
+  downloaded, which ends at 1:00:43 of the 2-hour film. The right one, Amelie.2001.1080p.BluRay.x264.DTS-STM,
+  lost 100 points as "another film": the file's title split at the "é" into "am" and "lie". Now a subtitle in
+  more than one file loses 100 points and title words are compared without accents; checked in Node on that
+  day's search answer (old rules: the 2-CD file, new: the STM one). Picks made under older rules are made again.
+- **A download that isn't this video** (no fit by timing with plenty of English, below) is left out for that
+  torrent file (`not` in its pick file) and the next one is downloaded, at most 2 per language and session.
 - **Quota.** A download counts against the account's daily quota (about 20 a day free, 1,000 VIP; anonymous
   downloads are off for this key). Each one is kept in `REMUX_SUBS` (`os-<file id>.srt`, and the pick per
   torrent file), so an episode is downloaded once for everyone. The log line says how many are left.
@@ -731,7 +739,15 @@ followed from anchor to anchor. From 20 English lines, again every 40 more (abou
   the English word fit too; its numbers above were measured before.
 - **No fit** when fewer than 20 % of the download's lines that land among the reference's (within 10 s of one)
   are paired. With 200+ English lines (about 10 min) read and no fit, it isn't this video: the track shows no
-  lines (log: "not this video"); with fewer, as it is until the next try.
+  lines (log: "not this video") and the next download is tried (above); with fewer, as it is until the next try.
+- **One shift for the whole film** (`wholeFilm`, 2026-11-10) before calling it no fit: a translation cut into
+  lines of its own has few starts in the English pattern. Amélie's two Bulgarian subtitles against the English
+  made for Ira's file got 46 and 55 anchors, no fit, so she saw no lines (2026-11-08). At each speed, the most
+  common start difference (0.2 s histogram, ±120 s) is the shift; a fit when at least 40 % of 100+ lines landing
+  among the reference start within 0.5 s of an English start. Measured 2026-11-10 against that English: the two
+  Bulgarian 52 % and 60 % (speed 23.976/25, shift -20.8 s and -1.2 s; spot checks at 0:35, 9:36, 42:48, 1:40:25
+  show the same sentence), the subtitles of 9 other films kept on ruby 14-25 %, none a fit. Edits within the
+  film aren't followed this way, so the anchor fit stays first.
 - **Measured 2026-10-19** (scratch scripts, srt files from OpenSubtitles and the file's own English extracted
   with ffmpeg):
   - **Real, two cinema copies of Nolan's "The Odyssey"**: the Bulgarian for "...TELESYNC.x264-DKS" onto the

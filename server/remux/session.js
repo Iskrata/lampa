@@ -24,6 +24,8 @@ const DRAIN_AHEAD = 75, BEAT_MS = 1000, BEAT_STALE_MS = 4000;
 // after about 6 s and, after two, loads nothing more, video too. S3E6 (2026-11-07 18:08 UTC): its .srt took 49 s
 // from a swarm of 1 peer, sub0-0.vtt went unanswered six times and the video stalled on segments it had on disk.
 const SIDECAR_WAIT_MS = 4000;
+// OpenSubtitles downloads in one language found not to be this video before giving up (nextPick)
+const MISFITS = 2;
 // torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
 const shouty = new Set();
 // dir -> the Session using it: a player closed and opened again within close()'s 3 s gets a new Session on the
@@ -60,6 +62,7 @@ class Session {
         this.osLines = {};
         this.osPick = {};   // the pick osLines were downloaded from
         this.osFit = {};   // per language: { lines: English lines at the last fit, cues }
+        this.misfits = {};   // per language: downloads left out as not this video (nextPick)
         // subtitle 0 is English when the file has English ones (media.js puts them first)
         this.english = !!media.subs.length && media.subs[0].lang === 'en';
         this.fitted = -40;   // caption lines at the last fit (the first at 20)
@@ -382,11 +385,23 @@ class Session {
             // the file's own TV captions come up late (fit())
             const a = opensubs.alignTiming(cues, ref, !this.better && shouty.has(this.m.hash) ? opensubs.CAPTION_LAG : 0);
             console.log(`${tag} ${lang} "${got.release}" against ${ref.length} English lines by timing: ${a.anchors} anchors` +
-                (a.cues ? `, speed ${a.speed.toFixed(4)}, shift ${a.from.toFixed(1)} -> ${a.to.toFixed(1)} s` : a.misfit ? ', not this video: no lines' : ', no fit yet, as it is'));
+                (a.cues ? `, speed ${a.speed.toFixed(4)}, shift ${a.from.toFixed(1)} -> ${a.to.toFixed(1)} s` +
+                    (a.share ? ` (one for the whole film: ${(a.share * 100).toFixed(0)} % of lines on an English one)` : '') : a.misfit ? ', not this video: no lines' : ', no fit yet, as it is'));
             if (a.cues) fit.cues = a.cues;
-            else if (a.misfit) fit.cues = [];
+            else if (a.misfit) { fit.cues = []; this.nextPick(lang, got); }
         }
         return fit.cues;
+    }
+
+    // a download that isn't this video: the next one OpenSubtitles has, up to MISFITS per language and session
+    // (each costs a download from the daily quota)
+    nextPick(lang, got) {
+        if ((this.misfits[lang] = (this.misfits[lang] || 0) + 1) > MISFITS) return;
+        const f = Object.assign({ hash: this.m.hash, index: this.m.index, url: this.m.url }, this.source);
+        opensubs.misfit(f, lang, got.id);
+        console.log(`${this.m.hash.slice(0, 8)}:${this.m.index} ${lang} "${got.release}" left out for this file: picking another`);
+        delete this.picks[lang]; delete this.osLines[lang]; delete this.osPick[lang]; delete this.osFit[lang];
+        this.lookup(lang);
     }
 
     // Once the file's own subtitle 0 has enough lines: TV captions (ALL CAPS) get replaced

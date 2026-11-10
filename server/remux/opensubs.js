@@ -3,6 +3,7 @@
 // Russian ones for a file without its own. Downloads cost quota (OpenSubtitles counts them per account per
 // day), so each is made once, only when wanted, and kept in cfg.subs for everyone.
 //   search({ hash, index, url, size, tmdb, kind, name }, lang) -> { id, release, match } | null
+//   misfit(f, lang, id): that pick doesn't line up with this file: the next search() picks another
 //   download(pick) -> cues; find(f, lang, pick?) -> { cues, id, release, match } | null: both, past garbled ones
 //   align(cues, ref) -> { cues, anchors, speed, from, to } | null: moved onto the file's own captions' timing
 //   alignTiming(cues, ref, lag) -> the same, or { cues: null, misfit }: another language, by the lines' timing
@@ -100,9 +101,11 @@ function tags(s) {
 
 // the title part of a release name, before the year or episode: a release of something else filed under the
 // same TMDB id ("The.Odyssey.The.Making.of.an.Epic.2026...-Kitsune" under The Odyssey, 2026-10-19) has words
-// the file's title doesn't
+// the file's title doesn't. Accents are dropped: split at the "é", "d'Amélie Poulain" had the words "am" and
+// "lie", so Amelie.2001.1080p.BluRay.x264.DTS-STM (the Blu-ray subtitle for Amélie's 1080p BRRip) counted as
+// another film, and a 2-CD DVD subtitle won (2026-11-08)
 function titleWords(s) {
-    const w = String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const w = String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
     const end = w.findIndex((x, i) => i && (/^(19|20)\d\d$/.test(x) || /^s\d+e\d+$/.test(x) || /^\d+x\d+$/.test(x)));
     return end > 0 ? w.slice(0, end) : null;
 }
@@ -113,18 +116,21 @@ const CAM = /\b(cam|hdcam|camrip|ts|hdts|telesync|tc|telecine)\b/i;
 // that pack is one. Measured 2026-11-02 against the speech in S2E20's audio (loudness every 0.1 s, the best
 // shift per 5 min): ION10's WEBRip stayed within -0.5..+0.3 s from 5 min to the end, the DVD rips drifted
 // (BNVST 0.3 -> 4.1 -> 11.6 -> -9.6 s, FoV 2.4 -> 5.4 -> 9.7 -> -6.7 s): "sometimes earlier, sometimes later".
-// Without this, trusted + most downloaded won (FoV, then BNVST). Picks made before (no `v`) are made again.
-const WEB_UNNAMED = 20, PICK_V = 2;
+// Without this, trusted + most downloaded won (FoV, then BNVST). Picks made before the rules of `v` PICK_V
+// (2: this one; 3: accents, subtitles in parts) are made again.
+const WEB_UNNAMED = 20, PICK_V = 3;
 
-// the subtitle most likely to fit this file: the same file (hash) first, then the same title, the same source
-// (WEB vs DVD timings and cuts differ) and tags, not from a cinema copy, not for the hearing impaired ([door
-// slams]), then the most downloaded
+// the subtitle most likely to fit this file: the same file (hash) first, then the same title, not in parts,
+// the same source (WEB vs DVD timings and cuts differ) and tags, not from a cinema copy, not for the hearing
+// impaired ([door slams]), then the most downloaded. In parts (CD1, CD2): only the first is downloaded, and it
+// covers one part of the film: Amélie's Bulgarian "le fabuleux destin dam" (2 CDs, 9,646 downloads) ended at
+// 1:00:43 of the 2-hour film, and was then not fitted at all (2026-11-08, Ira).
 function best(list, name) {
     const file = path.basename(name || ''), mine = tags(file), src = source(file);
     const title = new Set(titleWords(file.replace(/[._]/g, ' ')) || []);
     const other = r => { const w = titleWords(r); return !!(title.size && w && w.some(x => !title.has(x))); };
     const score = a => (a.moviehash_match ? 1000 : 0) +
-        (other(a.release) ? -100 : 0) + (CAM.test(String(a.release).replace(/[._-]/g, ' ')) && !CAM.test(file.replace(/[._-]/g, ' ')) ? -30 : 0) +
+        (other(a.release) ? -100 : 0) + (a.files.length > 1 ? -100 : 0) + (CAM.test(String(a.release).replace(/[._-]/g, ' ')) && !CAM.test(file.replace(/[._-]/g, ' ')) ? -30 : 0) +
         (src && source(a.release) === src ? 40 : 0) + (!src && source(a.release) === 'web' ? WEB_UNNAMED : 0) +
         [...tags(a.release)].filter(w => mine.has(w)).length * 10 +
         (a.hearing_impaired ? -15 : 0) + (a.from_trusted ? 5 : 0) + Math.log10(1 + (a.download_count || 0));
@@ -162,13 +168,15 @@ async function search(f, lang) {
     if (!c.key || !f.tmdb) return null;
     const ep = f.kind === 'tv' ? episodeOf(f.name) : null;
     if (f.kind === 'tv' && !ep) return null;
-    const cacheFile = path.join(cfg.subs, `pick-${f.hash}-${f.index}-${lang}.json`);
+    const cacheFile = pickFile(f, lang), not = new Set(readPick(f, lang).not || []);
     try {
         const kept = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        const why = otherEpisode(kept, ep) ? 'another episode' : garbledIds().has(kept.id) ? 'garbled text' :
-            kept.v !== PICK_V && !kept.match ? 'from older rules' : null;
-        if (!why) return kept;
-        console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} kept pick "${kept.release}" is ${why}: picking again`);
+        if (kept.id) {
+            const why = otherEpisode(kept, ep) ? 'another episode' : garbledIds().has(kept.id) ? 'garbled text' :
+                not.has(kept.id) ? 'not this video' : kept.v !== PICK_V && !kept.match ? 'from older rules' : null;
+            if (!why) return kept;
+            console.log(`opensubtitles: ${f.hash.slice(0, 8)}:${f.index} ${lang} kept pick "${kept.release}" is ${why}: picking again`);
+        }
     } catch (e) { /* not picked yet */ }
     const hash = await fileHash(f);
     // the API answers only with its parameters in alphabetical order (else a redirect)
@@ -177,14 +185,26 @@ async function search(f, lang) {
     const qs = Object.keys(q).sort().map(k => `${k}=${encodeURIComponent(q[k])}`).join('&');
     const found = await request(API, '/subtitles?' + qs, {});
     const bad = garbledIds();
-    const pick = best((found.data || []).filter(x => !otherEpisode(x.attributes || {}, ep) &&
-        !bad.has(x.attributes && x.attributes.files && x.attributes.files[0] && x.attributes.files[0].file_id)), f.name);
-    if (!pick) console.log(`opensubtitles: nothing for ${qs}`);
+    const id = x => x.attributes && x.attributes.files && x.attributes.files[0] && x.attributes.files[0].file_id;
+    const pick = best((found.data || []).filter(x => !otherEpisode(x.attributes || {}, ep) && !bad.has(id(x)) && !not.has(id(x))), f.name);
+    if (!pick) console.log(`opensubtitles: nothing ${not.size ? `left (${not.size} not this video) ` : ''}for ${qs}`);
     const a = pick && pick.attributes;
     const out = pick ? { id: a.files[0].file_id, release: a.release, match: !!a.moviehash_match, v: PICK_V } : null;
     // nothing found is asked again next time: subtitles get uploaded after a release
-    if (out) { fs.mkdirSync(cfg.subs, { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify(out)); }
+    if (out) writePick(f, lang, Object.assign({}, out, not.size ? { not: [...not] } : {}));
     return out;
+}
+
+// the pick per torrent file and language, with the ids found not to fit this video (`not`)
+function pickFile(f, lang) { return path.join(cfg.subs, `pick-${f.hash}-${f.index}-${lang}.json`); }
+function readPick(f, lang) { try { return JSON.parse(fs.readFileSync(pickFile(f, lang), 'utf8')); } catch (e) { return {}; } }
+function writePick(f, lang, p) { fs.mkdirSync(cfg.subs, { recursive: true }); fs.writeFileSync(pickFile(f, lang), JSON.stringify(p)); }
+
+// A pick whose lines don't line up with this video (session.js osCues: another cut, or a part of the film):
+// left out of this file's later searches, so the next search picks another
+function misfit(f, lang, id) {
+    const kept = readPick(f, lang);
+    writePick(f, lang, { not: [...new Set((kept.not || []).concat(id))] });
 }
 
 // a picked subtitle's lines: downloaded once (counts against the daily quota), then from cfg.subs
@@ -413,7 +433,53 @@ function alignTiming(cues, ref, lag = 0) {
     const among = t => { const j = lowerBound(starts, t - 10); return j < starts.length && starts[j] <= t + 10; };
     const span = r.cues ? r.cues.filter(c => among(c.start)).length : 0;
     if (r.cues && pts.length >= MIN_SHARE * span) return r;
+    const w = wholeFilm(cues, starts, among);
+    if (w.lines >= COARSE_LINES && w.share >= COARSE_SHARE) {
+        const at = t => t * w.speed + w.shift - lag;
+        return { anchors: pts.length, speed: w.speed, from: w.shift - lag, to: w.shift - lag, share: w.share,
+            cues: cues.map(c => ({ start: at(c.start), end: at(c.end), text: c.text })).filter(c => c.end > 0) };
+    }
     return { anchors: pts.length, cues: null, misfit: ref.length >= MIN_REF };
+}
+
+// One speed and shift for the whole film, when the anchors found too few: a translation cut into lines of its own
+// has few line starts in the reference's pattern. Amélie's Bulgarian Blu-ray subtitle against the English made
+// for Ira's file (2026-11-08): 55 anchors, no fit. Lines start where speech starts, whatever the cuts, so at the
+// right speed and shift (the most common start difference) many land on a reference start: measured 2026-11-10,
+// within 0.5 s of one, Amélie's two Bulgarian subtitles 52 % and 60 % (speed 23.976/25, shift -20.8 and -1.2 s),
+// the subtitles of 9 other films kept on ruby 14-25 % against the same English.
+const COARSE_SHARE = 0.4, COARSE_LINES = 100;
+function wholeFilm(cues, starts, among) {
+    let best = { share: 0, lines: 0 };
+    for (const s of SPEEDS) {
+        const votes = new Map();
+        let lo = 0;
+        for (const c of cues) {
+            const at = c.start * s;
+            while (lo < starts.length && starts[lo] < at - 120) lo++;
+            for (let j = lo; j < starts.length && starts[j] <= at + 120; j++) {
+                const k = Math.round((starts[j] - at) / 0.2);
+                votes.set(k, (votes.get(k) || 0) + 1);
+            }
+        }
+        let top = 0, n = -1;
+        for (const k of votes.keys()) {
+            const v = votes.get(k) + (votes.get(k - 1) || 0) + (votes.get(k + 1) || 0);
+            if (v > n) { n = v; top = k; }
+        }
+        // the share of the lines landing among the reference read so far that start within 0.5 s of one
+        let hit = 0, lines = 0;
+        for (const c of cues) {
+            const t = c.start * s + top * 0.2;
+            if (!among(t)) continue;
+            lines++;
+            const j = lowerBound(starts, t - 0.5);
+            if (j < starts.length && starts[j] <= t + 0.5) hit++;
+        }
+        const share = lines ? hit / lines : 0;
+        if (share > best.share) best = { share, lines, speed: s, shift: top * 0.2 };
+    }
+    return best;
 }
 
 // TV captions: almost no lower-case letters
@@ -423,4 +489,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, search, download, garbled, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };
+module.exports = { find, search, misfit, download, garbled, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };

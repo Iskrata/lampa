@@ -670,6 +670,11 @@ Twelve small edits, each marked `Lampa Desktop:`; re-apply them when updating fr
   the words joined and the two longest words alone. It keeps results whose title is close to the query
   (letter-pair similarity of at least 0.5, or containing it), exact matches first. Verified: "edge
   runners" → Cyberpunk: Edgerunners, "brekaing bad" → Breaking Bad.
+  Cyrillic counts as letters (it was dropped, so a Bulgarian query matched nothing), and a Cyrillic query's
+  extra searches ask TMDB for Bulgarian titles to compare with (those results show their Bulgarian title).
+  Verified 2026-11-10 in the dev server: "Отчаяните съпруги" and "отчаяни сапруги" → Desperate Housewives
+  first (before: nothing); exact Bulgarian titles found their film before too ("Бягство от затвора" → Prison
+  Break), and the English checks above are unchanged.
 - **HLS, `createParser`:** where the browser plays HLS itself (Safari), Lampa first reads the master
   playlist with hls.js and, when it lists no separate audio tracks, gives the browser the video playlist
   instead of the master. That playlist has no subtitles, so Safari never reported any and the Subtitles
@@ -736,6 +741,13 @@ decides.
     ("Media failed to decode"), marked PQ it drops the only variant and loads nothing; the video playlist
     alone plays. Measured 2026-10-19/20 in macOS Safari 27 (XDR display) and the iOS 27 simulator, both
     with that query false. Where it's true the master stays (no such browser here to test).
+  - where the browser plays HLS itself (Safari), the player gets the stream only once the remux has written
+    its start (heartbeat `Startup.pct` 100, polled every 1.5 s, at most 120 s). Safari asks for a slow first
+    segment again every 5 s and after ~35 s stops with "Media failed to decode", which this module then
+    called a codec problem: Iskrata's iPhone, Desperate Housewives S3E7 (x265), 2026-11-09 17:30 UTC, the
+    torrent cold, seg0 written after 55 s, the error at 36 s, "can't play HEVC" on screen; the same file played
+    a minute later. A decoding error before anything played while the start isn't written now says the
+    torrent is slow (peers, speed), not the codec. Not yet watched on an iPhone (2026-11-10).
   - This has to happen before Lampa's own reading of the master (`createParser`): that uses hls.js, which
     can't run on an iPhone (no MediaSource), so there Lampa handed Safari the master and it loaded forever
     (iOS 27 simulator, 2026-10-20). A first version hooked `createParser` and passed on macOS only.
