@@ -1271,6 +1271,16 @@ checked on a real iPhone or in iPad Safari.
 
 ## Things Lampa does that these modules work around
 
+- **Blocked titles.** Upstream refuses a title page with "Content Restricted" when CUB's `lgbt.json` lists the
+  title (or TMDB tags it with an LGBT keyword) and the viewer's region is RU/BY (`vpn.is(['ru','by'])`,
+  app.min.js `Lgbt` and the `full` activity). The region starts as `'ru'` and only changes when
+  `geo.cub.red` answers, so a device whose geo request fails or is slow counts as Russian: an iPhone on the
+  public host got it on 2026-11-10. The DMCA list (`tmdb.cub.red/blocked`) blocks titles for rights holders
+  everywhere. index.html sets `lampa_settings.disable_features = {lgbt: true, dmca: true}` before Lampa loads
+  (Lampa's `Arrays.extend` keeps values already set), so neither list is fetched. Checked in the dev server
+  2026-11-10: Brokeback Mountain (142) with the block switch on opens; with a list entry injected by hand the
+  same page shows "Content Restricted", so the check is the one switched off.
+
 - **Trakt plugin card badges.** The Trakt plugin marks cards in your watchlist (bookmark), watched (tick) or
   in progress (half-filled) with a purple circle centred on the poster's bottom edge, half outside it. The
   desktop look rounds `.card__view` with `overflow:hidden`, which cut those into half-circles; desktop.js

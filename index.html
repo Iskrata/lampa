@@ -32,6 +32,12 @@
 <body style="background: #1d1f20;">
     <script>
         window.youtube_lazy_load = true
+        // No upstream censorship lists: Lampa blocks titles CUB lists as LGBT whenever it thinks the viewer is in
+        // RU/BY, and its region is 'ru' until geo.cub.red answers (an iPhone on the public host got "Content
+        // Restricted", 2026-11-10); the DMCA list blocks titles for rights holders. This is a private torrent
+        // client, neither applies. Lampa fills lampa_settings without overwriting what is already set.
+        window.lampa_settings = window.lampa_settings || {}
+        window.lampa_settings.disable_features = { lgbt: true, dmca: true }
     </script>
 
     <div class="welcome"></div>
