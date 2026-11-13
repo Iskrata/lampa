@@ -185,6 +185,7 @@
                 if (o.error) return fail(o.error);
                 return started(src, c).then(function (go) {
                     if (!go) return;
+                    if (c) { c.handed = true; c.idleSince = 0; }
                     url.call(self, o.url || src);
                     if (o.subs && o.subs.length) Lampa.Player.subtitles(o.subs);
                 });
@@ -198,15 +199,21 @@
     // file played a minute later). So it gets the stream once the remux has written the start (heartbeat
     // Startup.pct 100), at most START_MS: until then the player shows its loading, and swarm.js and the watch
     // (begin) handle a torrent that doesn't come. hls.js waits on its own (MSE).
+    // The remux writes segments only when asked for one, so while the player waited nobody did, unless a warm-up
+    // (warm.js) had: the Ruby Mac app's switch to the next release, and its own start of that release, waited
+    // with Startup at 99 and the "didn't load it" check ended them (Desperate Housewives S3E9, 2026-11-13
+    // 15:17 UTC: the master read, then no segment request). So the wait asks the remux to make the start
+    // (makeStart), and its answer ends the wait too.
     function started(src, c) {
         if (usesMse(document.createElement('video')) || !/[?&]index=\d+/.test(src)) return Promise.resolve(true);
-        var t0 = Date.now();
+        var t0 = Date.now(), made = false;
+        makeStart(src, c).then(function (ok) { made = ok; });
         return new Promise(function (done) {
             (function poll() {
                 if (c && c !== current) return done(false);
                 heartbeat(src).then(function (h) {
                     if (c && c !== current) return done(false);
-                    if (!h || !h.Startup || h.Startup.pct >= 100 || Date.now() - t0 > START_MS) {
+                    if (made || !h || !h.Startup || h.Startup.pct >= 100 || Date.now() - t0 > START_MS) {
                         if (Date.now() - t0 > 1500) console.log('Ruby compat', 'start written after', Math.round((Date.now() - t0) / 1000), 's: playing');
                         return done(true);
                     }
@@ -214,6 +221,26 @@
                 });
             })();
         });
+    }
+
+    // the remux's warm-up (server/remux/warm.js) for this stream's file, from where the player will start: true
+    // once those segments are written. "busy"/"already warming" (another warm-up, maybe of this file) is false:
+    // the heartbeat's Startup still ends the wait.
+    function makeStart(src, c) {
+        var m = /^(.*\/gst\/)([0-9a-f]{40})\/master\.m3u8\?(?:.*&)?index=(\d+)/i.exec(src);
+        if (!m) return Promise.resolve(false);
+        var q = 'hash=' + m[2] + '&index=' + m[3] + (c && c.resume ? '&at=' + Math.floor(c.resume) : '') +
+            (/[?&]lang=ja\b/.test(src) ? '&lang=ja' : '');
+        return fetch(m[1] + 'warm?' + q, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+            console.log('Ruby compat', 'start made:', j ? 'segments ' + j.segments.join('-') : 'no');
+            return !!(j && j.segments);
+        }, function () { return false; });
+    }
+
+    // where Lampa's player will start this stream (app.min.js: its saved time, if over 10 s and under 90 %)
+    function resumeAt(data) {
+        var t = data && data.timeline;
+        return t && t.time > 10 && t.percent < 90 ? t.time : 0;
     }
 
     // the selected subtitle file again (Lampa's mode setter loads its url)
@@ -251,7 +278,8 @@
     function begin(data) {
         stopWatching();
         var url = (data && data.url) || '';
-        var c = current = { url: url, at: Date.now(), stuckSince: Date.now(), readySince: 0, idleSince: 0, played: false, lastTime: -1, codecs: '' };
+        var c = current = { url: url, at: Date.now(), stuckSince: Date.now(), readySince: 0, idleSince: 0, played: false, lastTime: -1, codecs: '',
+            resume: resumeAt(data), handed: !/\/gst\/[0-9a-f]{40}\/master\.m3u8/i.test(url) };
         watch = setInterval(function () {
             var v = Lampa.PlayerVideo.video();
             if (!v || current !== c) return;
@@ -264,7 +292,9 @@
             heartbeat(url).then(function (h) {
                 if (current !== c) return;
                 var ready = !!(h && h.Startup && h.Startup.pct >= 100);
-                var idle = !c.played && !ready && !!v.currentSrc && !!(h && h.Swarm) && h.Swarm.waiting === 0;
+                // only once the player has the stream: until then the video is the last start's, its currentSrc
+                // that stream's, and nobody asks the remux for anything on purpose (started())
+                var idle = c.handed && !c.played && !ready && !!v.currentSrc && !!(h && h.Swarm) && h.Swarm.waiting === 0;
                 c.idleSince = idle ? c.idleSince || Date.now() : 0;
                 if (idle && Date.now() - c.idleSince >= IDLE_MS)
                     return fail('The video didn\'t start: this ' + device() + ' didn\'t load it. Press play, or close the player and start it again.');
