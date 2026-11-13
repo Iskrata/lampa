@@ -450,15 +450,26 @@
                 if (v && v.webkitShowPlaybackTargetPicker) v.webkitShowPlaybackTargetPicker();
             });
         }
-        // the video element can be new for each stream: watch the current one for AirPlay screens
-        var video = Lampa.PlayerVideo.video();
-        if (btn && video && !video._rubyAirplay) {
-            video._rubyAirplay = true;
-            video.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) {
-                btn.classList.toggle('hide', e.availability !== 'available');
-            });
-            video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', function () { tvOffer(video); });
-        }
+        if (btn) btn.classList.toggle('hide', !airplayScreens);
+    }
+
+    // AirPlay screens around, as Safari last said for the player's video. Caught on document (capture), not on
+    // the element: 'ready' comes before compat.js has read the remux master and given the player its stream, so
+    // the element there was the last start's or none, and the button never showed (2026-11-13, Mac Safari 27:
+    // the remux log has "available" for the playing video, the button stayed hidden).
+    var airplayScreens = false;
+    function watchAirplay() {
+        if (!window.WebKitPlaybackTargetAvailabilityEvent) return;
+        document.addEventListener('webkitplaybacktargetavailabilitychanged', function (e) {
+            var v = e.target;
+            if (!v || v.tagName !== 'VIDEO' || v !== Lampa.PlayerVideo.video()) return;
+            airplayScreens = e.availability === 'available';
+            var btn = document.querySelector('.player-panel__airplay');
+            if (btn) btn.classList.toggle('hide', !airplayScreens);
+        }, true);
+        document.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', function (e) {
+            if (e.target && e.target === Lampa.PlayerVideo.video()) tvOffer(e.target);
+        }, true);
     }
 
     function start() {
@@ -530,6 +541,7 @@
             subsList = e.subs;
             autoSubs(e.subs);
         });
+        watchAirplay();
         Lampa.Player.listener.follow('ready', function () {
             mediaKeys();
             lateTracks();

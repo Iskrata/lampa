@@ -660,7 +660,7 @@ stamped field (`updated`) when a page sends an older one.
 
 ## Changes to Lampa itself (`app.min.js`)
 
-Twelve small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
+Thirteen small edits, each marked `Lampa Desktop:`; re-apply them when updating from upstream:
 - **`Episodes()`:** doesn't reverse the title page's episode row, so it reads oldest first with the next
   episode to air last. Upstream shows the newest first.
 - **Search, `Results.cancel`:** clears the remembered query. Upstream, a search cancelled by the next
@@ -699,6 +699,15 @@ Twelve small edits, each marked `Lampa Desktop:`; re-apply them when updating fr
   fresh page: `Torserver.connected()`, then a file-list request right after it (as `files()` now does once
   the torrent is added): `gstWork()` false without this edit, true with it. (This edit was described here but
   missing from 2610d5c, which went live without it; added in the next commit.)
+- **Torrent, `connected()`:** until the remux check has answered once, success waits for it; after that it
+  goes on at once and checks again in the background, as upstream. Upstream called success first and checked
+  in parallel, so a page's first start built its stream URL while `gstWork()` was still false. Found
+  2026-11-13: the Ruby web app on a Mac (Safari 27.0.1, fresh page) played Desperate Housewives S3E8 as
+  TorrServer's raw MKV, not the remux: access log `/gst/echo` from 09:56:10.53 taking 0.43 s through the
+  tunnel, the `/stream/…mkv?…&stat` polls from 09:56:13, no master request, then "The video didn't start:
+  it is downloading, but this browser didn't start it". Checked the same day in the dev server with a local
+  remux, fresh page: `gstWork()` inside `connected()`'s success false before, true now (18 ms, 6 ms the
+  second time), and `Torserver.stream()` the master URL.
 - **Player, `create$9`:** the player's `<video>` is the one the last tap readied (`rubyCompat.video()`,
   compat.js), else a new one as upstream; the class, poster and `crossorigin` are set on either. Safari lets a
   `<video>` load and play only from a tap, or once a tap has called its `load()`/`play()`; the stream comes
@@ -965,7 +974,11 @@ decides.
     the same episode again after leaving stayed in Lampa's player.
   Not checked on a real iPhone, where iOS may want a tap closer to the call.
 - **AirPlay.** In Safari, when an AirPlay screen is around (`webkitplaybacktargetavailabilitychanged`), a
-  button next to picture-in-picture opens the picker. The Apple TV fetches the HLS stream itself, so it
+  button next to picture-in-picture opens the picker. That event is caught on `document` (capture): the
+  player's `<video>` is made in `PlayerVideo.url()`, which compat.js calls only after reading the remux
+  master, so at the player's `ready` the element was the last start's and the button never showed (found
+  2026-11-13 on a Mac, Safari 27.0.1: the remux log has "available" for the playing video, no button; a
+  capture listener is what airplay.js already logged it with). The Apple TV fetches the HLS stream itself, so it
   needs a URL that works without the browser: on the home server the stream path has no password.
   On phones Lampa hides that button row and lists its buttons in the panel's "⋯" menu, which presses them
   with jQuery's `trigger('hover:enter')`: that reaches only jQuery handlers, so ours are bound with jQuery.
