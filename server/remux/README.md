@@ -185,7 +185,10 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
   no longer match the init segment, so chapters and metadata are dropped.
 - **Subtitles have no seekable index of their own.** They come out of the same ffmpeg run as WebVTT
   files, start at its `-ss`, and are shifted like the audio. A subtitle segment waits until the video is
-  past it, so its cues are in.
+  past it, so its cues are in. A run that starts inside a line writes it with a negative start
+  (`-avoid_negative_ts disabled`). By default ffmpeg moved all of the run's cues later by that much instead,
+  and the session kept a late second copy of every line another run had read. Measured 2026-11-18 on a test
+  MKV with seeks inside lines: 212 cues for 60 lines before, 60 after.
 
 **HDR.** The master's `VIDEO-RANGE` is `PQ` or `HLG` from the video's `color_transfer` (`SDR` otherwise),
 which Apple's HLS spec asks for. Browsers that can't show HDR video then skip the variant, so the player uses

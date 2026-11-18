@@ -157,8 +157,9 @@ async function load(hash, index, lang) {
     };
 }
 
-// where ffmpeg is told to start for a segment starting at `start`
-const seekTime = (m, start) => start > 0 ? start + m.seekPast : 0;
+// where ffmpeg is told to start for a segment starting at `start`: to the millisecond, as ffmpegArgs passes it,
+// so a run's subtitle cues land on the same times as another run's (session.js readCues keys them by start)
+const seekTime = (m, start) => start > 0 ? Math.round((start + m.seekPast) * 1000) / 1000 : 0;
 
 // ffmpeg arguments: fragmented MP4 to stdout from segment start, plus one WebVTT file per subtitle.
 // Every output starts at time 0 (the MP4 muxer rebases even with -copyts): session.js moves the fragments
@@ -178,8 +179,13 @@ function ffmpegArgs(m, start, opts) {
     a.push('-map_chapters', '-1', '-map_metadata', '-1', '-max_muxing_queue_size', '4096', '-f', 'mp4');
     a.push(...(opts.file ? [opts.file] : ['-movflags', 'frag_keyframe+empty_moov+default_base_moof', 'pipe:1']));
     // (a subtitle file of the torrent, sidecar.js, isn't in this input: null)
+    // -avoid_negative_ts disabled: a run starting inside a line gets that line before its 0, and by default
+    // ffmpeg moved the whole run's cues later by that much (measured 2026-11-18 with ffmpeg 8.1 on the Mac and
+    // ruby's 8.1.2: -ss 31.2 into a line from 30.3 put every cue 0.9 s late), so session.js kept a second, late
+    // copy of each line that another run had read. Now that line comes out negative ("00:-1.-700"), readCues
+    // reads the sign.
     (opts.subFiles || []).forEach((file, k) => file &&
-        a.push('-map', `0:${m.subs[k].index}`, '-c:s', 'webvtt', '-flush_packets', '1', '-f', 'webvtt', file));
+        a.push('-map', `0:${m.subs[k].index}`, '-c:s', 'webvtt', '-flush_packets', '1', '-avoid_negative_ts', 'disabled', '-f', 'webvtt', file));
     return a;
 }
 

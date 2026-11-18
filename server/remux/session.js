@@ -460,10 +460,12 @@ class Session {
             const shift = seekTime(this.m, this.m.bounds[+run[1]]) + (this.delay || 0);
             const text = fs.readFileSync(path.join(this.dir, f), 'utf8');
             for (const block of text.split(/\r?\n\r?\n/)) {
-                const m = /(\d+:)?(\d+):(\d+\.\d+)\s+-->\s+(\d+:)?(\d+):(\d+\.\d+)[^\n]*\n([\s\S]+)/.exec(block);
+                // a line the run started inside is before its 0, and ffmpeg signs each field ("00:-1.-700" is
+                // -1.7 s: media.js ffmpegArgs)
+                const m = /^((?:-?\d+:){1,2}-?\d+\.-?\d+)\s+-->\s+((?:-?\d+:){1,2}-?\d+\.-?\d+)[^\n]*\n([\s\S]+)/m.exec(block);
                 if (!m) continue;
-                const sec = (h, mm, s) => (h ? parseInt(h, 10) * 3600 : 0) + parseInt(mm, 10) * 60 + parseFloat(s);
-                const cue = { start: shift + sec(m[1], m[2], m[3]), end: shift + sec(m[4], m[5], m[6]), text: m[7].trim() };
+                const cue = { start: shift + vttSec(m[1]), end: shift + vttSec(m[2]), text: m[3].trim() };
+                if (cue.end <= cue.start) continue;
                 this.cues[k].set(cue.start.toFixed(3) + '|' + cue.text, cue);
             }
         }
@@ -484,6 +486,12 @@ class Session {
         }, 3000);
         rm(true);
     }
+}
+
+// "[hh:]mm:ss.mmm" in seconds, each field with its own sign as ffmpeg writes times before 0 ("00:-1.-700")
+function vttSec(t) {
+    const f = t.split(/[:.]/).map(Number), ms = f.pop(), s = f.pop();
+    return f.reduce((x, v) => x * 60 + v, 0) * 60 + s + ms / 1000;
 }
 
 function vtt(cues) {
