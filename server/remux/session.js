@@ -302,7 +302,13 @@ class Session {
             if (n <= this.job.cur + JUMP) { this.subWant = Math.max(this.subWant, n + 1); this.flow(); }
             await this.until(passed, WAIT_MS).catch(() => {});
         }
-        const cues = (await this.allCues(id, SIDECAR_WAIT_MS)).filter(c => c.end > from && c.start < to);
+        // A line across the segment's end is cut there, the rest in the next segment. Repeated whole in both
+        // (as Apple's HLS spec has it), Safari shows it once, but a Samsung TV AirPlayed to showed it twice, one
+        // copy over the other (Desperate Housewives, Nov 2026: the TV, "MFi_AirPlay_Device" in the access log,
+        // fetched sub0-<n>.vtt itself; 2026-11-18 S3E10 served 1078 cues for its lines, many in two segments).
+        const cues = (await this.allCues(id, SIDECAR_WAIT_MS)).filter(c => c.end > from && c.start < to)
+            .map(c => ({ start: Math.max(c.start, from), end: Math.min(c.end, to), text: c.text }))
+            .filter(c => c.end - c.start > 0.05);
         return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' + vtt(cues);
     }
 
