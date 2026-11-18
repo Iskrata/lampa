@@ -267,8 +267,11 @@ episode.
      27 GB ≈ 24 Mbit/s against 12 GB ≈ 11 Mbit/s), fewer seeders (50 against 105) and HEVC decoding.
    - **Connection:** no release whose bitrate × 1.3 is more than this connection carries; when even the lowest
      is, the lowest. The speed is timed for every Play, while the search runs, by downloading random bytes
-     from the remux service (`/gst/speedtest`): 4 MB or 3 s, whichever comes first (the card's warm-up and the
-     Play right after it share one timing, 60 s). It was timed once per tab: a Mac tab left open from the
+     from the remux service (`/gst/speedtest`): 4 MB, at most 3 s from the request, headers included (nothing
+     in 3 s counts as a very slow link, so the lowest release, not "can't tell"; a browser that can't read a
+     response as it comes, old TVs, gets the whole 4 MB within 15 s). The title page's warm-up takes the last
+     timing of any age, so opening titles costs no data; a Play reuses one at most 60 s old (the warm-up's).
+     It was timed once per tab: a Mac tab left open from the
      evening before picked 1080p (~4.2 Mbit/s with the headroom) on a link carrying 2-3.5 Mbit/s, and Safari
      gave up twice (The Phantom of the Opera, 2026-11-15 20:33 UTC; the access log had no speedtest that day
      and segments 2.9-6.4 MB arriving 7-26 s apart). Checked 2026-11-18 in the dev server with the speed test
@@ -289,8 +292,12 @@ episode.
      1:24. The 1080p x265 (3.0 Mbit/s needed) reproduced the Mac: `ready=1`, nothing buffered. Before: "the
      server has sent its start, but this device didn't play it (HEVC)" at 20 s, and a stall at 0:00 that played
      ended in "the torrent is barely downloading (13 peers, 0.0 Mbit/s)". After: the question at 20 s; Play in
-     720p started the 720p at 1:24 within 40 s and it kept playing. Not checked: hls.js browsers (Chromium) on
-     a slow link, a real Mac or iPhone.
+     720p started the 720p at 1:24 within 40 s and it kept playing. Chromium the same day, the decode-error
+     path (hls.js turned off and `canPlayType` answering "probably", then a fatal error sent): the question
+     showed over Lampa's error screen; Close closed the player onto the title page; Play in 1080p played the
+     1080p from where the 4K was (0:12 → 0:13). With the speed test held to 2.5 Mbit/s the pick was the 720p
+     directly. Not checked: the automatic switch where hls.js plays (a 90 s stall on a slow link), a real Mac
+     or iPhone.
    - **Anime:** the audio remembered per profile; when that audio has nothing, the other one rather than nothing.
    - **Nothing found** (or the search failed): "Can't play this right now" in the middle of the screen, with
      Add to My List. Before, Lampa's raw torrent list opened (Link Click's showed The Simpsons and South Park

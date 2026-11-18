@@ -146,7 +146,7 @@
         var kind = movie.original_name || movie.name && !movie.title ? 'tv' : 'movie';
         var p = serverPick(movie, kind, target);
         warmPick = { key: pickKey(movie, kind, target), at: Date.now(), p: p };
-        return Promise.all([p, speed()]).then(function (x) {
+        return Promise.all([p, speed(true)]).then(function (x) {
             var found = x[0];
             if (!found || !found.list.length) return null;
             return autoPick(found.list, movie, target, x[1], prefer && prefer.res).best;
@@ -154,41 +154,52 @@
     }
 
     // This browser's speed to the server (Mbit/s) now, timed with the remux service's /gst/speedtest (random
-    // bytes) for every Play: up to 4 MB or SPEED_MS, whichever comes first. null when it can't tell (no remux
-    // service, TV, error). It was timed once per tab and kept in sessionStorage: a Mac tab left open from a
-    // fast evening (2026-11-14) picked 1080p the next evening on a link carrying 2-3.5 Mbit/s, and Safari gave
-    // up twice with "Media failed to decode" (The Phantom of the Opera, 2026-11-15 20:33 UTC, no speedtest
-    // request that day). The search runs meanwhile (~6 s), so usually nothing waits on it.
-    var SPEED_MS = 3000, SPEED_REUSE_MS = 60000, speedTest = null, speedAt = 0;
-    function speed() {
-        // the card's warm-up (choice) and the Play right after it share one timing
-        if (speedTest && Date.now() - speedAt < SPEED_REUSE_MS) return speedTest;
-        var t0 = performance.now(), MAX = 4 << 20;
+    // bytes) for every Play: up to 4 MB, at most SPEED_MS from the request (headers included). null when it
+    // can't tell (no remux service, an error). It was timed once per tab and kept in sessionStorage: a Mac tab
+    // left open from a fast evening (2026-11-14) picked 1080p the next evening on a link carrying 2-3.5 Mbit/s,
+    // and Safari gave up twice with "Media failed to decode" (The Phantom of the Opera, 2026-11-15 20:33 UTC,
+    // no speedtest request that day). The search runs meanwhile (~6 s), so usually nothing waits on it.
+    // any: the card's warm-up (choice), which takes the last timing of any age rather than 4 MB of a phone's
+    // data for every title opened; a Play takes one started in the last SPEED_REUSE_MS (the warm-up's).
+    // Nothing in SPEED_MS is a very slow link (the lowest release), not "can't tell" (which fits everything).
+    // A browser that can't read a response as it comes (old TVs) gets the whole 4 MB, at most SPEED_OLD_MS.
+    var SPEED_MS = 3000, SPEED_OLD_MS = 15000, SPEED_REUSE_MS = 60000, speedTest = null, speedAt = 0;
+    function speed(any) {
+        if (speedTest && (any || Date.now() - speedAt < SPEED_REUSE_MS)) return speedTest;
+        var t0 = performance.now(), MAX = 4 << 20, got = 0, reader = null, over = false;
+        var streams = !!(window.ReadableStream && window.Response && 'body' in Response.prototype);
         speedAt = Date.now();
-        speedTest = fetch(Lampa.Torserver.url() + '/gst/speedtest?mb=4', { cache: 'no-store' })
-            .then(function (r) {
-                if (!r.ok) throw new Error('no speedtest');
-                if (!r.body || !r.body.getReader) return r.arrayBuffer().then(function (b) { return b.byteLength; });
-                var reader = r.body.getReader(), got = 0;
-                return new Promise(function (done) {
-                    var end = function () { clearTimeout(cap); try { reader.cancel().catch(function () {}); } catch (e) {} done(got); };
-                    var cap = setTimeout(end, Math.max(0, SPEED_MS - (performance.now() - t0)));
-                    (function next() {
-                        reader.read().then(function (x) {
-                            if (x.done) { clearTimeout(cap); return done(got); }
-                            got += x.value.byteLength;
-                            if (got >= MAX) return end();
-                            next();
-                        }, function () { clearTimeout(cap); done(got); });
-                    })();
-                });
-            })
-            .then(function (bytes) {
-                if (!bytes) return null;
-                var mbps = bytes * 8 / 1e6 / ((performance.now() - t0) / 1000);
-                console.log('Ruby play', 'speed', mbps.toFixed(1), 'Mbit/s (' + (bytes / 1048576).toFixed(1) + ' MB in', Math.round(performance.now() - t0), 'ms)');
-                return mbps;
-            }, function () { return null; });
+        speedTest = new Promise(function (done) {
+            var finish = function (failed) {
+                if (over) return;
+                over = true;
+                clearTimeout(cap);
+                if (reader) try { reader.cancel().catch(function () {}); } catch (e) {}
+                var ms = performance.now() - t0;
+                if (failed || !streams && got < MAX) return done(null);
+                var mbps = Math.max(got, 1) * 8 / 1e6 / (ms / 1000);
+                console.log('Ruby play', 'speed', mbps.toFixed(1), 'Mbit/s (' + (got / 1048576).toFixed(1) + ' MB in', Math.round(ms), 'ms)');
+                done(mbps);
+            };
+            var cap = setTimeout(function () { finish(); }, streams ? SPEED_MS : SPEED_OLD_MS);
+            fetch(Lampa.Torserver.url() + '/gst/speedtest?mb=4', { cache: 'no-store' }).then(function (r) {
+                if (!r.ok) return finish(true);
+                if (over) return;
+                if (!streams || !r.body || !r.body.getReader) {
+                    streams = false;
+                    return r.arrayBuffer().then(function (b) { got = b.byteLength; finish(); });
+                }
+                reader = r.body.getReader();
+                (function next() {
+                    reader.read().then(function (x) {
+                        if (x.done) return finish();
+                        got += x.value.byteLength;
+                        if (got >= MAX) return finish();
+                        next();
+                    }, function () { finish(); });
+                })();
+            }).catch(function () { finish(true); });
+        });
         return speedTest;
     }
 
