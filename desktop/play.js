@@ -153,20 +153,40 @@
         });
     }
 
-    // This browser's speed to the server (Mbit/s), timed once per session with the remux service's
-    // /gst/speedtest (random bytes). null when it can't tell (no remux service, TV, error).
-    var SPEED = 'ruby_speed_mbps', speedTest = null;
+    // This browser's speed to the server (Mbit/s) now, timed with the remux service's /gst/speedtest (random
+    // bytes) for every Play: up to 4 MB or SPEED_MS, whichever comes first. null when it can't tell (no remux
+    // service, TV, error). It was timed once per tab and kept in sessionStorage: a Mac tab left open from a
+    // fast evening (2026-11-14) picked 1080p the next evening on a link carrying 2-3.5 Mbit/s, and Safari gave
+    // up twice with "Media failed to decode" (The Phantom of the Opera, 2026-11-15 20:33 UTC, no speedtest
+    // request that day). The search runs meanwhile (~6 s), so usually nothing waits on it.
+    var SPEED_MS = 3000, SPEED_REUSE_MS = 60000, speedTest = null, speedAt = 0;
     function speed() {
-        if (speedTest) return speedTest;
-        var known = +sessionStorage.getItem(SPEED);
-        if (known) return (speedTest = Promise.resolve(known));
-        var t0 = performance.now();
+        // the card's warm-up (choice) and the Play right after it share one timing
+        if (speedTest && Date.now() - speedAt < SPEED_REUSE_MS) return speedTest;
+        var t0 = performance.now(), MAX = 4 << 20;
+        speedAt = Date.now();
         speedTest = fetch(Lampa.Torserver.url() + '/gst/speedtest?mb=4', { cache: 'no-store' })
-            .then(function (r) { if (!r.ok) throw new Error('no speedtest'); return r.arrayBuffer(); })
-            .then(function (b) {
-                if (b.byteLength < 1 << 20) return null;
-                var mbps = b.byteLength * 8 / 1e6 / ((performance.now() - t0) / 1000);
-                try { sessionStorage.setItem(SPEED, mbps.toFixed(1)); } catch (e) {}
+            .then(function (r) {
+                if (!r.ok) throw new Error('no speedtest');
+                if (!r.body || !r.body.getReader) return r.arrayBuffer().then(function (b) { return b.byteLength; });
+                var reader = r.body.getReader(), got = 0;
+                return new Promise(function (done) {
+                    var end = function () { clearTimeout(cap); try { reader.cancel().catch(function () {}); } catch (e) {} done(got); };
+                    var cap = setTimeout(end, Math.max(0, SPEED_MS - (performance.now() - t0)));
+                    (function next() {
+                        reader.read().then(function (x) {
+                            if (x.done) { clearTimeout(cap); return done(got); }
+                            got += x.value.byteLength;
+                            if (got >= MAX) return end();
+                            next();
+                        }, function () { clearTimeout(cap); done(got); });
+                    })();
+                });
+            })
+            .then(function (bytes) {
+                if (!bytes) return null;
+                var mbps = bytes * 8 / 1e6 / ((performance.now() - t0) / 1000);
+                console.log('Ruby play', 'speed', mbps.toFixed(1), 'Mbit/s (' + (bytes / 1048576).toFixed(1) + ' MB in', Math.round(performance.now() - t0), 'ms)');
                 return mbps;
             }, function () { return null; });
         return speedTest;
@@ -255,6 +275,36 @@
         Lampa.Player.close();
         // a series starts the episode it's on (resume.js), which may be a later one than first played
         setTimeout(function () { start(movie); }, 300);
+    }
+    // the release playing is more than this connection carries right now (compat.js: Safari gave up on it):
+    // the next smaller resolution found, where it was (the user's call 2026-11-18). false when there is none.
+    // tap: the new <video> needs a tap to play (Safari: compat.js readies one on each tap), so one is asked for
+    // with the choice. Switched without one, Safari refused the 720p's play() and the player's own play button
+    // didn't start it either (iOS 27 simulator, 2026-11-18); reusing the tapped <video> would leave Lampa's
+    // listeners on it twice (app.min.js bind$3).
+    function smaller(tap) {
+        if (!current || !Lampa.Player.opened()) return false;
+        var res = current.res, lower = current.list.filter(function (c) { return c.res < res; })[0];
+        if (!lower) return false;
+        var why = 'The connection is too slow for ' + rubyPick.LABEL[res] + ' right now.';
+        console.log('Ruby play', 'too slow for', res + 'p:', tap ? 'offering' : 'switching to', lower.res + 'p');
+        if (!tap) {
+            Lampa.Noty.show(why + ' Playing ' + lower.label + '.');
+            switchTo({ res: lower.res });
+            return true;
+        }
+        // the facts (and their play() retry, untilPlaying) would cover the question and start the video again
+        stopWatching();
+        var v = Lampa.PlayerVideo.video();
+        if (v) try { v.pause(); } catch (e) {}
+        rubyDesktop.centred();
+        Lampa.Select.show({
+            title: why,
+            items: [{ title: 'Play in ' + lower.label, subtitle: 'From where you are', res: lower.res }, { title: 'Close' }],
+            onSelect: function (a) { if (a.res) switchTo({ res: a.res }); else Lampa.Player.close(); },
+            onBack: function () { Lampa.Player.close(); }
+        });
+        return true;
     }
 
     function play(movie, target, release, download) {
@@ -507,7 +557,7 @@
     // episode(show, {season, episode}): play that episode (episodes.js)
     // play(card): Play as on its title page (a series where you are), from Continue watching (continue.js)
     window.rubyPlay = { on: on, audio: animeAudio, download: function (movie, target) { start(movie, target, null, true); },
-        qualities: qualities, switchTo: switchTo, episode: function (show, target) { start(show, target); },
+        qualities: qualities, switchTo: switchTo, smaller: smaller, episode: function (show, target) { start(show, target); },
         play: function (card) { start(card); } };
     // release(movie, target, release): open that release and start the same file (swarm.js, when one fails)
     rubyPlay.release = function (movie, target, release) { play(movie, target, release); };

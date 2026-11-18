@@ -7,7 +7,8 @@
 //     test data never reaches real shared profiles. /sync/__all lists every file in it, for tests.
 //   * DEV_CONSOLE=1: the page's console.log/warn/error and uncaught errors are printed here too, for browsers
 //     whose console can't be reached (the iOS simulator's Safari)
-// LAMPA_UPSTREAM=host (default "ruby"; TorrServer on :8090, the rest on :80), DEV_PORT (8095), REMUX_PORT (8092).
+// LAMPA_UPSTREAM=host (default "ruby"; TorrServer on :8090, the rest on :80 or LAMPA_UPSTREAM_WEB, e.g. an SSH
+// tunnel's local port: a user can't listen on 80), DEV_PORT (8095), REMUX_PORT (8092).
 // node tools/dev-server.js, then open http://127.0.0.1:8095/
 const http = require('http'), fs = require('fs'), path = require('path');
 const ROOT = path.join(__dirname, '..'), PORT = +(process.env.DEV_PORT || 8095);
@@ -15,7 +16,7 @@ const SYNC_TMP = fs.mkdtempSync(path.join(require('os').tmpdir(), 'lampa-sync-')
 const sync = require('../server/sync/server').handler({ data: SYNC_DIR, journal: path.join(SYNC_TMP, 'journal'), trash: path.join(SYNC_TMP, 'trash') });
 process.on('exit', () => fs.rmSync(SYNC_TMP, { recursive: true, force: true }));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
-const UP = process.env.LAMPA_UPSTREAM || 'ruby', REMUX = +(process.env.REMUX_PORT || 8092);
+const UP = process.env.LAMPA_UPSTREAM || 'ruby', UP_WEB = +(process.env.LAMPA_UPSTREAM_WEB || 80), REMUX = +(process.env.REMUX_PORT || 8092);
 const CONSOLE = process.env.DEV_CONSOLE === '1', PLUGINS = process.env.DEV_PLUGINS;
 // sends the page's console to /__console (ES5: it runs before everything else, on old browsers too)
 const CONSOLE_JS = '<script>(function(){var t0=Date.now();function send(k,a){try{var s=[].map.call(a,function(x){' +
@@ -68,7 +69,7 @@ http.createServer((req, res) => {
             return res.end(fs.readFileSync(f));
         }
     }
-    if (/^\/(jackett|jr|imdb|plugins|lampa-init\.js|lampa-imdb\.js)/.test(u)) return proxy(req, res, UP, 80, u);
+    if (/^\/(jackett|jr|imdb|plugins|lampa-init\.js|lampa-imdb\.js)/.test(u)) return proxy(req, res, UP, UP_WEB, u);
     let p = decodeURIComponent(u.split('?')[0]);
     if (p === '/') p = '/index.html';
     const file = path.join(ROOT, p);

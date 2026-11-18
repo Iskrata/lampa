@@ -260,19 +260,60 @@
         return /^avc1/.test(codecs || '') || !codecs ? 'Pick another release.' : 'Pick an H.264 (x264) release.';
     }
 
+    // why a video didn't start or stopped: 'unplayed', 'nopeers', 'barely', 'noanswer', 'opening', 'link' (this
+    // device's connection) or 'unstarted'
+    function cause(h, played, ready, opening, loading) {
+        var t = (h && h.Torrent) || {};
+        // the start is written and no picture: where Safari plays HLS itself, for a codec it says it plays, that
+        // is its connection (it was "didn't play it (HEVC)" 20 s into a 1080p resume on a 2.5 Mbit/s link, iOS 27
+        // simulator 2026-11-18, while the first 6 MB segment was still coming; Caddy and the tunnel take a segment
+        // from the remux in under 0.4 s, so the server can't see a slow device)
+        if (!played && ready) return nativeDecodes() ? 'link' : 'unplayed';
+        // stuck while no request waits on the torrent: the server is ahead and this device's link is the slow
+        // part. The torrent then reads nothing because nobody asks, which said "the torrent is barely
+        // downloading (13 peers, 0.0 Mbit/s)" (iOS 27 simulator on a 2.5 Mbit/s link to a 3.0 Mbit/s 1080p,
+        // 2026-11-18)
+        if (!opening && (played || loading) && h && h.Swarm && h.Swarm.waiting === 0) return 'link';
+        if (h && !+t.active_peers) return 'nopeers';
+        if (h && (t.download_speed || 0) * 8 / 1e6 < 0.5) return 'barely';
+        if (!h && /\/gst\//.test(current && current.url || '')) return 'noanswer';
+        if (opening) return 'opening';
+        if (played || loading) return 'link';
+        return 'unstarted';
+    }
     function why(h, played, ready, opening, loading) {
-        var t = (h && h.Torrent) || {}, peers = +t.active_peers || 0, speed = (t.download_speed || 0) * 8 / 1e6;
-        var codecs = current && current.codecs;
-        if (!played && ready) return 'the server has sent its start, but this ' + device() + ' didn\'t play it' +
-            (codecs ? ' (' + codecName(codecs) + ' video)' : '') + '. ' + pickOther(codecs);
-        if (h && !peers) return 'nobody is sharing this release right now (0 peers). Pick another release.';
-        if (h && speed < 0.5) return 'the torrent is barely downloading (' + peers + ' peers, ' + speed.toFixed(1) + ' Mbit/s). Pick another release.';
-        if (!h && /\/gst\//.test(current && current.url || '')) return 'the server isn\'t answering. Try again in a minute.';
-        if (opening) return 'it is still reading the torrent (' + peers + ' peers, ' + speed.toFixed(1) + ' Mbit/s). Try again, or pick another release.';
-        if (!played && loading) return 'this ' + device() + ' is loading it too slowly: its connection is too slow for this release. Try a smaller one (720p).';
-        if (!played) return 'it is downloading, but this ' + device() + ' didn\'t start it' +
-            (codecs ? ' (' + codecName(codecs) + ' video)' : '') + '. ' + pickOther(codecs);
-        return 'the server has it, so this ' + device() + '\'s connection is too slow for this release. Try a smaller one (720p or 1080p).';
+        var t = (h && h.Torrent) || {}, peers = +t.active_peers || 0, speed = ((t.download_speed || 0) * 8 / 1e6).toFixed(1);
+        var codecs = current && current.codecs, what = codecs ? ' (' + codecName(codecs) + ' video)' : '';
+        switch (cause(h, played, ready, opening, loading)) {
+            case 'unplayed': return 'the server has sent its start, but this ' + device() + ' didn\'t play it' + what + '. ' + pickOther(codecs);
+            case 'nopeers': return 'nobody is sharing this release right now (0 peers). Pick another release.';
+            case 'barely': return 'the torrent is barely downloading (' + peers + ' peers, ' + speed + ' Mbit/s). Pick another release.';
+            case 'noanswer': return 'the server isn\'t answering. Try again in a minute.';
+            case 'opening': return 'it is still reading the torrent (' + peers + ' peers, ' + speed + ' Mbit/s). Try again, or pick another release.';
+            case 'link': return linkText(played);
+            default: return 'it is downloading, but this ' + device() + ' didn\'t start it' + what + '. ' + pickOther(codecs);
+        }
+    }
+
+    // the player is the browser's own HLS and says it decodes the stream's video: Safari's errors and stalls then
+    // come from its connection
+    function nativeDecodes() {
+        var v = Lampa.PlayerVideo.video(), codecs = current && current.codecs;
+        return !!(v && codecs && !usesMse(v) && decodes(codecs.split(',')[0]));
+    }
+
+    function linkText(played) {
+        return played ? 'the server has it, so this ' + device() + '\'s connection is too slow for this release. Try a smaller one (720p or 1080p).' :
+            'this ' + device() + ' is loading it too slowly: its connection is too slow for this release. Try a smaller one (720p).';
+    }
+
+    // this device's connection can't carry the release: the next smaller one where it was (play.js), else `text`
+    // (asked with a tap where the browser plays HLS itself: Safari plays a new <video> only from one)
+    function tooSlow(text) {
+        var v = Lampa.PlayerVideo.video(), tap = !!v && !usesMse(v);
+        stopWatching();
+        if (window.rubyPlay && rubyPlay.smaller && rubyPlay.smaller(tap)) return;
+        fail(text);
     }
 
     function begin(data) {
@@ -306,7 +347,9 @@
                     c.readySince = blank ? c.readySince || Date.now() : 0;
                     if (!(blank && Date.now() - c.readySince >= START_READY_MS) && stuck < START_MS) return;
                 }
-                fail((c.played ? 'Playback stopped: ' : 'The video didn\'t start: ') + why(h, c.played, blank, false, v.readyState >= 2));
+                var loading = v.readyState >= 2, text = (c.played ? 'Playback stopped: ' : 'The video didn\'t start: ') + why(h, c.played, blank, false, loading);
+                if (cause(h, c.played, blank, false, loading) === 'link') return tooSlow(text);
+                fail(text);
             });
         }, POLL_MS);
     }
@@ -337,14 +380,21 @@
         Lampa.Player.listener.follow('start', begin);
         Lampa.Player.listener.follow('destroy', stopWatching);
         // a decoding error from the video itself: Lampa's "Failed to decode video", with the codec said, unless it
-        // never played and the server hasn't written its start: then the torrent was too slow (started())
+        // never played and the server hasn't written its start: then the torrent was too slow (started()).
+        // Safari's own HLS says "Media failed to decode" also when this device's connection is the slow part:
+        // a codec it says it decodes then means that, and the next smaller release plays where it was (tooSlow).
+        // The Phantom of the Opera (x265 1080p, needs ~4.2 Mbit/s with headroom) on a Mac on 2-3.5 Mbit/s,
+        // 2026-11-15 20:33 UTC: segments came back to back at that rate, buffered stuck 0.5 s past the resume
+        // point, the error after ~55 s, twice; "couldn't play this release's HEVC video" on screen, though the
+        // same Mac had played that file the day before.
         Lampa.PlayerVideo.listener.follow('error', function (e) {
             if (!current || !e.fatal || e.ruby || !current.codecs) return;
             var c = current;
             (c.played ? Promise.resolve(null) : heartbeat(c.url)).then(function (h) {
                 if (current !== c) return;
-                stopWatching();
                 var slow = h && h.Startup && h.Startup.pct < 100;
+                if (!slow && nativeDecodes()) return tooSlow('This ' + device() + ' stopped: ' + linkText(c.played));
+                stopWatching();
                 Lampa.PlayerVideo.listener.send('error', { fatal: true, ruby: true, error: slow ?
                     'This ' + device() + ' stopped waiting for the video: ' + why(h, false, false, true) :
                     'This ' + device() + ' couldn\'t play this release\'s ' + codecName(c.codecs) + ' video. ' + pickOther(c.codecs) });

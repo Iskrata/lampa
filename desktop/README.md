@@ -266,8 +266,31 @@ episode.
      else 1080p at most. 4K on a 1080p screen looks barely better and costs 2-3× the bandwidth (Inception:
      27 GB ≈ 24 Mbit/s against 12 GB ≈ 11 Mbit/s), fewer seeders (50 against 105) and HEVC decoding.
    - **Connection:** no release whose bitrate × 1.3 is more than this connection carries; when even the lowest
-     is, the lowest. The speed is timed once per session, while the search runs, by downloading 4 MB of random
-     bytes from the remux service (`/gst/speedtest`).
+     is, the lowest. The speed is timed for every Play, while the search runs, by downloading random bytes
+     from the remux service (`/gst/speedtest`): 4 MB or 3 s, whichever comes first (the card's warm-up and the
+     Play right after it share one timing, 60 s). It was timed once per tab: a Mac tab left open from the
+     evening before picked 1080p (~4.2 Mbit/s with the headroom) on a link carrying 2-3.5 Mbit/s, and Safari
+     gave up twice (The Phantom of the Opera, 2026-11-15 20:33 UTC; the access log had no speedtest that day
+     and segments 2.9-6.4 MB arriving 7-26 s apart). Checked 2026-11-18 in the dev server with the speed test
+     held to 2.5 Mbit/s: 2.0-2.2 Mbit/s measured, stopped at 3.0 s; unthrottled 4 MB in 45 ms.
+   - **Too slow anyway:** when the player gives up on a release this connection can't carry, the next smaller
+     resolution found plays where it was (`rubyPlay.smaller` from compat.js; the user's call 2026-11-18). "Gives
+     up": Safari's "Media failed to decode" for a codec it says it plays, a Safari start with its first segment
+     written and no picture for 20 s, or a start or film stuck while no request waits on the torrent (the
+     server is ahead; the torrent then reads nothing because nobody asks, which said "the torrent is barely
+     downloading"). Caddy and the tunnel take a segment from the remux in under 0.4 s, so only the page can
+     tell a slow device. Where the browser plays HLS itself (Safari) the switch is asked for with one tap ("The
+     connection is too slow for 1080p right now." → Play in 720p, from where you are / Close): Safari plays a
+     new `<video>` only from a tap, and switched without one it refused the 720p and the player's own play
+     button didn't start it either. Elsewhere (hls.js) it switches with a note. With nothing smaller, the error
+     says the connection is too slow, not the codec or the torrent.
+     Checked 2026-11-18 in the iOS 27 simulator's Safari: dev server, a local remux on ruby's TorrServer (SSH
+     tunnel), video segments held to 2.5 Mbit/s and the speed test not, The Phantom of the Opera resumed at
+     1:24. The 1080p x265 (3.0 Mbit/s needed) reproduced the Mac: `ready=1`, nothing buffered. Before: "the
+     server has sent its start, but this device didn't play it (HEVC)" at 20 s, and a stall at 0:00 that played
+     ended in "the torrent is barely downloading (13 peers, 0.0 Mbit/s)". After: the question at 20 s; Play in
+     720p started the 720p at 1:24 within 40 s and it kept playing. Not checked: hls.js browsers (Chromium) on
+     a slow link, a real Mac or iPhone.
    - **Anime:** the audio remembered per profile; when that audio has nothing, the other one rather than nothing.
    - **Nothing found** (or the search failed): "Can't play this right now" in the middle of the screen, with
      Add to My List. Before, Lampa's raw torrent list opened (Link Click's showed The Simpsons and South Park
@@ -809,7 +832,13 @@ decides.
   simulator: VisionQuest S1E1 from Home's Play, no refusal, playing by itself 15 s after the tap. Not
   checked: a real iPhone.
 - **A decode error** from the video itself is reworded with the codec: "This browser couldn't play this
-  release's HEVC 10-bit video. Pick an H.264 (x264) release."
+  release's HEVC 10-bit video. Pick an H.264 (x264) release." Not where the browser plays HLS itself and says
+  it decodes that codec: Safari's "Media failed to decode" there means its connection was too slow, and the
+  next smaller release plays instead (Pick, "Too slow anyway"). The Phantom of the Opera on a Mac,
+  2026-11-15: "couldn't play this release's HEVC video" on a Mac that had played that file the day before;
+  `buffered` stuck 0.5 s past the resume point, segments arriving at 2-3.5 Mbit/s for a 4.5 Mbit/s segment.
+  Earlier cases with the same look (`ready=2`, a few seconds buffered, then error 3): 11d535ec 2026-11-07,
+  739a093b 2026-10-29 (below), not checked for the link then.
 - **Verified 2026-10-20:** iOS 27 simulator, a synthetic 2-minute HDR10 x265 MKV with English subtitles
   through the remux and the whole app: the video playlist played, English on by itself and on time (before:
   readyState 0 forever). macOS Safari 27: the same. Chromium made to answer like a phone without HEVC: the
