@@ -29,6 +29,7 @@
     ].join('\n');
 
     var FINISHED = 90;
+    var started = 0;    // when an episode row last started playing (go)
 
     function hash(show, s, e) {
         return Lampa.Utils.hash([s, s > 10 ? ':' : '', e, show.original_name || show.original_title].join(''));
@@ -51,7 +52,15 @@
             (aired ? (ep.runtime ? ep.runtime + ' min' : '') : 'Coming ' + Lampa.Utils.parseTime(ep.air_date).full) + '</div></div>' +
             '<div class="ruby-ep__text">' + esc(ep.overview) + '</div></div>';
         if (aired) {
-            var go = function () { rubyPlay.episode(show, { season: ep.season_number, episode: ep.episode_number }); };
+            // a mouse click comes as both: the native click, and Lampa's hover:enter from the same click once the
+            // card is in its controller's collection. Both played the episode, two starts 9 ms apart, and the first
+            // one's loading window (Torrent.start's Modal) was left on the title page, over the show, after the
+            // player closed (2026-11-18, "some weird drawer"; Lampa.Modal.open replaces its element without removing it)
+            var go = function () {
+                if (Date.now() - started < 1000) return;
+                started = Date.now();
+                rubyPlay.episode(show, { season: ep.season_number, episode: ep.episode_number });
+            };
             el.addEventListener('click', go);
             $(el).on('hover:enter', go);
         }

@@ -14,6 +14,7 @@
     var pending = null;     // { target, files: [{element, item}] } while Lampa's file list is coming up
     var opened = null;      // the title Play last opened a release of (its stream names it, init)
     var push = null;        // Lampa.Activity.push before we wrapped it
+    var entered = false;    // Play entered a file in Lampa's list itself, and its onenter hasn't come yet
 
     function on() { return Lampa.Storage.field(SETTING) !== false; }
 
@@ -258,6 +259,7 @@
 
     function play(movie, target, release, download) {
         pending = { target: target, files: [], at: Date.now(), movie: movie, download: download };
+        entered = false;
         opened = movie;
         if (rubyFacts.open()) rubyFacts.status('Connecting…'); else rubyFacts.start('Connecting…', movie);
         // backed out of Lampa's torrent dialog before anything played: take the facts away. Lampa's window is
@@ -280,6 +282,14 @@
 
     // Lampa's file list for the release we opened: start the right file instead of showing the list
     function files(e) {
+        // the file Play entered itself is starting: Lampa's callback for when the player closes brings its file
+        // list back up (Controller.toggle('modal')), a list nobody chose from ("some weird drawer" after backing
+        // out of an episode, 2026-11-18). Close it through its own Back instead, which ends on the title page.
+        if (e.type === 'onenter') {
+            if (entered) Lampa.Player.callback(closeList);
+            entered = false;
+            return;
+        }
         if (!pending || Date.now() - pending.at > 120000) { pending = null; return; }
         if (e.type === 'list_open') {
             pending.files = [];
@@ -301,6 +311,7 @@
             Lampa.Controller.back();
             setTimeout(done, 0);
         } else if (found) {
+            entered = true;     // Lampa's onenter comes after its preload, asynchronously
             found.item.trigger('hover:enter');
             // by now the player (or Lampa's preload screen) covers the list; if playback never starts
             // (preload cancelled), the list must not stay invisible
@@ -355,6 +366,12 @@
         };
         names.forEach(function (n) { v.addEventListener(n, log); });
         return function () { names.forEach(function (n) { v.removeEventListener(n, log); }); };
+    }
+
+    function closeList() {
+        if (!Lampa.Modal.opened()) return Lampa.Controller.toggle('content');
+        Lampa.Controller.toggle('modal');
+        Lampa.Controller.back();
     }
 
     function done() {

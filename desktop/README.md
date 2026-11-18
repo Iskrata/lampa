@@ -286,6 +286,9 @@ episode.
 5. **Open** the release with Lampa's own flow (`Lampa.Torrent.start`) and, when Lampa's file list comes up
    (`torrent_file` events), start the right file: the episode by season/episode, or a film's largest video
    file. The list is hidden meanwhile. Resume, the episode playlist and "next episode" stay Lampa's.
+   When the player closes, Lampa brings its file list back (its `Player.callback` toggles the list's window);
+   for a file Play entered itself, the list closes through its own Back instead, ending on the title page
+   ("some weird drawer" after backing out of an episode, 2026-11-18).
 
 A series' Play continues where you are (`resume.js`, "Where you are in a series" below).
 
@@ -472,6 +475,15 @@ of one season's stills (names showed only on focus) with a "More" tile that open
 
 Checked 2026-10-20 in the dev server: Breaking Bad shows Seasons 1-5, Season 1's 7 episodes with S1 E3's
 bar at 95 %; Season 3 loads its 13; a click on S1 E2 started Play's search with the loading screen.
+
+**One click, one start** (2026-11-18). A row listens for the native click (a card Lampa hasn't taken into its
+controller's collection gets no `hover:enter`) and for `hover:enter`, which Lampa also fires from that same
+click once it has. Both played the episode, two `Torrent.start`s 9 ms apart, and `Lampa.Modal.open` replaces its
+element without removing the old one: the first start's empty loading window stayed over the title page, a
+dark panel with a spinner, after the player closed. A row now starts once a second. Checked in the dev server
+(the home server's TorrServer and remux through SSH): Breaking Bad S1E2, click and `hover:enter` together, one
+`Torrent.start`, and Back from the player left no window (`.modal` 0, controller `full_start`); the same with
+the Play button.
 
 ## Dead swarms
 
