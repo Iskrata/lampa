@@ -154,6 +154,26 @@ without an index get fixed 4 s steps, which drift by up to a keyframe interval.
   a script against a local test file, `sub0-32` timing out without the change, up to `sub0-49` served with
   it; the iOS 27 simulator's Safari played, seeked and showed the full English track with it).
 
+**A segment cut twice is kept as first written.** A run started behind segments already on disk (a seek
+back, an AirPlay TV asking an earlier segment) cuts them again. Each is written as `seg<n>.m4s.<pid>.tmp` and
+renamed into place, but a segment already there is no longer replaced:
+- **On Windows a rename onto a file someone has open fails.** Node's read stream opens with share-delete, but
+  `MoveFileEx` still refuses to replace the file: `EPERM` (reproduced on ruby 2026-11-19 with its Node 24.21:
+  rename over a file a `createReadStream` holds open, EPERM; the same rename once the stream closed, fine).
+  The error came out of ffmpeg's pipe and the run was killed. ruby's error logs had it 41 times (17
+  segments, 2026-10-26 to 2026-11-15), each one a player reading that segment just then. Desperate Housewives
+  S3E10, 2026-11-15 08:44 UTC: three seeks back from 1:08 (runs from seg9, 8, 7), each killed at seg13 while
+  Safari re-read seg9-27; 12:53: an AirPlay TV took over from an iPhone, a run from seg223 died at seg226
+  (being read), and seg267 later needed a new run. Every request was still answered 200 (Caddy's access log)
+  and nothing stalled, because the segments past it were on disk and the torrent was local; with a slow
+  swarm the next segment past them would have waited for a new run.
+- **The two cuts are not identical** (the same S3E10 seg11 was 1,796,565 bytes, then 1,795,437; seg224
+  1,806,262, then 1,805,060), so a player may have the first one buffered: keeping it is also the consistent
+  choice.
+- A rename that fails with nothing at the target (an antivirus holding the new file) is tried again 5 times
+  over about 3 s, then the segment is left to the next run, with one line in the error log. The pid in the
+  name keeps the two installs (a deploy's handover) from writing one `.tmp` together.
+
 **Facts this depends on** (measured 2026-10-14 with ffmpeg 8.1):
 - **ffmpeg seeks early.** For inputs with B-frames, ffmpeg seeks 3/23 s before `-ss`
   (`fftools/ffmpeg_demux.c`, its DTS heuristic) unless the container seeks by presentation time.

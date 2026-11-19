@@ -215,14 +215,36 @@ class Session {
         return lo;
     }
 
+    // A segment already on disk is kept, not replaced: a run started behind it (a seek back, a TV asking an
+    // earlier segment) cuts it again, and on Windows a rename onto a file a player is reading fails (EPERM).
+    // It threw out of the ffmpeg pipe and killed the run: 41 errors (17 segments) on ruby, 2026-10-26 to 11-15, e.g.
+    // S3E10 on 2026-11-15 08:44, three seeks back over seg13 while Safari re-read seg9-27, and 12:53 an AirPlay
+    // TV reading seg226 (README "A segment cut twice"). The two cuts differ by about a kilobyte, and the one on
+    // disk is the one players already have. The .tmp name carries the pid: both installs may cut it at once.
     write(j, n) {
         if (!j.frags.length) return;
-        const tmp = this.file(n) + '.tmp';
-        fs.writeFileSync(tmp, Buffer.concat(j.frags));
-        fs.renameSync(tmp, this.file(n));
-        this.wrote = true;
+        const f = this.file(n), buf = Buffer.concat(j.frags);
         j.frags = [];
-        this.notify();
+        this.wrote = true;
+        if (fs.existsSync(f)) return this.notify();
+        const tmp = `${f}.${process.pid}.tmp`;
+        fs.writeFileSync(tmp, buf);
+        this.place(tmp, f, 0);
+    }
+
+    // rename the finished .tmp into place; while something holds the folder's file (an antivirus scan of the
+    // new .tmp), try again a few times over about 3 s instead of losing the segment
+    place(tmp, f, tries) {
+        try {
+            fs.renameSync(tmp, f);
+            this.notify();
+        } catch (e) {
+            if (fs.existsSync(f) || tries >= 5 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) {
+                if (!fs.existsSync(f)) console.error(`${this.m.hash.slice(0, 8)}:${this.m.index} ${path.basename(f)}: ${e.code} after ${tries + 1} tries`);
+                return fs.rm(tmp, { force: true }, () => {});
+            }
+            setTimeout(() => this.place(tmp, f, tries + 1), 100 << tries);
+        }
     }
 
     // hold ffmpeg back when far ahead of the player, let it go again when the player catches up or waits for
