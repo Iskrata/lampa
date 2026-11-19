@@ -128,16 +128,18 @@
         });
     }
 
-    // The server's pick the warm-up made for this title and episode (warm.js), used once by the next Play within
-    // PICKED_MS: Play then starts the release that was warmed, without asking again (3.5-4.2 s on ruby, 2026-10-26)
-    var PICKED_MS = 5 * 60000, warmPick = null;
+    // The server's picks the warm-ups made for these titles and episodes (warm.js), each used once by a Play within
+    // PICKED_MS: Play then starts the release that was warmed, without asking again (3.5-4.2 s on ruby, 2026-10-26).
+    // Several: Continue watching warms its first first 3 titles one after another (2026-11-19), and kept only the
+    // last, a Play of the first asked the server again and could start another release than the warmed one
+    var PICKED_MS = 5 * 60000, warmPicks = {};
     function pickKey(movie, kind, target) {
         return [movie.id, kind, target ? target.season + 'x' + target.episode : '', Lampa.Storage.get(ANIME_AUDIO, 'en')].join('|');
     }
     function picked(movie, kind, target) {
-        var w = warmPick, key = pickKey(movie, kind, target);
-        warmPick = null;
-        if (w && w.key === key && Date.now() - w.at < PICKED_MS) return w.p;
+        var key = pickKey(movie, kind, target), w = warmPicks[key];
+        delete warmPicks[key];
+        if (w && Date.now() - w.at < PICKED_MS) return w.p;
         return serverPick(movie, kind, target);
     }
     // what Play would start for this title (and episode): the server's pick, then the resolution for this screen
@@ -145,7 +147,9 @@
     function choice(movie, target) {
         var kind = movie.original_name || movie.name && !movie.title ? 'tv' : 'movie';
         var p = serverPick(movie, kind, target);
-        warmPick = { key: pickKey(movie, kind, target), at: Date.now(), p: p };
+        var now = Date.now();
+        Object.keys(warmPicks).forEach(function (k) { if (now - warmPicks[k].at >= PICKED_MS) delete warmPicks[k]; });
+        warmPicks[pickKey(movie, kind, target)] = { at: now, p: p };
         return Promise.all([p, speed(true)]).then(function (x) {
             var found = x[0];
             if (!found || !found.list.length) return null;

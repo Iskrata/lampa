@@ -3,35 +3,40 @@
 // it will start, before anyone presses Play.
 //   * a title page you stay on for DWELL_MS: the release Play would start (rubyPlay.choice, the same pick, which
 //     Play then reuses), at the episode and place Play would start from (resume.js)
-//   * Continue watching: its first title (continue.js)
+//   * Continue watching: its first 3 titles, in order (continue.js)
 //   * while an episode plays: the next one in the player's playlist, once AFTER_S of this one has played
-// One at a time; a newer ask replaces one still waiting. Only through the remux service, with
+// One at a time. A title page's or next episode's ask goes first and replaces such an ask still waiting;
+// Continue watching's 2nd and 3rd wait behind (later). Only through the remux service, with
 // "Pick torrents for me" on.
 (function () {
     var DWELL_MS = 1500, AFTER_S = 60;
-    var busy = false, queued = null, done = {};
+    var busy = false, queue = [], done = {};
 
     function url() { return Lampa.Torserver.url(); }
     function isShow(c) { return !!(c.original_name || c.first_air_date || c.number_of_seasons); }
 
-    // q: the query for /gst/warm; key: what it warms (asked once per page load)
-    function ask(key, q) {
+    // q: the query for /gst/warm; key: what it warms (asked once per page load); later: after the others, kept
+    function ask(key, q, later) {
         if (done[key]) return;
-        if (busy) { queued = { key: key, q: q }; return; }
+        if (busy) {
+            if (later) queue.push({ key: key, q: q, later: true });
+            else queue = [{ key: key, q: q }].concat(queue.filter(function (x) { return x.later; }));
+            return;
+        }
         busy = done[key] = true;
         var t0 = Date.now();
         fetch(url() + '/gst/warm?' + q, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
             console.log('Ruby warm', key, j.error || 'segments ' + j.segments.join('-') + (j.again ? ' (warm already)' : ''), 'in', Date.now() - t0, 'ms');
         }, function () {}).then(function () {
             busy = false;
-            var n = queued;
-            queued = null;
-            if (n) ask(n.key, n.q);
+            var n = queue.shift();
+            if (n) ask(n.key, n.q, n.later);
         });
     }
 
-    // the release Play would start for this title, where it would start (r: rubyResume's answer, when known)
-    function title(card, r) {
+    // the release Play would start for this title, where it would start (r: rubyResume's answer, when known;
+    // later: see ask)
+    function title(card, r, later) {
         if (!card || !card.id || !url() || !rubyPlay.on()) return;
         var go = function (r) {
             var target = isShow(card) ? { season: r.season, episode: r.episode } : null;
@@ -43,7 +48,7 @@
                 if (!link) return;
                 ask(card.id + (target ? ' S' + target.season + 'E' + target.episode : ''), 'link=' + encodeURIComponent(link) +
                     '&title=' + encodeURIComponent(rel.Title || '') + (target ? '&season=' + target.season + '&episode=' + target.episode : '') +
-                    place + (rubyPlay.audio(card) === 'ja' ? '&lang=ja' : ''));
+                    place + (rubyPlay.audio(card) === 'ja' ? '&lang=ja' : ''), later);
             });
         };
         if (r) go(r); else if (isShow(card)) rubyResume.where(card, go); else go(rubyResume.film(card));
@@ -82,7 +87,7 @@
         });
     }
 
-    // title(card[, resume answer]): warm up what Play would start for it (continue.js)
+    // title(card[, resume answer[, later]]): warm up what Play would start for it (continue.js)
     window.rubyWarm = { title: title };
 
     var timer = setInterval(function () {

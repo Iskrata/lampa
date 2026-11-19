@@ -330,7 +330,9 @@ opened (its start and index kept on disk) and its first 60 s made from where it 
 - **On a title page** you stay on for 1.5 s. It warms the release Play would start (`rubyPlay.choice`: the
   server's pick, then this screen and connection's resolution), at the episode and place Play would start
   from (`resume.js`). Play then reuses that pick within 5 minutes instead of asking again (`picked`).
-- **For Continue watching:** its first title, once Home has settled (`continue.js`).
+- **For Continue watching:** its first 3 titles, once Home has settled, one after another (`continue.js`;
+  only the first until 2026-11-19, when the user chose 3). Each costs the home server a torrent's start and
+  ~60 s of segments on disk, played or not.
 - **While an episode plays:** the next one in the player's playlist, after 60 s of playing (counted from the start
   or the last jump, not the position: a resumed episode is past 0:60 at once, and the first version warmed the
   next one right as this one started, so they competed). Lampa's Next episode and autoplay then open a file whose
@@ -339,8 +341,15 @@ opened (its start and index kept on disk) and its first 60 s made from where it 
 It warms from where Lampa will resume: the saved time (`at=`, resume.js `time`), not the percent. 30 % of Breaking
 Bad S2E8 was 850 s while Lampa resumed at 845 s, a segment earlier than the warmed ones.
 
-One warm-up at a time per page; a newer one replaces one still waiting, and each is asked for once per page
-load. Only through the remux service, with "Pick torrents for me" on.
+One warm-up at a time per page. A title page's or next episode's goes first and replaces such a one still
+waiting; Continue watching's 2nd and 3rd queue behind. Each is asked for once per page load. Play reuses the
+pick of every warmed title (not only the last), so Play on the 2nd starts the release that was warmed. Only
+through the remux service, with "Pick torrents for me" on.
+
+Checked 2026-11-19 in the dev server against the home server's remux (three films seeded in Continue
+watching): Pretty Woman, Notting Hill and Copycat warmed one after another, each at its saved time (87, 46 and
+24 s). Play on Notting Hill, the 2nd, asked for no new pick, started the warmed release and was playing at
+20:18 (resumed at 20:00) within 20 s, over the SSH tunnel to the Mac.
 
 Measured 2026-10-26 on the home server (server/remux/README.md "Warming up"): Breaking Bad S2 episodes started in
 0.1 s with 60 s of video ready by 0.4 s when warmed, against 63.6-63.9 s to the first picture without. In the

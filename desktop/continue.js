@@ -6,7 +6,7 @@
 // 2026-10-20). Built from Lampa's history (a title enters it after 10 minutes, watched.js) and the progress
 // it saves (resume.js). Active only where desktop.js is, with "Pick torrents for me" on.
 (function () {
-    var MAX = 20;
+    var MAX = 20, WARM = 3;
     var CSS = [
         '.ruby-cw{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:1.6em .5em .45em;border-radius:0 0 .6em .6em;' +
             'background:linear-gradient(0deg,rgba(0,0,0,.85),rgba(0,0,0,0));pointer-events:none}',
@@ -48,8 +48,12 @@
         return function (call) {
             inProgress(cards, function (list) {
                 if (!list.length) return call({ results: [] });
-                // the one most likely played next: warmed up once the page has settled (warm.js)
-                if (window.rubyWarm) rubyDesktop.settled(function () { rubyWarm.title(list[0].card, list[0].r); });
+                // the ones most likely played next: warmed up once the page has settled, one after another (warm.js).
+                // The first 3, not only the first (the user, 2026-11-19): each costs the home server a torrent's
+                // start and ~60 s of segments on disk, whether or not it is played
+                if (window.rubyWarm) rubyDesktop.settled(function () {
+                    list.slice(0, WARM).forEach(function (x, i) { rubyWarm.title(x.card, x.r, i > 0); });
+                });
                 call({
                     title: 'Continue watching',
                     results: list.slice(0, MAX).map(function (x) {
