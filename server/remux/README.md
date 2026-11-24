@@ -845,6 +845,15 @@ three read as natural Bulgarian subtitles, not word for word: names the same thr
 Mia. Weak spots: rhymed song lines come out flat ("♪ И с калинка на нея съм ♪"). `reasoning_effort` "minimal"
 is refused by both luna models; "none" is accepted.
 
+**Live on ruby, 2026-11-24** (fork `34164364`, Fjord's torrent, PowerShell on ruby asking Caddy for video
+segments 63-140 (4:12-9:20) one after another, each followed by `mtbg-<n>.vtt`, faster than real time): the
+master listed "Bulgarian (AI translation)"; no subtitle segment waited over 0.1 s; every English line of the
+file's own track up to 10:20 had its Bulgarian (35 of the track's 40 known lines; the 5 at 10:43-11:27 were
+waiting for a batch, as meant). The file's own English has fewer, longer lines than OpenSubtitles' (one cue
+for "I understand, but the phone needs to stay in the backpack"), so the live translation is of those. The
+first test before the batching made calls of 6, 2, 4, 4, 2, 7 and 7 lines; the first segment asked for
+waited 3.6 s for its 6 lines. Not checked yet: a real Safari playing it.
+
 Not handled: video codecs a browser can't decode (MPEG-4 Part 2/Xvid, VC-1) get an error instead of a
 playlist. Dolby Vision profile 5 (no HDR10 base layer) shows wrong colours. Bitmap subtitles (PGS,
 VobSub) are skipped. The pickers in `desktop/pick.js` steer away from these.
