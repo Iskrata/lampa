@@ -816,7 +816,10 @@ Nothing is translated until a player asks for that track.
   before with their translations. The answer adds to the glossary and notes, kept per title
   (`REMUX_SUBS/tr-<movie|tv><tmdb>-bg.json`), so a series' episodes share them.
 - **When.** From the first request for the track, the English lines from 30 s behind the player on are
-  translated as ffmpeg writes them (about 2 min ahead of the player: AHEAD segments). A subtitle segment the
+  translated as ffmpeg writes them (up to 2 min ahead of the player: AHEAD segments): 40 at a time, or fewer
+  once the first of them is within 60 s of the player's latest video segment (each call sends the title's ~800
+  tokens again, and ffmpeg's English came in 2-6 lines at a time: the first live test made calls of 6 and 2
+  lines). A subtitle segment the
   player asks for before its lines are done goes first, 12 lines at a time, and waits at most 6 s (Safari gives a
   subtitle request 10 s, and two timeouts stop it loading anything, "A subtitle segment the player waits for");
   lines not done by then are missing from that segment. A download (`download.js`) translates the whole film.

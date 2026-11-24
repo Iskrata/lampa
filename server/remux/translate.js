@@ -81,8 +81,9 @@ class Book {
     over() { return this.kept.cost >= cfg.translateBudget; }
     pending(en) { return this.kept.lines[en] === undefined && (this.tries[en] || 0) < TRIES && !this.over(); }
 
-    // (n: lines per call; fewer answer sooner: 40 lines took 7.1 s on average with gpt-6-luna)
-    next(cues, from, n = CHUNK) {
+    // (n: lines per call; fewer answer sooner: 40 lines took 7.1 s on average with gpt-6-luna. soon: the time
+    // by which lines are needed)
+    next(cues, from, n = CHUNK, soon = Infinity) {
         if (this.busy) return this.busy;
         if (Date.now() < this.pauseUntil) return null;
         if (this.over()) {
@@ -96,7 +97,9 @@ class Book {
         for (let i = at; i < cues.length && todo.length < n; i++) {
             if (this.pending(cues[i].text) && !todo.some(c => c.text === cues[i].text)) todo.push(cues[i]);
         }
-        if (!todo.length) return null;
+        // fewer than a call's worth that nobody needs before `soon`: wait for more (each call sends the title's
+        // ~800 tokens again; ffmpeg's English came in 2-6 lines at a time on ruby, 2026-11-24)
+        if (!todo.length || (todo.length < n && todo[0].start > soon)) return null;
         // the lines translated just before the first one, for the scene
         const first = cues.indexOf(todo[0]), before = [];
         for (let i = first - 1; i >= 0 && before.length < CONTEXT; i--) if (this.text(cues[i].text)) before.unshift(cues[i]);

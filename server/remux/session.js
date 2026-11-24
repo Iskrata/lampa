@@ -28,7 +28,7 @@ const SIDECAR_WAIT_MS = 4000;
 // a subtitle segment of a translated track waits at most this long for its lines (Safari gives a subtitle request
 // 10 s); the lines past the player are translated every PUMP_MS as ffmpeg writes the English
 // (URGENT: lines per call while a player waits)
-const TRANSLATE_WAIT_MS = 6000, PUMP_MS = 3000, URGENT = 12;
+const TRANSLATE_WAIT_MS = 6000, PUMP_MS = 3000, URGENT = 12, SOON_S = 60;
 // OpenSubtitles downloads in one language found not to be this video before giving up (nextPick)
 const MISFITS = 2;
 // torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
@@ -467,8 +467,10 @@ class Session {
         const b = this.translator(lang);
         const step = () => {
             if (this.closed) return;
-            const at = this.mtWait.length ? Math.min(...this.mtWait) : Math.max(0, (this.m.bounds[this.lastReq] || 0) - 30);
-            const p = b.next(this.englishRef(), at, this.mtWait.length ? URGENT : undefined);
+            // (the player's latest video segment: lines up to SOON_S past it go now, later ones 40 at a time)
+            const pos = this.m.bounds[this.lastReq] || 0;
+            const p = this.mtWait.length ? b.next(this.englishRef(), Math.min(...this.mtWait), URGENT)
+                : b.next(this.englishRef(), Math.max(0, pos - 30), undefined, pos + SOON_S);
             if (p) p.then(step); else setTimeout(step, PUMP_MS).unref();
         };
         step();
