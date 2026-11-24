@@ -29,7 +29,7 @@ async function request(base, route, opts) {
     const text = await r.text();
     let json = null;
     try { json = JSON.parse(text); } catch (e) { /* html error page */ }
-    if (!r.ok) throw Object.assign(new Error(`opensubtitles ${route.split('?')[0]}: ${r.status} ${(json && json.message) || text.slice(0, 120)}`), { status: r.status });
+    if (!r.ok) throw Object.assign(new Error(`opensubtitles ${route.split('?')[0]}: ${r.status} ${(json && json.message) || text.slice(0, 120)}`), { status: r.status, body: json });
     return json;
 }
 
@@ -200,17 +200,35 @@ function misfit(f, lang, id) {
     writePick(f, lang, { not: [...new Set((kept.not || []).concat(id))] });
 }
 
+// The daily download quota used up (session.js then translates instead, translate.js): until OpenSubtitles'
+// reset_time_utc, from a download that left none or one refused with 406 (the API's answer when the quota is
+// spent, with that field); an hour when the answer has no time. Not kept across restarts: the next download
+// finds out again.
+let quotaUntil = 0;
+const quotaOut = () => Date.now() < quotaUntil;
+function spent(j) {
+    const t = Date.parse((j && j.reset_time_utc) || '');
+    quotaUntil = t > Date.now() ? t : Date.now() + 3600e3;
+    console.log(`opensubtitles: no downloads left until ${new Date(quotaUntil).toISOString()}`);
+}
+
+const srtFile = pick => path.join(cfg.subs, `os-${pick.id}.srt`);
+// downloaded before: costs no quota
+const downloaded = pick => !!pick && fs.existsSync(srtFile(pick));
+
 // a picked subtitle's lines: downloaded once (counts against the daily quota), then from cfg.subs
 async function download(pick) {
-    const srtFile = path.join(cfg.subs, `os-${pick.id}.srt`);
+    const file = srtFile(pick);
     let srt;
-    try { srt = fs.readFileSync(srtFile, 'utf8'); } catch (e) {
+    try { srt = fs.readFileSync(file, 'utf8'); } catch (e) {
+        if (quotaOut()) throw Object.assign(new Error(`opensubtitles: no downloads left until ${new Date(quotaUntil).toISOString()}`), { status: 406 });
         let s = await session(), dl;
         try { dl = await request(s.base, '/download', { body: { file_id: pick.id }, token: s.token }); } catch (e) {
             // a token OpenSubtitles stopped taking well before its 24 h: every download answered "401 invalid
             // token" on 2026-10-20 (19:43 UTC, signed in 17:55) until a restart. Not another sign-in (three in a
             // row all stayed valid, and the token's exp said 24 h; measured that evening), cause unknown: the log
             // says the token's age, and whether a new one helps (the next line is a download, or this 401 again)
+            if (e.status === 406) spent(e.body);
             if (e.status !== 401 || !s.token) throw e;
             console.log(`opensubtitles: download answered 401 "${e.message.replace(/^.*?401 /, '')}" with a token ` +
                 `${((Date.now() - s.at) / 60e3).toFixed(0)} min old: signing in again`);
@@ -220,8 +238,9 @@ async function download(pick) {
         }
         srt = await (await fetch(dl.link)).text();
         fs.mkdirSync(cfg.subs, { recursive: true });
-        fs.writeFileSync(srtFile, srt);
+        fs.writeFileSync(file, srt);
         console.log(`opensubtitles: downloaded ${pick.id} "${pick.release}" (${dl.remaining} downloads left today)`);
+        if (dl.remaining <= 0) spent(dl);
     }
     return parseSrt(srt);
 }
@@ -482,4 +501,4 @@ function shouting(cues) {
     return upper + lower > 200 && lower / (upper + lower) < 0.1;
 }
 
-module.exports = { find, search, misfit, download, garbled, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };
+module.exports = { find, search, misfit, download, downloaded, quotaOut, garbled, align, alignTiming, timingPairs, shouting, CAPTION_LAG, episodeOf, best, parseSrt, configured: () => !!creds().key };

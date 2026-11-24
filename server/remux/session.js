@@ -68,6 +68,7 @@ class Session {
         this.osPick = {};   // the pick osLines were downloaded from
         this.osFit = {};   // per language: { lines: English lines at the last fit, cues }
         this.misfits = {};   // per language: downloads left out as not this video (nextPick)
+        this.osFailed = {};   // per language: OpenSubtitles' lines given up on, translated instead (giveUp)
         this.mtWait = [];   // the starts of the translated segments players wait for (mtCues)
         this.pumping = {};
         // subtitle 0 is English when the file has English ones (media.js puts them first)
@@ -294,21 +295,45 @@ class Session {
 
     // The subtitle tracks, English, Bulgarian, Russian: the file's own (`sub<k>`, k its place in m.subs) and,
     // in a language it has none in, the one from OpenSubtitles (`os<lang>`), else one translated from the English
-    // (`mt<lang>`, translate.js). Ids, not places in this list, go into the playlists: OpenSubtitles may answer
-    // after the master was made.
+    // (`mt<lang>`, translate.js; osOff). Ids, not places in this list, go into the playlists: OpenSubtitles may
+    // answer after the master was made.
     tracks() {
         const own = this.m.subs.map((s, k) => ({ id: `sub${k}`, lang: s.lang, title: (s.tags && s.tags.title) || '' }));
-        const ext = SUB_LANGS.filter(l => !own.some(t => t.lang === l) && (l === 'en' ? this.better : this.found[l]))
+        const ext = SUB_LANGS.filter(l => !own.some(t => t.lang === l) &&
+            (l === 'en' ? this.better : this.found[l] && !(this.osOff(l) && this.canTranslate(l))))
             .map(l => ({ id: `os${l}`, lang: l, title: '' }));
-        const mt = Object.keys(translate.LANGS).filter(l => !own.some(t => t.lang === l) && l in this.found && !this.found[l] &&
-            (this.english || this.better) && translate.configured()).map(l => ({ id: `mt${l}`, lang: l, title: 'AI translation' }));
+        const mt = Object.keys(translate.LANGS).filter(l => l in this.found && this.osOff(l) && this.canTranslate(l))
+            .map(l => ({ id: `mt${l}`, lang: l, title: 'AI translation' }));
         return own.concat(ext, mt).sort((x, y) => SUB_LANGS.indexOf(x.lang) - SUB_LANGS.indexOf(y.lang));
     }
 
-    // a track id from a request: known now, or once OpenSubtitles has answered
+    // a track id from a request: known now, or once OpenSubtitles has answered. Also one this session's master
+    // listed before the other became the one (osOff changed): an `os` track then answers with the translation
+    // (allCues), an `mt` track goes on translating.
     async hasTrack(id) {
         if (!this.tracks().some(t => t.id === id) && /^(os|mt)/.test(id)) await this.ready();
-        return this.tracks().some(t => t.id === id) || this.ownEnglish(id);
+        const x = /^(os|mt)([a-z]{2})$/.exec(id);
+        return this.tracks().some(t => t.id === id) || this.ownEnglish(id) ||
+            !!(x && x[2] !== 'en' && (x[1] === 'os' ? x[2] in this.found && (this.found[x[2]] || this.canTranslate(x[2])) : this.canTranslate(x[2])));
+    }
+
+    // OpenSubtitles has nothing for this language that can be used now: its search failed or found none, the
+    // day's download quota is spent (opensubs.js quotaOut) and the pick isn't on disk, or in this session a
+    // download failed or no pick fitted the video (osFailed). Translated instead, where canTranslate.
+    osOff(lang) {
+        const p = this.found[lang];
+        return !p || !!this.osFailed[lang] || (opensubs.quotaOut() && !opensubs.downloaded(p));
+    }
+
+    canTranslate(lang) {
+        return lang in translate.LANGS && !this.m.subs.some(s => s.lang === lang) && !!(this.english || this.better) && translate.configured();
+    }
+
+    // OpenSubtitles' lines given up on for this session (the translation shows instead)
+    giveUp(lang, why) {
+        if (this.osFailed[lang]) return;
+        this.osFailed[lang] = true;
+        console.log(`${this.m.hash.slice(0, 8)}:${this.m.index} ${lang}: ${why}, translating the English instead`);
     }
 
     // `osen` asked for while the file has English of its own: a player that got the master before this service
@@ -371,7 +396,9 @@ class Session {
         } else if (/^mt/.test(id)) {
             all = await this.mtCues(id.slice(2), from, to);
         } else {
-            all = await this.osCues(id.slice(2));
+            const lang = id.slice(2);
+            if (!(this.osOff(lang) && this.canTranslate(lang))) all = await this.osCues(lang);
+            if (this.osOff(lang) && this.canTranslate(lang)) all = await this.mtCues(lang, from, to);
         }
         return all.slice().sort((a, b) => a.start - b.start);
     }
@@ -388,8 +415,9 @@ class Session {
     lookup(lang) {
         if (this.picks[lang] || !opensubs.configured()) return;
         const f = Object.assign({ hash: this.m.hash, index: this.m.index, url: this.m.url }, this.source);
+        // (a failed search counts as none found: translated, where canTranslate)
         this.picks[lang] = opensubs.search(f, lang).then(p => { this.found[lang] = p; return p; })
-            .catch(e => { console.error(`${this.m.hash.slice(0, 8)}:${this.m.index} ${e.message}`); return null; });
+            .catch(e => { console.error(`${this.m.hash.slice(0, 8)}:${this.m.index} ${e.message}`); this.found[lang] = null; return null; });
     }
 
     // Its lines on the video's timing. Made from the same release as the English download, they follow the
@@ -411,7 +439,8 @@ class Session {
                 return r ? r.cues : [];
             }).catch(e => {
                 console.error(e.message);
-                setTimeout(() => { delete this.osLines[lang]; }, 10 * 60e3).unref();
+                if (this.canTranslate(lang)) this.giveUp(lang, `download failed (${e.status === 406 ? 'no quota' : e.message.slice(0, 60)})`);
+                else setTimeout(() => { delete this.osLines[lang]; }, 10 * 60e3).unref();
                 return [];
             });
         }
@@ -485,7 +514,10 @@ class Session {
     // a download that isn't this video: the next one OpenSubtitles has, up to MISFITS per language and session
     // (each costs a download from the daily quota)
     nextPick(lang, got) {
-        if ((this.misfits[lang] = (this.misfits[lang] || 0) + 1) > MISFITS) return;
+        if ((this.misfits[lang] = (this.misfits[lang] || 0) + 1) > MISFITS) {
+            if (this.canTranslate(lang)) this.giveUp(lang, `${MISFITS} downloads didn't fit this video`);
+            return;
+        }
         const f = Object.assign({ hash: this.m.hash, index: this.m.index, url: this.m.url }, this.source);
         opensubs.misfit(f, lang, got.id);
         console.log(`${this.m.hash.slice(0, 8)}:${this.m.index} ${lang} "${got.release}" left out for this file: picking another`);

@@ -809,6 +809,12 @@ Bulgarian of its own and OpenSubtitles' search found none, but there is English 
 the master lists `mtbg`, "Bulgarian (AI translation)", `LANGUAGE="bg"`, so a player set to Bulgarian picks it.
 Nothing is translated until a player asks for that track.
 
+**Also when OpenSubtitles can't deliver** (2026-11-24, `session.js` osOff): its search failed, the day's
+download quota is spent and the pick isn't on disk (`opensubs.js` quotaOut, until the `reset_time_utc` of a
+download that left none or was refused with 406), a download failed, or no pick fitted the video. A subtitle
+downloaded before still wins (no quota). A player already given `osbg` gets the translation through it, and
+one given `mtbg` keeps it once the quota is back. Checked in Node with both services stubbed (7 cases).
+
 - **What is sent.** An OpenAI model (`REMUX_TRANSLATE_MODEL`, Chat Completions, a JSON schema for the answer)
   gets 40 lines at a time, with their times, and what keeps a film consistent: the title, year and story, the
   characters from TMDB with the actor's gender (Bulgarian past tense and adjectives agree with the speaker and
