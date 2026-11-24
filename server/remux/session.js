@@ -11,6 +11,7 @@ const { Splitter } = require('./mp4');
 const { ffmpegArgs, seekTime, subFiles: runFiles, SUB_LANGS } = require('./media');
 const sidecar = require('./sidecar');
 const opensubs = require('./opensubs');
+const translate = require('./translate');
 const swarm = require('./swarm');
 const cfg = require('./config');
 
@@ -24,6 +25,10 @@ const DRAIN_AHEAD = 75, BEAT_MS = 1000, BEAT_STALE_MS = 4000;
 // after about 6 s and, after two, loads nothing more, video too. S3E6 (2026-11-07 18:08 UTC): its .srt took 49 s
 // from a swarm of 1 peer, sub0-0.vtt went unanswered six times and the video stalled on segments it had on disk.
 const SIDECAR_WAIT_MS = 4000;
+// a subtitle segment of a translated track waits at most this long for its lines (Safari gives a subtitle request
+// 10 s); the lines past the player are translated every PUMP_MS as ffmpeg writes the English
+// (URGENT: lines per call while a player waits)
+const TRANSLATE_WAIT_MS = 6000, PUMP_MS = 3000, URGENT = 12;
 // OpenSubtitles downloads in one language found not to be this video before giving up (nextPick)
 const MISFITS = 2;
 // torrents whose files carry TV captions (ALL CAPS): the next episode fetches better subtitles right away
@@ -63,6 +68,8 @@ class Session {
         this.osPick = {};   // the pick osLines were downloaded from
         this.osFit = {};   // per language: { lines: English lines at the last fit, cues }
         this.misfits = {};   // per language: downloads left out as not this video (nextPick)
+        this.mtWait = [];   // the starts of the translated segments players wait for (mtCues)
+        this.pumping = {};
         // subtitle 0 is English when the file has English ones (media.js puts them first)
         this.english = !!media.subs.length && media.subs[0].lang === 'en';
         this.fitted = -40;   // caption lines at the last fit (the first at 20)
@@ -286,18 +293,21 @@ class Session {
     }
 
     // The subtitle tracks, English, Bulgarian, Russian: the file's own (`sub<k>`, k its place in m.subs) and,
-    // in a language it has none in, the one from OpenSubtitles (`os<lang>`). Ids, not places in this list, go
-    // into the playlists: OpenSubtitles may answer after the master was made.
+    // in a language it has none in, the one from OpenSubtitles (`os<lang>`), else one translated from the English
+    // (`mt<lang>`, translate.js). Ids, not places in this list, go into the playlists: OpenSubtitles may answer
+    // after the master was made.
     tracks() {
         const own = this.m.subs.map((s, k) => ({ id: `sub${k}`, lang: s.lang, title: (s.tags && s.tags.title) || '' }));
         const ext = SUB_LANGS.filter(l => !own.some(t => t.lang === l) && (l === 'en' ? this.better : this.found[l]))
             .map(l => ({ id: `os${l}`, lang: l, title: '' }));
-        return own.concat(ext).sort((x, y) => SUB_LANGS.indexOf(x.lang) - SUB_LANGS.indexOf(y.lang));
+        const mt = Object.keys(translate.LANGS).filter(l => !own.some(t => t.lang === l) && l in this.found && !this.found[l] &&
+            (this.english || this.better) && translate.configured()).map(l => ({ id: `mt${l}`, lang: l, title: 'AI translation' }));
+        return own.concat(ext, mt).sort((x, y) => SUB_LANGS.indexOf(x.lang) - SUB_LANGS.indexOf(y.lang));
     }
 
     // a track id from a request: known now, or once OpenSubtitles has answered
     async hasTrack(id) {
-        if (!this.tracks().some(t => t.id === id) && /^os/.test(id)) await this.ready();
+        if (!this.tracks().some(t => t.id === id) && /^(os|mt)/.test(id)) await this.ready();
         return this.tracks().some(t => t.id === id) || this.ownEnglish(id);
     }
 
@@ -318,7 +328,8 @@ class Session {
         const from = this.m.bounds[n], to = this.m.bounds[n + 1];
         // only the running ffmpeg writes them: none, or one from a later segment (a seek), never will
         const passed = () => { const j = this.job; return !j || n < j.start || j.cur > n || j.ended; };
-        const own = /^sub(\d+)$/.exec(id);
+        // (a translation waits for the file's own English it is made from)
+        const own = /^sub(\d+)$/.exec(id) || (/^mt/.test(id) && this.english && !this.better && [id, '0']);
         if (own && this.m.subs[+own[1]].sidecar == null && !passed()) {
             // just past ffmpeg: let it on; far past it is a seek, and the video request restarts ffmpeg there
             if (n <= this.job.cur + JUMP) { this.subWant = Math.max(this.subWant, n + 1); this.flow(); }
@@ -328,7 +339,7 @@ class Session {
         // (as Apple's HLS spec has it), Safari shows it once, but a Samsung TV AirPlayed to showed it twice, one
         // copy over the other (Desperate Housewives, Nov 2026: the TV, "MFi_AirPlay_Device" in the access log,
         // fetched sub0-<n>.vtt itself; 2026-11-18 S3E10 served 1078 cues for its lines, many in two segments).
-        const cues = (await this.allCues(id, SIDECAR_WAIT_MS)).filter(c => c.end > from && c.start < to)
+        const cues = (await this.allCues(id, SIDECAR_WAIT_MS, from, to)).filter(c => c.end > from && c.start < to)
             .map(c => ({ start: Math.max(c.start, from), end: Math.min(c.end, to), text: c.text }))
             .filter(c => c.end - c.start > 0.05);
         return 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n' + vtt(cues);
@@ -342,8 +353,9 @@ class Session {
         return 'WEBVTT\n\n' + vtt(await this.allCues(id));
     }
 
-    // (ms: wait no longer than that for the torrent's subtitle files, then answer with what is known)
-    async allCues(id, ms) {
+    // (ms: wait no longer than that for the torrent's subtitle files, then answer with what is known; from-to: the
+    // segment a translation waits for)
+    async allCues(id, ms, from, to) {
         await (ms ? Promise.race([this.sidecars, new Promise(r => setTimeout(r, ms).unref())]) : this.sidecars);
         if (this.ownEnglish(id)) id = 'sub0';
         const own = /^sub(\d+)$/.exec(id);
@@ -356,6 +368,8 @@ class Session {
         } else if (id === 'osen') {
             await this.fetched;
             all = this.better || [];
+        } else if (/^mt/.test(id)) {
+            all = await this.mtCues(id.slice(2), from, to);
         } else {
             all = await this.osCues(id.slice(2));
         }
@@ -405,8 +419,7 @@ class Session {
         if (!got) return [];
         const same = map && this.ext && String(this.ext.release).toLowerCase() === String(got.release).toLowerCase();
         if (same) return cues.map(c => ({ start: map(c.start), end: map(c.end), text: c.text })).filter(c => c.end > c.start);
-        if (this.english) this.readCues(0);
-        const ref = this.better || (this.english ? [...this.cues[0].values()].sort((a, b) => a.start - b.start) : []);
+        const ref = this.englishRef();
         const fit = this.osFit[lang] || (this.osFit[lang] = { lines: -40, cues });
         if (ref.length >= 20 && ref.length >= fit.lines + 40) {
             fit.lines = ref.length;
@@ -419,6 +432,52 @@ class Session {
             else if (a.misfit) { fit.cues = []; this.nextPick(lang, got); }
         }
         return fit.cues;
+    }
+
+    // English in step with the video: the download lined up, else the file's own as far as ffmpeg has written them
+    englishRef() {
+        if (this.english) this.readCues(0);
+        return this.better || (this.english ? [...this.cues[0].values()].sort((a, b) => a.start - b.start) : []);
+    }
+
+    // A translated track (translate.js): the English lines with a translation. A segment (from-to) waits up to
+    // TRANSLATE_WAIT_MS for its lines, translated first; the whole track (no from) answers with what is done.
+    async mtCues(lang, from, to) {
+        const b = this.translator(lang);
+        if (from != null) {
+            const missing = () => this.englishRef().some(c => c.end > from && c.start < to && b.pending(c.text));
+            this.mtWait.push(from);
+            this.pump(lang);
+            await this.until(() => !missing(), TRANSLATE_WAIT_MS, 250).catch(() => {});
+            this.mtWait.splice(this.mtWait.indexOf(from), 1);
+        } else this.pump(lang);
+        return this.englishRef().filter(c => b.text(c.text) !== undefined).map(c => ({ start: c.start, end: c.end, text: b.text(c.text) }));
+    }
+
+    translator(lang) {
+        return translate.book(Object.assign({ hash: this.m.hash, index: this.m.index }, this.source), lang);
+    }
+
+    // From the first time a player asks for a translated track: the English lines from just behind the player
+    // on, translated as ffmpeg writes them, so they are ready before the player asks; a segment a player waits
+    // for first
+    pump(lang) {
+        if (this.pumping[lang]) return;
+        this.pumping[lang] = true;
+        const b = this.translator(lang);
+        const step = () => {
+            if (this.closed) return;
+            const at = this.mtWait.length ? Math.min(...this.mtWait) : Math.max(0, (this.m.bounds[this.lastReq] || 0) - 30);
+            const p = b.next(this.englishRef(), at, this.mtWait.length ? URGENT : undefined);
+            if (p) p.then(step); else setTimeout(step, PUMP_MS).unref();
+        };
+        step();
+    }
+
+    // the whole film translated (download.js: its English is all known then)
+    async translateAll(lang) {
+        const b = this.translator(lang);
+        for (let p; (p = b.next(this.englishRef(), 0));) await p;
     }
 
     // a download that isn't this video: the next one OpenSubtitles has, up to MISFITS per language and session

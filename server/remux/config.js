@@ -38,5 +38,21 @@ module.exports = {
     trackers: (process.env.REMUX_TRACKERS || 'tracker.opentrackr.org:1337,open.stealth.si:80,tracker.torrent.eu.org:451,open.demonii.com:1337')
         .split(',').map(s => s.trim()).filter(Boolean),
     // private KEY=value file with OPENSUBTITLES_API_KEY / _USER / _PASSWORD (or set them in the environment)
-    opensubtitlesEnv: process.env.OPENSUBTITLES_ENV || path.join(__dirname, '..', 'opensubtitles.env')
+    opensubtitlesEnv: process.env.OPENSUBTITLES_ENV || path.join(__dirname, '..', 'opensubtitles.env'),
+    // Bulgarian subtitles translated from the English ones where OpenSubtitles has none (translate.js): a private
+    // file with OPENAI_API_KEY (or the environment), the model, and what one film or episode may cost at most (USD)
+    openaiEnv: process.env.OPENAI_ENV || path.join(__dirname, '..', 'openai.env'),
+    translateModel: process.env.REMUX_TRANSLATE_MODEL || 'gpt-6-luna',
+    translateBudget: parseFloat(process.env.REMUX_TRANSLATE_BUDGET || '0.10'),
+    // `keys` from a private settings file of KEY=value lines (never in git), the environment's values first
+    privateEnv(file, keys) {
+        const out = {};
+        try {
+            for (const line of require('fs').readFileSync(file, 'utf8').split(/\r?\n/)) {
+                const m = /^\s*(\w+)\s*=\s*(.*?)\s*$/.exec(line);
+                if (m) out[m[1]] = m[2];
+            }
+        } catch (e) { /* no file: environment only */ }
+        return Object.fromEntries(keys.map(k => [k, process.env[k] || out[k]]));
+    }
 };

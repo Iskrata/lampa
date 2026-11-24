@@ -273,9 +273,9 @@ async function handle(req, res) {
         if (Date.now() - t0 > SLOW_MS) console.log(`${hash.slice(0, 8)}:${s.m.index} seg${m[1]} in ${sec(Date.now() - t0)} (${await swarm(hash)})`);
         return;
     }
-    if ((m = /^(sub\d+|os[a-z]{2})\.m3u8$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, playlist(s, i => `${m[1]}-${i}.vtt`), TYPES.m3u8);
-    if ((m = /^(sub\d+|os[a-z]{2})\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitleFile(m[1]), TYPES.vtt);
-    if ((m = /^(sub\d+|os[a-z]{2})-(\d+)\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitle(m[1], +m[2]), TYPES.vtt);
+    if ((m = /^(sub\d+|os[a-z]{2}|mt[a-z]{2})\.m3u8$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, playlist(s, i => `${m[1]}-${i}.vtt`), TYPES.m3u8);
+    if ((m = /^(sub\d+|os[a-z]{2}|mt[a-z]{2})\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitleFile(m[1]), TYPES.vtt);
+    if ((m = /^(sub\d+|os[a-z]{2}|mt[a-z]{2})-(\d+)\.vtt$/.exec(b)) && await s.hasTrack(m[1])) return send(res, 200, await s.subtitle(m[1], +m[2]), TYPES.vtt);
     return send(res, 404, 'not found');
 }
 

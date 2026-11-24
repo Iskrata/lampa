@@ -8,7 +8,8 @@ starts in Safari: Lampa's player just spins. This service repackages what TorrSe
 - **Subtitles:** English, Bulgarian and Russian, in that order: the file's own text subtitles as WebVTT (also
   the ones the torrent carries as `.srt`/`.vtt` files next to the video, "Subtitle files in the torrent"), and
   from OpenSubtitles in a language the file has none in, or in place of English TV captions (ALL CAPS)
-  ("Subtitles from OpenSubtitles" below). A "forced" track (only the lines for speech in another
+  ("Subtitles from OpenSubtitles" below); Bulgarian that neither has is translated from the English by an
+  OpenAI model ("Translated subtitles" below). A "forced" track (only the lines for speech in another
   language) is left out where the language has a full one: TYSON S01 (TBK) lists English Forced, English,
   English SDH, and the player showed the Forced one, empty (2026-10-20).
 
@@ -24,7 +25,7 @@ transcoding", storage key `torrserver_gts`), so Lampa itself is unchanged. Serve
 | `GET /gst/echo` | JSON. Lampa checks it before using `/gst/` (app.min.js `gstCheck`, it parses JSON) |
 | `GET /gst/<hash>/master.m3u8?index=<file>[&lang=ja][&tmdb=<id>&kind=tv\|movie]` | HLS master: one video+audio stream (English audio, or the `lang` asked for: `ja`), English/Bulgarian/Russian subtitle tracks (`NAME` English/Bulgarian/Russian, `LANGUAGE` en/bg/ru), English on by default when the audio isn't English |
 | `GET /gst/<hash>/<file>.<lang>/video.m3u8`, `init.mp4`, `seg<n>.m4s` | the stream |
-| `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles |
+| `GET /gst/<hash>/<file>.<lang>/<track>.m3u8`, `<track>-<n>.vtt` | subtitles: `sub<k>` the file's own (k: its place among them, English first), `os<lang>` from OpenSubtitles, `mt<lang>` translated from the English |
 | `GET /gst/<hash>/heartbeat` | TorrServer's stats for the player's info panel (`{Torrent, Readers, Pieces}`) |
 | `GET /gst/pick?tmdb=<id>&kind=movie\|tv[&season=&episode=][&lang=ja]` | the releases to play, ranked: `{ audio, choices: [{ res, label, releases }], found, took }` ("Picking a release" below) |
 | `POST /gst/pick/failed?hash=&tmdb=&kind=&why=[&title=]` | a player gave up on a release (no peers, too slow, no video): not offered for 6 h (no video: never) (by hash; by `title` where a listing's hash isn't known) |
@@ -58,6 +59,8 @@ Node 18.15+ (no dependencies; `fs.statfs`), plus ffmpeg and ffprobe 8.x. Environ
 | `TMDB_KEY` | Lampa's own public TMDB key (app.min.js `key()`): the title's names, dates and runtimes |
 | `REMUX_TRACKERS` | `tracker.opentrackr.org:1337,open.stealth.si:80,tracker.torrent.eu.org:451,open.demonii.com:1337`: UDP trackers asked for real seeder counts |
 | `OPENSUBTITLES_ENV` | `../opensubtitles.env` (next to the app folder): private `KEY=value` lines `OPENSUBTITLES_API_KEY`, `OPENSUBTITLES_USER`, `OPENSUBTITLES_PASSWORD` (the same names work as environment variables). Without a key, no OpenSubtitles |
+| `OPENAI_ENV` | `../openai.env`: a private `OPENAI_API_KEY=` line (or that environment variable). Without a key, no translated subtitles ("Translated subtitles" below) |
+| `REMUX_TRANSLATE_MODEL` / `REMUX_TRANSLATE_BUDGET` | `gpt-6-luna` / `0.10`: the OpenAI model that translates subtitles (`gpt-6-luna` or `gpt-5.6-luna`: `translate.js` MODELS has their prices), and the most one film or episode may cost, in USD |
 | `REMUX_DEBUG` | set it to log every fragment's time and segment |
 
 `node server.js`. On the home server it's a Windows service; see the ruby repo's `scripts/lampa-setup.ps1`.
@@ -797,6 +800,47 @@ followed from anchor to anchor. From 20 English lines, again every 40 more (abou
     223 English lines with 17 to 217 anchors, shift 0.1 s (0.08 s more than against the extracted srt: the session
     shows the file's own lines in step with the video, mp4.js); "Но сега когато войната свърши" at 10:05.20 vs "But now that" 10:05.17. The Russian:
     0-12 anchors, as it was until 223 English lines, then "not this video: no lines".
+
+## Translated subtitles (`translate.js`)
+
+**Bulgarian where nobody made any** (the user's call, 2026-11-24: "Fjord" (2026), TMDB 1401459, had English
+and Russian on OpenSubtitles and nothing Bulgarian there, on subs.sab.bz or subsunacs.net). When a file has no
+Bulgarian of its own and OpenSubtitles' search found none, but there is English (the file's own or a download),
+the master lists `mtbg`, "Bulgarian (AI translation)", `LANGUAGE="bg"`, so a player set to Bulgarian picks it.
+Nothing is translated until a player asks for that track.
+
+- **What is sent.** An OpenAI model (`REMUX_TRANSLATE_MODEL`, Chat Completions, a JSON schema for the answer)
+  gets 40 lines at a time, with their times, and what keeps a film consistent: the title, year and story, the
+  characters from TMDB with the actor's gender (Bulgarian past tense and adjectives agree with the speaker and
+  the listener), a glossary of names and terms in Cyrillic, notes (who says ти or Вие to whom), and the 8 lines
+  before with their translations. The answer adds to the glossary and notes, kept per title
+  (`REMUX_SUBS/tr-<movie|tv><tmdb>-bg.json`), so a series' episodes share them.
+- **When.** From the first request for the track, the English lines from 30 s behind the player on are
+  translated as ffmpeg writes them (about 2 min ahead of the player: AHEAD segments). A subtitle segment the
+  player asks for before its lines are done goes first, 12 lines at a time, and waits at most 6 s (Safari gives a
+  subtitle request 10 s, and two timeouts stop it loading anything, "A subtitle segment the player waits for");
+  lines not done by then are missing from that segment. A download (`download.js`) translates the whole film.
+- **Kept**, by English text, per torrent file (`REMUX_SUBS/tr-<hash>-<file>-bg.json`, with what it cost), so a
+  film is paid for once, for everyone. A file stops being translated at `REMUX_TRANSLATE_BUDGET` (USD 0.10). A
+  failed call waits 1 min; a line left out of two answers is given up.
+- **A name said wrong on purpose stays wrong.** Fjord's teacher calls Elia "Ella" and "Elsa" until she says
+  "Actually, it's Elia". The first version wrote Елия everywhere (the glossary had "Ella = Елия"), which made
+  that line pointless; the instructions now keep such names as said, out of the glossary.
+
+**Measured 2026-11-24** on Fjord's whole English (OpenSubtitles' "Fjord.2026.1080p.AMZN.WEB-DL...-CHORTLE",
+2,003 lines, 65,480 characters, 2 h 24 min), translated from the Mac with `translate.js`, 47 calls of 40 lines:
+
+| model, reasoning | cost | time per call | notes |
+|---|---|---|---|
+| `gpt-6-luna`, none | $0.027 | 7.1 s | picked |
+| `gpt-6-luna`, default | $0.058 | 14.2 s (1,400 of 2,300 output tokens reasoning) | some lines left long, no line break |
+| `gpt-5.6-luna`, none | $0.064 | 8.4 s | "So, you called Child Protection?" as "Затова сте се обадили" ("that's why"); a wrong note ("Мац is the father") |
+
+Read side by side at 5:39-6:53 (school), 68:49-69:55 (the teacher questioned) and 109:28-110:19 (court), the
+three read as natural Bulgarian subtitles, not word for word: names the same throughout (Михай, Лисбет, Нура,
+Джудит, Тимотей), "Добре дошъл" to Mihai, "Ваша чест" and Вие in court, ти between the neighbours Lisbet and
+Mia. Weak spots: rhymed song lines come out flat ("♪ И с калинка на нея съм ♪"). `reasoning_effort` "minimal"
+is refused by both luna models; "none" is accepted.
 
 Not handled: video codecs a browser can't decode (MPEG-4 Part 2/Xvid, VC-1) get an error instead of a
 playlist. Dolby Vision profile 5 (no HDR10 base layer) shows wrong colours. Bitmap subtitles (PGS,

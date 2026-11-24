@@ -304,4 +304,4 @@ async function lampaSearch(path, query, res) {
     res.end(a);
 }
 
-module.exports = { pick, home, link, lampaSearch, sameFilm, rules };
+module.exports = { pick, home, link, lampaSearch, sameFilm, rules, json };

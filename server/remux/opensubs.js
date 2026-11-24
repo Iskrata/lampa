@@ -16,15 +16,8 @@ const API = 'https://api.opensubtitles.com/api/v1', UA = 'Ruby v1.0';
 let login = null;   // { token, base, until }
 
 function creds() {
-    const c = { key: process.env.OPENSUBTITLES_API_KEY, user: process.env.OPENSUBTITLES_USER, pass: process.env.OPENSUBTITLES_PASSWORD };
-    // the private settings file (never in git): KEY=value lines
-    try {
-        for (const line of fs.readFileSync(cfg.opensubtitlesEnv, 'utf8').split(/\r?\n/)) {
-            const m = /^\s*(OPENSUBTITLES_\w+)\s*=\s*(.*?)\s*$/.exec(line);
-            if (m) c[{ OPENSUBTITLES_API_KEY: 'key', OPENSUBTITLES_USER: 'user', OPENSUBTITLES_PASSWORD: 'pass' }[m[1]]] = m[2];
-        }
-    } catch (e) { /* no file: environment only */ }
-    return c;
+    const e = cfg.privateEnv(cfg.opensubtitlesEnv, ['OPENSUBTITLES_API_KEY', 'OPENSUBTITLES_USER', 'OPENSUBTITLES_PASSWORD']);
+    return { key: e.OPENSUBTITLES_API_KEY, user: e.OPENSUBTITLES_USER, pass: e.OPENSUBTITLES_PASSWORD };
 }
 
 async function request(base, route, opts) {

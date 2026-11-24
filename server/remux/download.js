@@ -120,6 +120,7 @@ async function run(j) {
     await Promise.all([s.fetched, s.ready(60000)]);
     const tracks = [];
     for (const t of s.tracks()) {
+        if (/^mt/.test(t.id)) await s.translateAll(t.lang);
         const text = await s.subtitleFile(t.id);
         if (!/-->/.test(text)) continue;   // nothing that fits this video
         const file = path.join(folder(j), `${t.id}.vtt`);
