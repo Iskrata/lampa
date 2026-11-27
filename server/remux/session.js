@@ -574,7 +574,11 @@ class Session {
     }
 
     readCues(k) {
-        for (const f of fs.readdirSync(this.dir)) {
+        // a folder deleted under a live session (the other install's close after a handover, the idle sweep) has
+        // no cues: an uncaught ENOENT here, from the translation's timer, stopped the service on 2026-11-24 14:51
+        let names;
+        try { names = fs.readdirSync(this.dir); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
+        for (const f of names) {
             const run = new RegExp(`^sub${k}-(\\d+)\\.vtt$`).exec(f);
             if (!run) continue;
             // each run's subtitle times start at its -ss; shown in step with the video (mp4.js)
