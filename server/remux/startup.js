@@ -1,5 +1,6 @@
-// How far a file is from playing (README "Loading progress"): until segment 0 is written, the share of the
-// bytes that takes which TorrServer already holds, from its piece map. Starting waits on TorrServer finding
+// How far a file is from playing (README "Loading progress"): until the first segment is written, the share of the
+// bytes that takes which TorrServer already holds, from its piece map (segment 0's, or a resume's from where ffmpeg
+// reads). Starting waits on TorrServer finding
 // peers (README "Why starting takes longer than a seek"), and these bytes are what it downloads meanwhile:
 // ffprobe reads up to the first PROBE_BYTES of the file, then segment 0 is the file's first seconds.
 'use strict';
@@ -34,16 +35,26 @@ function report(hash, index, cache, torrent) {
     let off = 0, file = null;
     for (const f of files) { if (String(f.id) === String(index)) { file = f; break; } off += f.length; }
     if (!file || !pl) return { pct: 0 };
-    const need = needed(st, file.length), end = off + need;
+    // a resume: ffmpeg reads from where it seeked to, past the file's start, and segment 0's bytes say nothing.
+    // Measured on them, the Ruby Mac app's resume of Desperate Housewives S3E20 at 17:40 sat at 62 % for the
+    // 58 s the cold torrent took (2026-11-27 14:03 UTC). Its first segment is about as long as segment 0
+    let from = 0, need = needed(st, file.length);
+    const s = st && st.session, j = s && s.job, w = source.waiting(hash, index);
+    if (j && j.start > 0 && w) {
+        const m = s.m;
+        from = w.pos;
+        need = Math.max(1, Math.min(file.length - from, m.bandwidth / 8 * m.bounds[1]));
+    }
+    const a = off + from, end = a + need;
     let have = 0;
-    for (let i = Math.floor(off / pl); i * pl < end; i++) {
+    for (let i = Math.floor(a / pl); i * pl < end; i++) {
         const p = cache.Pieces && cache.Pieces[i];
         if (!p) continue;
-        const overlap = Math.min(end, (i + 1) * pl) - Math.max(off, i * pl);
+        const overlap = Math.min(end, (i + 1) * pl) - Math.max(a, i * pl);
         have += p.Completed ? overlap : overlap * Math.min(1, (p.Size || 0) / (p.Length || pl));
     }
     // what an earlier open kept on disk (source.js) needs no piece
-    have = Math.max(have, source.covered(hash, index, 0, need));
+    have = Math.max(have, source.covered(hash, index, from, from + need));
     return { pct: Math.min(99, Math.floor(have * 100 / need)) };
 }
 

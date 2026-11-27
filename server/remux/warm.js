@@ -76,7 +76,8 @@ async function warm(q, session) {
         let to = from;
         while (to + 1 < b.length - 1 && b[to + 1] - b[from] < WARM_S) to++;
         const done = `${hash}:${index}:${lang}:${from}`;
-        if (Date.now() - (warmed.get(done) || 0) < AGAIN_MS) return { hash, index, segments: [from, to], took: Date.now() - t0, again: true };
+        // (its segments may be gone since: played past and pruned, or the session closed)
+        if (Date.now() - (warmed.get(done) || 0) < AGAIN_MS && s.has(from) && s.has(to)) return { hash, index, segments: [from, to], took: Date.now() - t0, again: true };
         // one segment after another, as a player asks for them (one ffmpeg run from `from`)
         let mine = 0;
         for (let n = from; n <= to; n++) { mine = Date.now(); await s.segment(n); }

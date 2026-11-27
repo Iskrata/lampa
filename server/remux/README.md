@@ -331,7 +331,8 @@ next episode while one plays (desktop/README.md "Warming up").
   memory (`UseDisk` off). So what a warm-up leaves for Play is on disk: the file list, the start and index, the
   session and those segments.
 - At most 2 at once (429 otherwise), one per torrent (409). A file whose same segments were warmed in the last
-  30 min answers at once (`again`).
+  30 min answers at once (`again`), if they are still on disk (a player may have played past them and pruned
+  them, or closed the session).
 - The log has one line per warm-up: `warm b43df67a:255 S2E3 in 64.4 s: file list 0.1 s, open 23.6 s, seg0-4 40.7 s`.
 
 **Measured** 2026-10-26 on the home server. A test copy of this service (port 8098, its own cache and sources)
@@ -368,7 +369,12 @@ the master, init and segments up to 60 s of video, then `/gst/remove`. Breaking 
 `/gst/<hash>/heartbeat?index=<file>` adds `Startup: { pct }` (`startup.js`), which the loading card shows as a
 percentage and a bar (desktop/progress.js). Lampa's own heartbeat (no `index`) is unchanged. `pct` is the share
 of the bytes starting needs that TorrServer already holds: the first 20 MB of the file (ffprobe's
-`-probesize`) until the probe is done, then up to the end of segment 0 (bitrate × its length). The count
+`-probesize`) until the probe is done, then up to the end of segment 0 (bitrate × its length). For a resume
+(ffmpeg's run starts past segment 0) it is the bytes from where ffmpeg reads (the latest `/gst/src/` read
+TorrServer has to answer, `source.waiting`), about one segment's worth: measured on segment 0, the Ruby Mac
+app's resume of Desperate Housewives S3E20 at 17:40 sat at 62 % for the 58 s its cold torrent took (2026-11-27
+14:03 UTC). Checked in Node on a made-up piece map (2026-11-28): the file's start complete and the resume's
+pieces a quarter in gave 25 % (was 99 %). The count
 comes from TorrServer's `/cache` piece map (`PiecesLength`, each piece's `Size` / `Completed`), from where the
 file starts in the torrent, so bytes already cached count, and so do bytes an earlier open kept on disk
 ("Opening a file again"). It stays at 99 until the first segment the player asks for is written (segment 0, or

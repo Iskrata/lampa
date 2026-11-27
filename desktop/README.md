@@ -337,12 +337,17 @@ opened (its start and index kept on disk) and its first 60 s made from where it 
   or the last jump, not the position: a resumed episode is past 0:60 at once, and the first version warmed the
   next one right as this one started, so they competed). Lampa's Next episode and autoplay then open a file whose
   master and first segments are ready.
+- **Back on a title page from the player**, as when opening it (Lampa fires no new `complite` there): what Play
+  would start now, from the place just saved.
 
 It warms from where Lampa will resume: the saved time (`at=`, resume.js `time`), not the percent. 30 % of Breaking
 Bad S2E8 was 850 s while Lampa resumed at 845 s, a segment earlier than the warmed ones.
 
 One warm-up at a time per page. A title page's or next episode's goes first and replaces such a one still
-waiting; Continue watching's 2nd and 3rd queue behind. Each is asked for once per page load. Play reuses the
+waiting; Continue watching's 2nd and 3rd queue behind. The same warm-up is asked again after 30 minutes (the remux service's `again` window), not once per
+page load: the Ruby Mac app, open all day, had warmed Desperate Housewives S3E20 at 08:59 UTC and never again,
+and its resume there at 14:03 waited 59 s for a cold torrent (2026-11-27; that day Play came 2 s after the player
+closed, so warming on the close wouldn't have saved much of it, and the 1080p pack itself was slow all day). Play reuses the
 pick of every warmed title (not only the last), so Play on the 2nd starts the release that was warmed. Only
 through the remux service, with "Pick torrents for me" on.
 

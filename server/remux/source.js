@@ -137,6 +137,7 @@ async function handle(req, res, hash, index, rec) {
         a = end;
     }
     if (a <= z) {
+        f.waiting = { pos: a, at: Date.now() };
         up = up || await upstream(hash, index, a, z);
         const chunks = [], from = a;
         let n = 0, n2 = 0;
@@ -191,4 +192,8 @@ function covered(hash, index, a, b) {
     return n;
 }
 
-module.exports = { url, probe, handle, covered, headEnd };
+// where the latest read that TorrServer has to answer starts, and when it was asked ({ pos, at }), or null: for a
+// resume, where ffmpeg seeked to (startup.js)
+function waiting(hash, index) { return entry(hash, index).waiting || null; }
+
+module.exports = { url, probe, handle, covered, headEnd, waiting };

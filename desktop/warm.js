@@ -5,25 +5,31 @@
 //     Play then reuses), at the episode and place Play would start from (resume.js)
 //   * Continue watching: its first 3 titles, in order (continue.js)
 //   * while an episode plays: the next one in the player's playlist, once AFTER_S of this one has played
+//   * back on a title page from the player, as when opening it: what Play would start now (the saved place)
 // One at a time. A title page's or next episode's ask goes first and replaces such an ask still waiting;
 // Continue watching's 2nd and 3rd wait behind (later). Only through the remux service, with
 // "Pick torrents for me" on.
 (function () {
-    var DWELL_MS = 1500, AFTER_S = 60;
-    var busy = false, queue = [], done = {};
+    // AGAIN_MS: the same warm-up is asked again after this long, as the remux service answers "warm already" for
+    // 30 min (server/remux/warm.js AGAIN_MS) and a torrent left alone goes cold. Once per page load kept the Ruby
+    // Mac app, open all day, from warming Desperate Housewives S3E20 at 14:03 UTC: it had warmed it at 08:59
+    // (2026-11-27, the start then waited 59 s for a cold torrent)
+    var DWELL_MS = 1500, AFTER_S = 60, AGAIN_MS = 30 * 60000;
+    var busy = false, queue = [], done = {};   // key -> when it was asked
 
     function url() { return Lampa.Torserver.url(); }
     function isShow(c) { return !!(c.original_name || c.first_air_date || c.number_of_seasons); }
 
     // q: the query for /gst/warm; key: what it warms (asked once per page load); later: after the others, kept
     function ask(key, q, later) {
-        if (done[key]) return;
+        if (Date.now() - (done[key] || 0) < AGAIN_MS) return;
         if (busy) {
             if (later) queue.push({ key: key, q: q, later: true });
             else queue = [{ key: key, q: q }].concat(queue.filter(function (x) { return x.later; }));
             return;
         }
-        busy = done[key] = true;
+        busy = true;
+        done[key] = Date.now();
         var t0 = Date.now();
         fetch(url() + '/gst/warm?' + q, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
             console.log('Ruby warm', key, j.error || 'segments ' + j.segments.join('-') + (j.again ? ' (warm already)' : ''), 'in', Date.now() - t0, 'ms');
@@ -61,15 +67,21 @@
         if (m) ask(m[1].slice(0, 8) + ':' + m[2], 'hash=' + m[1] + '&index=' + m[2] + (/[?&]lang=ja\b/.test(next.url) ? '&lang=ja' : ''));
     }
 
+    // the title page `card` (or whichever is open), if it is still open and no player is, after DWELL_MS
+    function dwell(card) {
+        setTimeout(function () {
+            var a = Lampa.Activity.active() || {};
+            if (a.component === 'full' && a.card && (!card || a.card.id === card.id) && !Lampa.Player.opened()) title(a.card);
+        }, DWELL_MS);
+    }
+
     function init() {
         Lampa.Listener.follow('full', function (e) {
-            if (e.type !== 'complite' || !e.data || !e.data.movie) return;
-            var card = e.data.movie;
-            setTimeout(function () {
-                var a = Lampa.Activity.active() || {};
-                if (a.component === 'full' && a.card && a.card.id === card.id && !Lampa.Player.opened()) title(card);
-            }, DWELL_MS);
+            if (e.type === 'complite' && e.data && e.data.movie) dwell(e.data.movie);
         });
+        // closing the player shows the title page again without a new 'complite'; a release switch (swarm.js)
+        // opens the next player within DWELL_MS
+        Lampa.Player.listener.follow('destroy', function () { dwell(null); });
         // AFTER_S played since the start, not the position: a resumed episode is past 60 s at once, and the next
         // one's warm-up then competed with its start (Safari, Breaking Bad S2E8 resumed at 845 s, 2026-10-26: the
         // first segment past the warm ones took 37.7 s while the next episode opened)
