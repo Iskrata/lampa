@@ -102,6 +102,9 @@
         Lampa.Player.listener.follow('destroy', function () { at = native = 0; playing = null; });
     }
 
+    // next(t): the stream the player is given next starts at t (swap.js, a switch of release while playing)
+    window.rubyStartAt = { next: function (t) { at = native = t > 0 ? t : 0; } };
+
     var timer = setInterval(function () {
         if (!window.Lampa || !Lampa.Player || !Lampa.Player.listener || !Lampa.Storage || !Lampa.Timeline) return;
         clearInterval(timer);

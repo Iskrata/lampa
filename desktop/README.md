@@ -282,11 +282,11 @@ episode.
      written and no picture for 20 s, or a start or film stuck while no request waits on the torrent (the
      server is ahead; the torrent then reads nothing because nobody asks, which said "the torrent is barely
      downloading"). Caddy and the tunnel take a segment from the remux in under 0.4 s, so only the page can
-     tell a slow device. Where the browser plays HLS itself (Safari) the switch is asked for with one tap ("The
-     connection is too slow for 1080p right now." → Play in 720p, from where you are / Close): Safari plays a
-     new `<video>` only from a tap, and switched without one it refused the 720p and the player's own play
-     button didn't start it either. Elsewhere (hls.js) it switches with a note. With nothing smaller, the error
-     says the connection is too slow, not the codec or the torrent.
+     tell a slow device. It switches with a note, inside the open player ("Switching releases while playing"
+     below). Until 2026-11-28 Safari was asked with one tap ("The connection is too slow for 1080p right now." →
+     Play in 720p, from where you are / Close): Safari plays a new `<video>` only from a tap, and switched without
+     one it refused the 720p and the player's own play button didn't start it either. The switch now keeps the
+     `<video>`. With nothing smaller, the error says the connection is too slow, not the codec or the torrent.
      Checked 2026-11-18 in the iOS 27 simulator's Safari: dev server, a local remux on ruby's TorrServer (SSH
      tunnel), video segments held to 2.5 Mbit/s and the speed test not, The Phantom of the Opera resumed at
      1:24. The 1080p x265 (3.0 Mbit/s needed) reproduced the Mac: `ready=1`, nothing buffered. Before: "the
@@ -552,13 +552,14 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     the home server): Spider-Man No Way Home, 221 releases, 16 left out, the check 1.66 s, the whole
     search 2.4 s.
 - **Switching.** The release Lampa opens (Play's choice, or a pick from the list through
-  `Lampa.Torrent.start`) is watched. When it fails, it switches to the next of the same resolution in
-  Play's ranking (the server's, or this browser's: `rubyPlay.ranked`), or, for a release picked from the
+  `Lampa.Torrent.start`) is watched. When it fails, it switches to the next of the same resolution, else of the
+  next smaller one (since 2026-11-28), in Play's ranking (the server's, or this browser's: `rubyPlay.ranked`), or, for a release picked from the
   list, the ranking of that search (`rubyPick.ranked`). A switch for no peers or too slow is reported to
   the server (`POST /gst/pick/failed`), which never offers that release again; a dead one it saw itself. That skips what was tried, by name and by hash
   (one torrent is listed under several names), and anything this device can't decode (compat.js). It
   says so ("This release stopped sending: switching to Blu-ray · H.264 · 220 seeders") and goes on at the
   same moment. Its timecode is set by hand, whatever Settings → Player → timecode says. At most 3 switches.
+  Once the player is open, the switch happens inside it ("Switching releases while playing" below).
   - **No peers:** no file list 45 s after the release was opened, while Lampa's loading window is still
     up (Lampa itself gives up at 90 s).
   - **Couldn't be fetched:** TorrServer refused the add (`Lampa.Torserver.hash` failed: its `.torrent` link
@@ -635,6 +636,64 @@ for it on 2026-10-20, after Spider-Man No Way Home wouldn't load on a phone: the
     showed a short message and left Lampa's window up. Not measured on the phone.
   - Not checked: Safari (WebDriver needs "Allow remote automation" in Safari's Developer settings),
     a real phone, TV.
+
+## Switching releases while playing
+
+Asked for 2026-11-28, after Desperate Housewives S3E20 crawled from 0:03 on the Ruby Mac app: "it should've auto
+switched to a better one, or found it right away from the beginning. I don't want prompts or to choose myself ...
+starting faster with lower quality and upgrading to a higher quality one through time based on internet speed, if
+such a higher quality torrent exists". What happened that morning (the remux log, 08:57-08:59 UTC): its only 1080p
+release (98dbecc5, the S03 SiGMA pack, 8.2 Mbit/s an episode) had 5-6 peers sending 0.5-1 MB/s; segments took 4-49 s.
+swarm.js called it too slow at 08:58:10 and stopped at "no other 1080p release" with three 720p ones found. The video
+crawled on, reached 120 s and counted as "played", so the server offered it first again. (The jump from 0:03 to 0:41
+was the intro skip, introdb.js: S3E20's intro is 3-41 s.)
+
+- **Smaller when nothing is left at this size** (swarm.js `nextRelease`): too slow, dead or no peers go to the next
+  release of the same resolution, else of the next smaller one.
+- **Inside the open player, no tap** (`swap.js`): the remux readies the other release (`/gst/warm` with `like=`: the
+  same episode, by the playing file's name, at the same moment, server/remux/README.md "Switching releases"), then
+  the player takes it in the same `<video>`: `PlayerVideo.destroy(savemeta, keepPip)` leaves the element and the next
+  `PlayerVideo.url()` takes it as it is (Lampa's picture-in-picture path, `create$9`'s `retainedPipVideo`), so Lampa
+  binds nothing twice and Safari, which plays a new `<video>` only from a tap, keeps playing. startat.js starts the
+  new stream at the moment (`rubyStartAt.next`). swarm.js, compat.js and play.js follow the switch
+  (`rubySwap.follow`). The old torrent is dropped. Lampa's playlist still names the old torrent: its next episodes
+  are sent to the same episodes in the new one (`remap`, by SxxEyy in the file names). A release that can't be
+  opened (not that episode in it, no file list, too slow to make 12 s within the server's 90 s): the next one, up to
+  3 (`rubySwap.toAny`). None: the player plays on as it was, with a note. The first version closed the player and
+  opened the release as at Play: in Safari the new `<video>` sat paused (iOS 26 simulator, 2026-11-28: the S01-08
+  720p pack couldn't make 12 s in 90 s, the next release opened paused and on S1E1, since Play goes where you are).
+- **Readied early:** a cold file takes as long to open as a cold start (Desperate Housewives' S01-08 720p pack
+  167a5870: probe 77.5 s on 2026-11-28), so after 10 s of the video falling behind (`EARLY_MS`, the same test as "too
+  slow") the next release is readied; the switch at 30 s (60 s before anything played) then takes it at once.
+- **Too slow for this connection** (compat.js → `rubyPlay.smaller`): the next smaller resolution the same way, with a
+  note and no question (Safari was asked with a tap until now).
+- **A crawl isn't "played"** (server/remux/releases.js `sent`): a segment the player waited half its length or more
+  for starts the 120 s count again.
+- **Moving up** (`upgrade.js`): while a release below what this screen and connection take plays, after 60 s of
+  steady playing the remux warms the best one above it 45 s ahead (60 s of it). It moves up only when that was made in
+  at most 0.6 of its length (measured in that call, at least 20 s of video) and the same moment was found in it
+  (same length or subtitle lines, not a guess); when the video reaches the warmed place the player takes it there
+  ("Now in 1080p"). Too slow: tried again in 5 min. Releases that failed in the last hours come in the server's
+  answer as `upgrade` only (never started with or switched down to), so the upgrade can measure them again. Not
+  during AirPlay or in the last 2 min. Disarmed when a switch down starts.
+
+Checked 2026-11-28 (dev server with `DEV_EVAL=1`, a local remux on ruby's TorrServer, Desperate Housewives S3E20,
+muted):
+- Headless Chrome (hls.js): the 1080p stalled at 0:00.7 (seg0 in 52 s, 0.7 MB/s); `rubyPlay.smaller()` readied
+  167a5870 (probe 77.5 s, cold), then the player took it in the same `<video>` at 0.7 s.
+- Safari, iOS 26 simulator, in iOS's own full-screen player (iPhones start there), one tap to start Play and none
+  after: while the 1080p started, the stall watch readied the 720p `cc382536` (24.8 s); `rubyPlay.smaller()` at 2:22
+  switched at once, the same `<video>`, which played on (2:22 → 3:16 in 54 s).
+- Safari, the same, moving up: the 1080p failed lately (offered only to move up to), Play started the 720p
+  `0b667957` at 7:03. After 60 s the 1080p was warmed 45 s ahead: 195 s of video made in 125 s (1.6× real time,
+  under the 1/0.6 = 1.67× wanted), lined up by 13 subtitle lines (8:48 in the 720p is 8:38 in it): not moved. With
+  the bar loosened for the test: 158 s made in 36 s, lined up (shift -16.2 s), and at 11:33 the player took the
+  1080p at 11:17 and played on in full screen.
+- Against a 720p with no subtitles (`cc382536`): the 1080p was fast (67 s in 22 s) but only guessed, so no move.
+Not checked: a stall that switches by itself in Safari (the swarms were fast that morning; it is the same switch as
+`smaller()` through `rubySwap.toAny`), AirPlay, the Mac app, a TV.
+
+
 
 ## Where you are in a series
 

@@ -49,7 +49,9 @@ No test suite. Check changes in a real browser:
 - The app: `node tools/dev-server.js` serves this checkout with a TorrServer/Jackett host proxied
   (`LAMPA_UPSTREAM`, see the file) and a throwaway in-memory `/sync/`, so test data never reaches real
   shared profiles. Drive it with the built-in browser or chrome-devtools. `DEV_CONSOLE=1` prints the page's
-  console in its terminal, for the iOS simulator's Safari (no console to reach otherwise).
+  console in its terminal, for the iOS simulator's Safari (no console to reach otherwise); with `DEV_EVAL=1` the
+  page also runs what is POSTed to `/__eval` (`curl -d 'code' :PORT/__eval`), its result in that console.
+- Test playback muted (`muted = true` on every `<video>`, headless Chrome with `--mute-audio`).
 - Phones: start playback with real taps (the simulator tool's `tap`), not scripted clicks. Safari plays a
   `<video>` only after a tap, and a start comes seconds after it (desktop/README.md "A start Safari refused").
 - Safari behaves differently (native HLS, scrolling performance): verify there before calling something

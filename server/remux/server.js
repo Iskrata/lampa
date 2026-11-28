@@ -268,7 +268,7 @@ async function handle(req, res) {
     if ((m = /^seg(\d+)\.m4s$/.exec(b))) {
         const t0 = Date.now(), file = await fed(hash, s.segment(+m[1]), res, () => s.reading(+m[1])), bd = s.m.bounds;
         sendFile(res, file, req.headers.range);
-        releases.sent(hash, s.m.index, +m[1], (bd[+m[1] + 1] - bd[+m[1]]) || 0);
+        releases.sent(hash, s.m.index, +m[1], (bd[+m[1] + 1] - bd[+m[1]]) || 0, Date.now() - t0);
         // the player waited for this one (the first segment, a seek, or the download falling behind)
         if (Date.now() - t0 > SLOW_MS) console.log(`${hash.slice(0, 8)}:${s.m.index} seg${m[1]} in ${sec(Date.now() - t0)} (${await swarm(hash)})`);
         return;

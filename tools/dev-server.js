@@ -5,6 +5,8 @@
 //   * /ts/gst/* to a local remux service (node server/remux/server.js, REMUX_PORT)
 //   * /sync/ is the profile service (server/sync/server.js) over a temporary folder that goes with this process:
 //     test data never reaches real shared profiles. /sync/__all lists every file in it, for tests.
+//   * DEV_EVAL=1 (with DEV_CONSOLE=1): the page runs what is POSTed to /__eval (curl -d 'code' :PORT/__eval), its
+//     result printed as "eval ...": for Safari in the iOS simulator, which has no console to type in
 //   * DEV_CONSOLE=1: the page's console.log/warn/error and uncaught errors are printed here too, for browsers
 //     whose console can't be reached (the iOS simulator's Safari)
 // LAMPA_UPSTREAM=host (default "ruby"; TorrServer on :8090, the rest on :80 or LAMPA_UPSTREAM_WEB, e.g. an SSH
@@ -17,7 +19,12 @@ const sync = require('../server/sync/server').handler({ data: SYNC_DIR, journal:
 process.on('exit', () => fs.rmSync(SYNC_TMP, { recursive: true, force: true }));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
 const UP = process.env.LAMPA_UPSTREAM || 'ruby', UP_WEB = +(process.env.LAMPA_UPSTREAM_WEB || 80), REMUX = +(process.env.REMUX_PORT || 8092);
-const CONSOLE = process.env.DEV_CONSOLE === '1', PLUGINS = process.env.DEV_PLUGINS;
+const CONSOLE = process.env.DEV_CONSOLE === '1', PLUGINS = process.env.DEV_PLUGINS, EVAL = CONSOLE && process.env.DEV_EVAL === '1';
+// the page asks for code every second (ES5); a promise's value is sent when it settles
+const EVAL_JS = '<script>setInterval(function(){var x=new XMLHttpRequest();x.open("GET","./__eval?w=1");x.onload=function(){if(!x.responseText)return;' +
+    'var out=function(v){try{v=typeof v==="string"?v:JSON.stringify(v)}catch(e){v=String(v)}console.log("eval",v)};' +
+    'try{var r=(0,eval)(x.responseText);if(r&&r.then)r.then(out,function(e){out("rejected "+e)});else out(r)}catch(e){out("error "+e.message)}};x.send()},1000)</script>';
+let evals = [];
 // sends the page's console to /__console (ES5: it runs before everything else, on old browsers too)
 const CONSOLE_JS = '<script>(function(){var t0=Date.now();function send(k,a){try{var s=[].map.call(a,function(x){' +
     'try{return typeof x==="string"?x:JSON.stringify(x)}catch(e){return String(x)}}).join(" ");' +
@@ -45,6 +52,11 @@ function proxy(req, res, host, port, p, slow) {
 
 http.createServer((req, res) => {
     const u = req.url;
+    if (EVAL && u.startsWith('/__eval')) {
+        if (req.method === 'POST') { let b = ''; return req.on('data', d => b += d).on('end', () => { evals.push(b); res.end('queued\n'); }); }
+        res.writeHead(200, { 'Cache-Control': 'no-store' });
+        return res.end(evals.shift() || '');
+    }
     if (CONSOLE && u === '/__console') {
         let b = '';
         req.on('data', d => b += d).on('end', () => { console.log('page', b); res.end(); });
@@ -77,7 +89,7 @@ http.createServer((req, res) => {
     let body = fs.readFileSync(file);
     if (p === '/index.html') body = body.toString().replace('<script src="./webos/webOSTV.js"></script>',
         '<script src="./lampa-init.js"></script>\n    <script src="./lampa-imdb.js"></script>\n    <script src="./webos/webOSTV.js"></script>')
-        .replace('<head>', '<head>' + (CONSOLE ? CONSOLE_JS : ''));
+        .replace('<head>', '<head>' + (CONSOLE ? CONSOLE_JS : '') + (EVAL ? EVAL_JS : ''));
     res.writeHead(200, { 'Content-Type': TYPES[p.split('.').pop()] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(body);
 }).listen(PORT, '127.0.0.1', () => console.log('dev copy on http://127.0.0.1:' + PORT));

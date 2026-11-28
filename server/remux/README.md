@@ -364,6 +364,31 @@ the master, init and segments up to 60 s of video, then `/gst/remove`. Breaking 
   0.3 s and the master in 0.24 s. The video moved 3.4 s after Play; 1.9 s of that was the 4K segment crossing the
   tunnel to the Mac.
 
+### Switching releases (`warm.js` `like=`, `align.js`)
+
+A player switching to another release of what it plays (desktop/README.md "Switching releases while playing") asks
+`/gst/warm?link=<release>&like=<hash>:<file>&at=<t>&secs=<n>`: the file of the same episode as `<hash>:<file>` (by
+its SxxEyy; the film's largest video), the moment `t` of that file found in this one, and `n` seconds made from there.
+The answer adds `at` (in this file), `shift`, `aligned` (`same`, `subtitles`, `guess`) and `pairs`; `made`/`seconds`
+are what this call made and how long that took, which the upgrade goes by. Such warm-ups don't wait for the two-at-a-
+time limit (a viewer waits on them).
+
+**Releases are cut differently.** Desperate Housewives S3E20, measured 2026-11-28 by pairing English subtitle lines
+(a local remux on ruby's TorrServer): the 720p `0b667957` (2561 s) against the 1080p `98dbecc5` (2472 s) is 3.4-4.1 s
+earlier at 3:17 (the 1080p opens with a network bumper), 38.5-40.1 s later at 20:00, 83.6-85.4 s later at 38:20. The
+shift steps at act breaks, so neither the same time nor the lengths' ratio is the same moment. `align.js`:
+- lengths within 1 s: the same timeline;
+- else the playing file's subtitle lines from 120 s before `t` to 45 s after (what it has made), and this file's
+  stretch where the ratio puts it, as wide as the difference plus 30 s (at most 120 s), made first; lines said in both
+  (letters and digits, 8+ characters; a line said twice in the stretch pairs with nothing, the same line within 3 s is
+  one: two ffmpeg runs over the same seconds wrote it 0.4-2 s apart) give the shift: the middle of the 5 nearest `t`,
+  at least 2 within 1.5 s of it;
+- else a guess: the earlier of `t` and where the lengths' ratio puts it, so the viewer sees some again rather than
+  misses some. (The earlier of `t` and `t` + the difference, the first version, put 5:27 of the 720p `cc382536`,
+  which has no subtitles and runs about 230 s longer, at 1:37 of the 1080p.) An upgrade never moves on a guess.
+Checked on the pair above: at 200 s → 196.6 s (shift -3.4), at 1200 s → 1240.2 s (+40.2), both from 3 lines; at 2300 s
+the playing file had made only 12 s there (6 lines, 1 pair): the guess, 2300 s.
+
 ## Loading progress
 
 `/gst/<hash>/heartbeat?index=<file>` adds `Startup: { pct }` (`startup.js`), which the loading card shows as a
@@ -471,7 +496,9 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
    `../../desktop/pick.js`. So the browser's fallback and the server can't drift apart.
 5. **Memory** (`releases.js`, `REMUX_RELEASES`):
    - **Played:** this service sent 120 s of the release's video for that title, counting each segment
-     once. The title comes from the master's `tmdb`/`kind`, or the `.t<id>` / `.m<id>` in a segment's
+     once, without a segment the player waited half its length or more for (that starts the count again, since
+     2026-11-28: Desperate Housewives S3E20's 98dbecc5 crawled to 120 s after it was reported too slow and was
+     offered first again). The title comes from the master's `tmdb`/`kind`, or the `.t<id>` / `.m<id>` in a segment's
      path. A played release comes first in its resolution for that title.
    - **Failed:** `swarm.js` saw it dead, or a player switched away from it and said so
      (`/gst/pick/failed`: no peers within 45 s, too slow, no video in it). It isn't offered again, for any
@@ -490,7 +517,8 @@ browser no longer needs Jackett's key. `GET /gst/pick?tmdb=&kind=[&season=&episo
      copy gave S2E12 1080p 2 (SiGMA and KONTRAST, failed slow 21-27 h before) and 720p 2 without the
      fallback; `0b667957`, failed slow 4.9 h before, was still left out.
 6. **The answer:** each resolution's releases, best first, at most 10, one listing per torrent (several
-   indexers list the same one). Each is what Lampa's torrent flow reads (`Title`, `Size`, `Seeders`,
+   indexers list the same one). `upgrade`: up to 3 per resolution that failed lately, which a player only moves up
+   to after measuring them keep up (desktop/upgrade.js), never starts with or switches down to. Each is what Lampa's torrent flow reads (`Title`, `Size`, `Seeders`,
    `MagnetUri` or `Link`, `InfoHash`, `played`). Jackett's `.torrent` links carry its key
    (`jackett_apikey=`), so they are handed out as `http://127.0.0.1:<port>/gst/link?u=<the link without
    the key>`. TorrServer, on the same machine, fetches that, and this service fetches Jackett's link with

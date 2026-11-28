@@ -308,11 +308,9 @@
     }
 
     // this device's connection can't carry the release: the next smaller one where it was (play.js), else `text`
-    // (asked with a tap where the browser plays HLS itself: Safari plays a new <video> only from one)
     function tooSlow(text) {
-        var v = Lampa.PlayerVideo.video(), tap = !!v && !usesMse(v);
         stopWatching();
-        if (window.rubyPlay && rubyPlay.smaller && rubyPlay.smaller(tap)) return;
+        if (window.rubyPlay && rubyPlay.smaller && rubyPlay.smaller()) return;
         fail(text);
     }
 
@@ -379,6 +377,11 @@
         setInterval(reloadSubs, 30000);
         Lampa.Player.listener.follow('start', begin);
         Lampa.Player.listener.follow('destroy', stopWatching);
+        // a switch inside the player (swap.js): nothing to judge while the next release is readied, then its stream
+        if (window.rubySwap) rubySwap.follow(function (e) {
+            if (e.type === 'swapping') stopWatching();
+            else begin({ url: e.url });   // swapped, or failed: the old stream again
+        });
         // a decoding error from the video itself: Lampa's "Failed to decode video", with the codec said, unless it
         // never played and the server hasn't written its start: then the torrent was too slow (started()).
         // Safari's own HLS says "Media failed to decode" also when this device's connection is the slow part:

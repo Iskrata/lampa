@@ -7,10 +7,11 @@
 //   * another film: the server refused it, its video's length isn't this title's (server/remux/pick.js
 //     sameFilm): the next one, as many times as there are releases (each costs a few seconds of probing)
 //   * playing: when the release stops sending (the remux says so) or can't keep up while the video waits, it
-//     switches to the next best release of the same resolution and goes on at the same moment, up to 3 times
+//     switches to the next best release of the same resolution, else of a smaller one, and goes on at the same
+//     moment, up to 3 times. While the player is open that happens inside it (swap.js), with no tap and no question
 // Without the remux service (plain TorrServer) none of this runs.
 (function () {
-    var POLL_MS = 5000, ASK_MS = 2500, SLOW_STUCK_MS = 30000, START_STUCK_MS = 60000, MAX_SWITCHES = 3;
+    var POLL_MS = 5000, ASK_MS = 2500, SLOW_STUCK_MS = 30000, START_STUCK_MS = 60000, MAX_SWITCHES = 3, SWAP_SECS = 12, SWAP_TRIES = 3, EARLY_MS = 10000;
     // no file list this long after a release is opened: TorrServer found nobody to get the torrent's file list
     // from (Lampa itself gives up after 90 s with "torrent_parser_timeout")
     var LIST_MS = 45000;
@@ -130,18 +131,26 @@
         });
     }
 
-    // the next release of the same resolution: Play's ranking (the server's or this browser's), else the
-    // ranking of the last search (a release picked from the list), without the ones tried
+    // the next release of the same resolution, else of the next smaller one: Play's ranking (the server's or this
+    // browser's), else the ranking of the last search (a release picked from the list), without the ones tried.
+    // Smaller ones since 2026-11-28: Desperate Housewives S3E20's only 1080p release (98dbecc5, 5-6 peers at
+    // 0.5-1 MB/s for 8 Mbit/s) was called too slow at 08:58:10 UTC and the switch stopped at "no other 1080p
+    // release", with three 720p ones found; the video crawled on, stalling every few seconds
     // A fake goes by a real release's name (Clayface's four 1080p were all "...-FLUX", three of them one .exe
     // each): after one, the others of that name are tried, by hash.
-    function nextRelease(why) {
+    function nextRelease(why) { return candidates(why)[0] || null; }
+    function candidates(why) {
         var c = current, movie = c.movie || {};
         var tried = why === 'nofiles' ? c.tried.filter(function (m) { return m !== rubyPick.key(c.release.Title || c.release.title); }) : c.tried;
         var res = rubyPick.resolution(c.release.Title || c.release.title || '');
         var groups = rubyPlay.ranked(movie);
         if (!groups && last && last.movie && last.movie.id === movie.id)
             groups = rubyPick.ranked(last.results, movie, c.target, rubyPlay.audio ? rubyPlay.audio(movie) : null);
-        return ((groups || {})[res] || []).filter(function (r) { return !marks(r).some(function (m) { return tried.indexOf(m) >= 0; }); })[0] || null;
+        var fresh = function (r) { return !marks(r).some(function (m) { return tried.indexOf(m) >= 0; }); };
+        var sizes = Object.keys(groups || {}).map(Number).filter(function (k) { return k <= res; }).sort(function (a, b) { return b - a; });
+        var out = [];
+        sizes.forEach(function (k) { out = out.concat(groups[k].filter(fresh)); });
+        return out;
     }
 
     // the server remembers it for the title: never offered for it again (server/remux/releases.js). A dead one
@@ -173,8 +182,9 @@
             // still in Lampa's window (loading, or its "Empty"): close it, or Lampa's own message stays (or comes
             // at 90 s, "Timeout expired")
             if (!Lampa.Player.opened() && Lampa.Controller.enabled().name === 'modal') Lampa.Controller.back();
-            return Lampa.Noty.show(what + ', and there is no other ' + (c ? rubyPick.resolution(c.release.Title || '') + 'p' : '') + ' release to switch to');
+            return Lampa.Noty.show(what + ', and there is no other release to switch to');
         }
+        if (Lampa.Player.opened() && window.rubySwap && rubySwap.stream()) return swapTo(c, next, why, what, free);
         carry = { target: c.target, at: at, tried: c.tried.concat(marks(next), c.hash ? [c.hash] : []), switches: c.switches + (free ? 0 : 1) };
         Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
         if (Lampa.Player.opened()) Lampa.Player.close();
@@ -184,6 +194,26 @@
             if (Lampa.Controller.enabled().name === 'modal') Lampa.Controller.back();
             setTimeout(function () { rubyPlay.release(c.movie, c.target, next); }, 300);
         }, 300);
+    }
+
+    // the player stays open and takes the next release where the video is (swap.js): no new <video>, which Safari
+    // plays only from a tap. SWAP_SECS of it are made first, while the old one plays on as well as it can. One that
+    // can't be opened (not that episode in it, no file list, too slow to make SWAP_SECS): the one after it, up to
+    // SWAP_TRIES. None: the old one plays on and is watched again. Closing the player and opening the next instead
+    // (as before) left Safari's new <video> paused: iOS 26 simulator, 2026-11-28, Desperate Housewives' S01-08 720p
+    // pack couldn't make 12 s in 90 s, the player closed, the next release opened and sat paused
+    function swapTo(c, next, why, what, free) {
+        Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
+        var list = [next].concat(candidates(why).filter(function (r) { return r !== next; })).slice(0, SWAP_TRIES);
+        list.forEach(function (r) { c.tried = c.tried.concat(marks(r)); });
+        if (c.hash) c.tried.push(c.hash);
+        c.switches += free ? 0 : 1;
+        rubySwap.toAny(list, SWAP_SECS, why).catch(function (e) {
+            console.log('Ruby swarm', 'no release could be opened:', e.message);
+            if (current !== c || !Lampa.Player.opened()) return;
+            Lampa.Noty.show('No other release could be opened right now');
+            begin({ url: rubySwap.stream() });
+        });
     }
 
     // Before the player has its stream (Lampa's torrent window, the loading card): begin() only watches once the
@@ -246,6 +276,12 @@
                 // (a remux older than Swarm.waiting: as before)
                 var held = !h.Swarm || h.Swarm.waiting == null || h.Swarm.waiting > 0;
                 if (h.Swarm && h.Swarm.dead && stuck > POLL_MS) return switchRelease('dead');
+                // falling behind: the next release is readied now, so the switch (if it comes) needn't open it cold
+                if (slow > EARLY_MS && held && need && mbps < need && !c.readied && Lampa.Player.opened()) {
+                    c.readied = true;
+                    var n = nextRelease('slow');
+                    if (n) rubySwap.ready(n, SWAP_SECS);
+                }
                 if (slow > (played ? SLOW_STUCK_MS : START_STUCK_MS) && held && need && mbps < need) return switchRelease('slow');
             });
         }, POLL_MS);
@@ -270,11 +306,21 @@
         wrapParser();
         wrapStart();
         Lampa.Player.listener.follow('start', function (data) { trail('player start'); begin(data); });
+        // a switch inside the player (swap.js, this module's or an upgrade): watch the release it plays now
+        rubySwap.follow(function (e) {
+            if (e.type === 'swapping') return stop();
+            if (e.type !== 'swapped' || !current) return;
+            trail('swapped (' + e.why + ') to ' + (e.release.Title || '').slice(0, 80));
+            current.release = e.release;
+            current.at = 0;
+            current.readied = false;
+            begin({ url: e.url });
+        });
         Lampa.Player.listener.follow('destroy', stop);
     }
 
     var timer = setInterval(function () {
-        if (!window.Lampa || !Lampa.Parser || !Lampa.Torrent || !Lampa.Player || !Lampa.PlayerVideo || !Lampa.Torserver || !window.rubyPick || !window.rubyPlay) return;
+        if (!window.Lampa || !Lampa.Parser || !Lampa.Torrent || !Lampa.Player || !Lampa.PlayerVideo || !Lampa.Torserver || !window.rubyPick || !window.rubyPlay || !window.rubySwap) return;
         clearInterval(timer);
         init();
     }, 100);

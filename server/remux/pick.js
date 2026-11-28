@@ -219,18 +219,21 @@ async function pick(q) {
     // slow minute each, and S2E12 was "no good English copy" on 2026-10-27
     const retry = !Object.keys(best.groups).length;
     if (retry) best = rules.best(alive.filter(r => !wrong(r)), movie, target, audio);
-    const choices = [2160, 1080, 720].filter(res => best.groups[res]).map(res => {
-        // one torrent is listed by several indexers: once is enough (the best-ranked listing)
-        const seen = new Set(), g = best.groups[res].filter(r => { const k = id(r) || rules.key(r.Title); return !seen.has(k) && seen.add(k); });
-        const played = g.filter(r => mem.played.has(id(r)));
+    // the ones that failed lately, for a player to move up to only once it has measured them keeping up
+    // (desktop/upgrade.js): never started with, never switched to after a stall
+    const lately = retry ? { groups: {} } : rules.best(alive.filter(r => !wrong(r) && failed(r)), movie, target, best.audio);
+    // one torrent is listed by several indexers: once is enough (the best-ranked listing)
+    const once = list => { const seen = new Set(); return (list || []).filter(r => { const k = id(r) || rules.key(r.Title); return !seen.has(k) && seen.add(k); }); };
+    const choices = [2160, 1080, 720].filter(res => best.groups[res] || lately.groups[res]).map(res => {
+        const g = once(best.groups[res]), played = g.filter(r => mem.played.has(id(r)));
         return { res, label: rules.LABEL[res], releases: played.concat(g.filter(r => !mem.played.has(id(r)))).slice(0, PER_RES)
-            .map(r => handOut(r, mem.played.has(id(r)))) };
+            .map(r => handOut(r, mem.played.has(id(r)))), upgrade: once(lately.groups[res]).slice(0, 3).map(r => handOut(r, false)) };
     });
     const took = Date.now() - t0;
     console.log(`pick ${kind} ${tmdb}${target ? ` S${target.season}E${target.episode}` : ''}: ${found.length} found ` +
         `(${links.got}/${links.asked} link-only hashed), ` +
         `${found.length - alive.length} dead, ${alive.length - usable.length} failed or another film before${retry ? ' (offered again: nothing else left)' : ''}, ` +
-        choices.map(c => `${c.label} ${c.releases.length}${c.releases[0].played ? ' (played first)' : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s ` +
+        choices.map(c => `${c.label} ${c.releases.length}${c.releases.length && c.releases[0].played ? ' (played first)' : ''}${c.upgrade.length ? ` (+${c.upgrade.length} to move up to)` : ''}`).join(', ') + ` in ${(took / 1000).toFixed(1)} s ` +
         `(search ${searched - t0} ms, links ${hashed - searched} ms, trackers ${scraped - hashed} ms)`);
     return { audio: best.audio, choices, found: found.length, took };
 }

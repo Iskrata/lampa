@@ -59,10 +59,14 @@ function mark(title, hash, field, why, name) {
     save();
 }
 
-// a segment of <seconds> sent to a player
-function sent(hash, file, segment, seconds) {
+// a segment of <seconds> sent to a player, which waited `waited` ms for it. One the player waited half its length
+// or more for starts the count again: PLAYED_S must come without such a wait (the release kept up). Before 2026-11-28 a crawl counted too: Desperate Housewives
+// S3E20's 98dbecc5 (5-6 peers, 0.5-1 MB/s for 8 Mbit/s, segments in 4-49 s) was reported too slow at 08:58:10 UTC,
+// crawled on to 120 s, "played", and was offered first again
+function sent(hash, file, segment, seconds, waited) {
     const s = seen.get(hash.toLowerCase());
     if (!s || !s.title || s.done || s.sent.has(file + ':' + segment)) return;
+    if (waited > seconds * 500) { s.seconds = 0; return; }
     s.sent.add(file + ':' + segment);
     s.seconds += seconds;
     if (s.seconds < PLAYED_S) return;

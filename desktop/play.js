@@ -112,14 +112,16 @@
         var t0 = Date.now(), timeout = new Promise(function (r) { setTimeout(function () { r(null); }, PICK_MS); });
         var asked = fetch(u, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (p) {
             if (!p || !p.choices) return null;
-            var groups = {};
+            var groups = {}, upgrade = {}, playable = function (r) { return !window.rubyCompat || rubyCompat.playable(r.Title); };
             p.choices.forEach(function (c) {
-                var ok = c.releases.filter(function (r) { return !window.rubyCompat || rubyCompat.playable(r.Title); });
+                var ok = c.releases.filter(playable), up = (c.upgrade || []).filter(playable);
                 if (ok.length) groups[c.res] = ok;
+                if (up.length) upgrade[c.res] = up;
             });
             console.log('Ruby play', 'server pick in', Date.now() - t0, 'ms:', p.choices.map(function (c) { return c.label + ' ' + c.releases.length; }).join(', ') || 'nothing');
             var found = listOf(p.audio, groups);
             found.notOut = p.notOut || '';
+            found.upgrade = upgrade;
             return found;
         }, function () { return null; });
         return Promise.race([asked, timeout]).then(function (x) {
@@ -250,7 +252,7 @@
         }
         var c = autoPick(list, movie, target, mbps, prefer && prefer.res);
         prefer = null;
-        current = { movie: movie, list: list, groups: found.groups, res: c.res, audio: audio };
+        current = { movie: movie, list: list, groups: found.groups, upgrade: found.upgrade || {}, res: c.res, audio: audio, target: target, mbps: mbps };
         play(movie, target, c.best);
     }
 
@@ -291,33 +293,47 @@
         // a series starts the episode it's on (resume.js), which may be a later one than first played
         setTimeout(function () { start(movie); }, 300);
     }
+    // what upgrade.js could move up to while this plays: the releases of resolutions above the one playing, up to
+    // what this screen and connection take (autoPick), best first, then those that failed lately (the server hands
+    // them out only for this: upgrade.js measures before it moves); `skip(release)` leaves one out. Nothing when the
+    // player isn't on the title Play picked for (a release opened from Lampa's list since)
+    function better(skip) {
+        if (!current || !Lampa.Player.opened() || !playingIt()) return [];
+        var res = {}, out = [];
+        current.list.forEach(function (c) { res[c.res] = 1; });
+        Object.keys(current.upgrade).forEach(function (r) { res[r] = 1; });
+        var top = autoPick(current.list.concat(Object.keys(current.upgrade).map(function (r) { return { res: +r, best: current.upgrade[r][0] }; }))
+            .sort(function (a, b) { return b.res - a.res; }), current.movie, current.target, current.mbps, null).res;
+        Object.keys(res).map(Number).filter(function (r) { return r > current.res && r <= top; }).sort(function (a, b) { return b - a; }).forEach(function (r) {
+            out = out.concat(current.groups[r] || [], current.upgrade[r] || []);
+        });
+        return out.filter(function (r) { return !skip || !skip(r); });
+    }
+    // the player's stream is for the title Play picked for (play.js puts its TMDB id in every stream it starts)
+    function playingIt() {
+        var m = /[?&]tmdb=(\d+)/.exec(window.rubySwap && rubySwap.stream() || '');
+        return !!m && +m[1] === +current.movie.id;
+    }
+
     // the release playing is more than this connection carries right now (compat.js: Safari gave up on it):
-    // the next smaller resolution found, where it was (the user's call 2026-11-18). false when there is none.
-    // tap: the new <video> needs a tap to play (Safari: compat.js readies one on each tap), so one is asked for
-    // with the choice. Switched without one, Safari refused the 720p's play() and the player's own play button
-    // didn't start it either (iOS 27 simulator, 2026-11-18); reusing the tapped <video> would leave Lampa's
-    // listeners on it twice (app.min.js bind$3).
-    function smaller(tap) {
-        if (!current || !Lampa.Player.opened()) return false;
+    // the next smaller resolution found, where it was (the user's call 2026-11-18), inside the open player
+    // (swap.js) with no question. Until 2026-11-28 Safari was asked with a tap ("Play in 720p, from where you
+    // are"), since a new <video> plays there only from one; swap.js keeps the <video>. The user, 2026-11-28: "I
+    // don't want prompts or to choose myself". false when there is nothing smaller.
+    function smaller() {
+        if (!current || !Lampa.Player.opened() || !playingIt()) return false;
         var res = current.res, lower = current.list.filter(function (c) { return c.res < res; })[0];
         if (!lower) return false;
-        var why = 'The connection is too slow for ' + rubyPick.LABEL[res] + ' right now.';
-        console.log('Ruby play', 'too slow for', res + 'p:', tap ? 'offering' : 'switching to', lower.res + 'p');
-        if (!tap) {
-            Lampa.Noty.show(why + ' Playing ' + lower.label + '.');
-            switchTo({ res: lower.res });
-            return true;
-        }
-        // the facts (and their play() retry, untilPlaying) would cover the question and start the video again
-        stopWatching();
-        var v = Lampa.PlayerVideo.video();
-        if (v) try { v.pause(); } catch (e) {}
-        rubyDesktop.centred();
-        Lampa.Select.show({
-            title: why,
-            items: [{ title: 'Play in ' + lower.label, subtitle: 'From where you are', res: lower.res }, { title: 'Close' }],
-            onSelect: function (a) { if (a.res) switchTo({ res: a.res }); else Lampa.Player.close(); },
-            onBack: function () { Lampa.Player.close(); }
+        console.log('Ruby play', 'too slow for', res + 'p: switching to', lower.res + 'p');
+        Lampa.Noty.show('The connection is too slow for ' + rubyPick.LABEL[res] + ' right now. Playing ' + lower.label + '.');
+        if (!window.rubySwap || !rubySwap.stream()) { switchTo({ res: lower.res }); return true; }
+        // that resolution's releases in turn, then smaller ones; none: it plays on as it was (closing the player and
+        // opening another left Safari's new <video> paused, iOS simulator 2026-11-28)
+        var list = [];
+        current.list.filter(function (c) { return c.res < res; }).forEach(function (c) { list = list.concat(current.groups[c.res] || []); });
+        rubySwap.toAny(list.slice(0, 4), 12, 'smaller').catch(function (e) {
+            console.log('Ruby play', 'no smaller release could be opened:', e.message);
+            if (Lampa.Player.opened()) Lampa.Noty.show('No smaller release could be opened right now');
         });
         return true;
     }
@@ -550,6 +566,10 @@
             return push.apply(this, arguments);
         };
         Lampa.Listener.follow('torrent_file', files);
+        // a switch inside the player (swap.js): the resolution it plays now, for the Quality menu and better()
+        rubySwap.follow(function (e) {
+            if (e.type === 'swapped' && current) current.res = rubyPick.resolution(e.release.Title || '') || current.res;
+        });
         Lampa.Player.listener.follow('start', function () { done(); untilPlaying(); });
         Lampa.Player.listener.follow('destroy', stopWatching);
         // the player's error screen is up (compat.js gave up): don't play the video again behind it
@@ -585,10 +605,11 @@
     rubyPlay.laterLabel = laterLabel;
     // choice(movie, target): the release Play would start (warm.js warms it up)
     rubyPlay.choice = choice;
+    rubyPlay.better = better;
     rubyPlay.ranked = function (movie) { return current && movie && current.movie.id === movie.id ? current.groups : null; };
 
     var timer = setInterval(function () {
-        if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume) return;
+        if (!window.Lampa || !Lampa.Activity || !Lampa.Api || !Lampa.Parser || !Lampa.Torrent || !Lampa.SettingsApi || !window.rubyPick || !window.rubyFacts || !window.rubyResume || !window.rubySwap) return;
         clearInterval(timer);
         init();
     }, 100);
