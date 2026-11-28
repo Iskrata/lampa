@@ -63,8 +63,10 @@
     // the next item of the player's playlist, by the file its stream names
     function nextEpisode() {
         var P = Lampa.PlayerPlaylist, list = P.get() || [], next = P.canNext && P.canNext() ? list[P.position() + 1] : null;
-        var m = next && /\/gst\/([0-9a-f]{40})\/master\.m3u8\?index=(\d+)/i.exec(next.url || '');
-        if (m) ask(m[1].slice(0, 8) + ':' + m[2], 'hash=' + m[1] + '&index=' + m[2] + (/[?&]lang=ja\b/.test(next.url) ? '&lang=ja' : ''));
+        // in the release switched to, when the player moved to another (swap.js)
+        var u = next && (window.rubySwap ? rubySwap.moveUrl(next.url) : next.url);
+        var m = u && /\/gst\/([0-9a-f]{40})\/master\.m3u8\?index=(\d+)/i.exec(u);
+        if (m) ask(m[1].slice(0, 8) + ':' + m[2], 'hash=' + m[1] + '&index=' + m[2] + (/[?&]lang=ja\b/.test(u) ? '&lang=ja' : ''));
     }
 
     // the title page `card` (or whichever is open), if it is still open and no player is, after DWELL_MS

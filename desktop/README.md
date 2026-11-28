@@ -663,8 +663,10 @@ was the intro skip, introdb.js: S3E20's intro is 3-41 s.)
   opened the release as at Play: in Safari the new `<video>` sat paused (iOS 26 simulator, 2026-11-28: the S01-08
   720p pack couldn't make 12 s in 90 s, the next release opened paused and on S1E1, since Play goes where you are).
 - **Readied early:** a cold file takes as long to open as a cold start (Desperate Housewives' S01-08 720p pack
-  167a5870: probe 77.5 s on 2026-11-28), so after 10 s of the video falling behind (`EARLY_MS`, the same test as "too
-  slow") the next release is readied; the switch at 30 s (60 s before anything played) then takes it at once.
+  167a5870: probe 77.5 s on 2026-11-28), so after 10 s of the video falling behind (30 s before anything played: a
+  cold start's own wait readied one needlessly at 24.8 s) the next release is readied; the switch at 30 s (60 s
+  before anything played) then takes it at once. A release counts as tried when it is tried, so one that opens and
+  later stalls still has the others after it. With none left the video plays on, watched again, the note once.
 - **Too slow for this connection** (compat.js → `rubyPlay.smaller`): the next smaller resolution the same way, with a
   note and no question (Safari was asked with a tap until now).
 - **A crawl isn't "played"** (server/remux/releases.js `sent`): a segment the player waited half its length or more
@@ -673,9 +675,13 @@ was the intro skip, introdb.js: S3E20's intro is 3-41 s.)
   steady playing the remux warms the best one above it 45 s ahead (60 s of it). It moves up only when that was made in
   at most 0.6 of its length (measured in that call, at least 20 s of video) and the same moment was found in it
   (same length or subtitle lines, not a guess); when the video reaches the warmed place the player takes it there
-  ("Now in 1080p"). Too slow: tried again in 5 min. Releases that failed in the last hours come in the server's
-  answer as `upgrade` only (never started with or switched down to), so the upgrade can measure them again. Not
-  during AirPlay or in the last 2 min. Disarmed when a switch down starts.
+  ("Now in 1080p"). Too slow: tried again in 5 min, then 10, 20…; one only guessed (no subtitles to pair) not again
+  on that page. Each try makes 60-200 s of the better release on the home server (195 s of 1080p, ~200 MB, in the
+  test below). Releases that failed lately for their swarm (too slow, no peers, dead; not a fake) come in the
+  server's answer as `upgrade` only (never started with or switched down to), so the upgrade can measure them again.
+  Not above the resolution `smaller()` went down to for this connection (until the next Play), not during AirPlay or
+  in the last 2 min, disarmed when a switch down starts. The release moved up from is a way back if the better one
+  stalls. The next episode's warm-up warms it in the release switched to.
 
 Checked 2026-11-28 (dev server with `DEV_EVAL=1`, a local remux on ruby's TorrServer, Desperate Housewives S3E20,
 muted):
@@ -690,8 +696,13 @@ muted):
   the bar loosened for the test: 158 s made in 36 s, lined up (shift -16.2 s), and at 11:33 the player took the
   1080p at 11:17 and played on in full screen.
 - Against a 720p with no subtitles (`cc382536`): the 1080p was fast (67 s in 22 s) but only guessed, so no move.
-Not checked: a stall that switches by itself in Safari (the swarms were fast that morning; it is the same switch as
-`smaller()` through `rubySwap.toAny`), AirPlay, the Mac app, a TV.
+- Headless Chrome, after the fixes: the heartbeat faked to "a request waits, 0.1 Mbit/s" and the video frozen
+  (`playbackRate` 0) at 0:06 of the 1080p: the 720p `cc382536` readied at 28 s, switched to at 43 s in the same
+  `<video>`, playing on from 0:06; then `PlayerPlaylist.next()` went to S3E21 in `cc382536` ("Ruby swap playlist"),
+  which played.
+Not checked: a real stall that switches by itself in Safari (the swarms were fast that morning; it is the same
+switch as `smaller()` through `rubySwap.toAny`), the subtitle chosen after a switch in Safari (the Mac slept through
+that run), AirPlay, the Mac app, a TV.
 
 
 

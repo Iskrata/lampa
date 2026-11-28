@@ -9,13 +9,15 @@
 //     both: server/remux/align.js; a guess isn't enough). Then, when the video reaches the warmed place, the
 //     player takes the better release there (swap.js apply): its first segments are on disk, so the switch is a
 //     short reload, not a wait
-//   * too slow, or it couldn't be opened: that release is tried again after AGAIN_MS
+//   * too slow, or it couldn't be opened: that release is tried again after AGAIN_MS, doubled each time; one that
+//     can only be guessed (no subtitles to pair) isn't tried again on this page
 // A release switched away from because it stalled (swarm.js, compat.js) isn't tried again for HOLD_MS.
 // Not during AirPlay (the TV holds the stream) or near the end.
 (function () {
     var STEADY_S = 60, AHEAD_S = 45, WARM_S = 60, FAST = 0.6, MEASURE_S = 20, AGAIN_MS = 5 * 60000, HOLD_MS = 30 * 60000, END_S = 120;
     var state = null;   // { from, last, next, trying, armed: { p, release, at, until } }
     var skip = {};      // hash -> until when it isn't tried
+    var tries = {};     // hash -> measured too slow this many times
 
     function reset() { state = { from: null, last: 0, next: 0, trying: false, armed: null }; }
     function hashOf(r) { return (rubyPick.hashOf(r) || '').toLowerCase(); }
@@ -43,7 +45,15 @@
             var fast = p.seconds >= MEASURE_S && p.made <= p.seconds * 1000 * FAST, sure = p.aligned === 'same' || p.aligned === 'subtitles';
             console.log('Ruby upgrade', p.hash.slice(0, 8), p.seconds + ' s made in ' + (p.made / 1000).toFixed(1) + ' s,', p.aligned, 'shift', p.shift,
                 fast && sure ? '-> moving up at ' + Math.round(at) : '-> not now, again in ' + AGAIN_MS / 60000 + ' min');
-            if (!fast || !sure) { skip[p.hash.toLowerCase()] = Date.now() + AGAIN_MS; mine.next = Date.now() + AGAIN_MS; return; }
+            if (!fast || !sure) {
+                // a guess (no subtitles to pair) stays a guess: not again this page. Too slow: again after AGAIN_MS,
+                // twice as long each time (each try makes ~60-200 s of the better release on the home server: 195 s
+                // of 1080p, ~200 MB, on 2026-11-28)
+                var h = p.hash.toLowerCase(), n = tries[h] = (tries[h] || 0) + 1;
+                skip[h] = sure ? Date.now() + AGAIN_MS * Math.pow(2, n - 1) : Infinity;
+                mine.next = Date.now() + AGAIN_MS;
+                return;
+            }
             mine.armed = { p: p, release: r, at: at, until: at + WARM_S - 10 };
         }, function (e) {
             if (state !== mine) return;

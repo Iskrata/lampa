@@ -70,9 +70,11 @@
         Lampa.PlayerVideo.destroy(true, true);
         Lampa.PlayerVideo.url(p.url, true);
         stream = p.url;
-        remember(m[1].toLowerCase(), p.hash.toLowerCase());
-        // the old torrent stops downloading on the home server (Lampa drops only the one it opened, when it closes)
-        Lampa.Torserver.drop(m[1].toLowerCase(), function () {}, function () {});
+        // the old torrent stops downloading on the home server (Lampa drops only the one it opened, when it closes),
+        // once its file list is read for the playlist: TorrServer lists no files for a torrent it holds only in its
+        // database (an empty map would send the next episode back to the release switched away from)
+        var oldHash = m[1].toLowerCase();
+        remember(oldHash, p.hash.toLowerCase()).then(function () { Lampa.Torserver.drop(oldHash, function () {}, function () {}); });
         send({ type: 'swapped', url: p.url, hash: p.hash.toLowerCase(), old: m[1].toLowerCase(), release: release, why: why });
         return true;
     }
@@ -113,11 +115,13 @@
     }
 
     // the first of `list` that can be opened, each in turn (to()); when none can, the player plays on as it was
-    function toAny(list, secs, why) {
+    // each(r): told before each is tried (swarm.js marks it tried then, not before)
+    function toAny(list, secs, why, each) {
         var i = 0, from = stream;
         var next = function () {
             if (i >= list.length) return Promise.reject(new Error('none of ' + list.length + ' could be opened'));
             var r = list[i++];
+            if (each) each(r);
             return to(r, secs, why).then(function (p) { p.release = r; return p; }, function (e) {
                 console.log('Ruby swap', (r.Title || '').slice(0, 60), 'failed:', e.message);
                 if (stream !== from || !Lampa.Player.opened()) throw e;
@@ -133,7 +137,7 @@
     function remember(old, hash) {
         delete moved[hash];
         var hop = moved[old] = { hash: hash, files: null };
-        Promise.all([files(old), files(hash)]).then(function (both) {
+        return Promise.all([files(old), files(hash)]).then(function (both) {
             var to = {}, map = {};
             both[1].forEach(function (f) { var e = episodeOf((f.path || '').split('/').pop()); if (e) to[e] = f.id; });
             both[0].forEach(function (f) { var e = episodeOf((f.path || '').split('/').pop()); if (e && to[e] != null) map[f.id] = to[e]; });
@@ -141,17 +145,23 @@
         });
     }
 
-    // a start from Lampa's playlist on a torrent switched away from: the same episode in the release it went to
-    function remap(data) {
-        var u = data && data.url, m = RE.exec(u || ''), hops = 0;
+    // a stream of a torrent switched away from: the same episode in the release it went to
+    function moveUrl(u) {
+        var m = RE.exec(u || ''), hops = 0;
         while (m && moved[m[1].toLowerCase()] && hops++ < 4) {
             var mv = moved[m[1].toLowerCase()], to = mv.files && mv.files[m[2]];
             if (to == null) break;
             u = u.replace(m[1], mv.hash).replace(/([?&]index=)\d+/, '$1' + to);
             m = RE.exec(u);
         }
-        if (u !== data.url) { console.log('Ruby swap', 'playlist', data.url, '->', u); data.url = u; }
-        stream = data.url || '';
+        return u;
+    }
+
+    // a start from Lampa's playlist on a torrent switched away from
+    function remap(data) {
+        var u = moveUrl(data && data.url);
+        if (data && u !== data.url) { console.log('Ruby swap', 'playlist', data.url, '->', u); data.url = u; }
+        stream = (data && data.url) || '';
     }
 
     function init() {
@@ -161,7 +171,8 @@
     }
 
     // follow(fn): fn({ type: 'swapping' | 'swapped' | 'failed', url, hash, old, release, why })
-    window.rubySwap = { prepare: prepare, apply: apply, to: to, toAny: toAny, ready: ready, follow: function (f) { followers.push(f); },
+    // moveUrl(url): that stream in the release switched to (warm.js warms the next episode there)
+    window.rubySwap = { prepare: prepare, apply: apply, to: to, toAny: toAny, ready: ready, moveUrl: moveUrl, follow: function (f) { followers.push(f); },
         stream: function () { return stream; } };
 
     var timer = setInterval(function () {

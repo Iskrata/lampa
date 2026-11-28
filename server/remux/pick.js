@@ -221,7 +221,9 @@ async function pick(q) {
     if (retry) best = rules.best(alive.filter(r => !wrong(r)), movie, target, audio);
     // the ones that failed lately, for a player to move up to only once it has measured them keeping up
     // (desktop/upgrade.js): never started with, never switched to after a stall
-    const lately = retry ? { groups: {} } : rules.best(alive.filter(r => !wrong(r) && failed(r)), movie, target, best.audio);
+    // (a swarm's moment: too slow, no peers, dead. Not a fake with no video in it)
+    const moment = r => ['slow', 'nopeers', 'dead'].includes(mem.failedWhy.get(id(r)));
+    const lately = retry ? { groups: {} } : rules.best(alive.filter(r => !wrong(r) && failed(r) && moment(r)), movie, target, best.audio);
     // one torrent is listed by several indexers: once is enough (the best-ranked listing)
     const once = list => { const seen = new Set(); return (list || []).filter(r => { const k = id(r) || rules.key(r.Title); return !seen.has(k) && seen.add(k); }); };
     const choices = [2160, 1080, 720].filter(res => best.groups[res] || lately.groups[res]).map(res => {

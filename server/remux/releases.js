@@ -106,14 +106,14 @@ function of(tmdb, kind, nameKey) {
         if ((r.fail || 0) > l.fail) l.fail = r.fail, l.why = r.why;
         if (r.title) l.title = r.title;
     }
-    const played = new Set(), bad = new Set(), names = new Set();
-    for (const [h, l] of Object.entries(last)) if (l.fail > l.ok && now - l.fail < failKeep(l.why)) { bad.add(h); if (l.title && nameKey) names.add(nameKey(l.title)); }
+    const played = new Set(), bad = new Set(), names = new Set(), why = new Map();
+    for (const [h, l] of Object.entries(last)) if (l.fail > l.ok && now - l.fail < failKeep(l.why)) { bad.add(h); why.set(h, l.why); if (l.title && nameKey) names.add(nameKey(l.title)); }
     const wrongs = new Set(), wrongNames = new Set();
     for (const [h, r] of Object.entries(titles[titleKey(tmdb, kind)] || {})) {
         if ((r.wrong || 0) > (r.ok || 0)) { wrongs.add(h); if (r.title && nameKey) wrongNames.add(nameKey(r.title)); }
         else if ((r.ok || 0) > last[h].fail) played.add(h);
     }
-    return { played, failed: bad, failedNames: names, wrong: wrongs, wrongNames };
+    return { played, failed: bad, failedWhy: why, failedNames: names, wrong: wrongs, wrongNames };
 }
 
 // when the release last played for any title (0: never). swarm.js: one that played after it was seen dead isn't

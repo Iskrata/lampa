@@ -304,6 +304,9 @@
         Object.keys(current.upgrade).forEach(function (r) { res[r] = 1; });
         var top = autoPick(current.list.concat(Object.keys(current.upgrade).map(function (r) { return { res: +r, best: current.upgrade[r][0] }; }))
             .sort(function (a, b) { return b.res - a.res; }), current.movie, current.target, current.mbps, null).res;
+        // this device's connection was too slow for more (smaller()): not above that until the next Play; upgrade.js
+        // measures the torrent on the home server, not this connection
+        if (current.cap) top = Math.min(top, current.cap);
         Object.keys(res).map(Number).filter(function (r) { return r > current.res && r <= top; }).sort(function (a, b) { return b - a; }).forEach(function (r) {
             out = out.concat(current.groups[r] || [], current.upgrade[r] || []);
         });
@@ -325,6 +328,7 @@
         var res = current.res, lower = current.list.filter(function (c) { return c.res < res; })[0];
         if (!lower) return false;
         console.log('Ruby play', 'too slow for', res + 'p: switching to', lower.res + 'p');
+        current.cap = lower.res;
         Lampa.Noty.show('The connection is too slow for ' + rubyPick.LABEL[res] + ' right now. Playing ' + lower.label + '.');
         if (!window.rubySwap || !rubySwap.stream()) { switchTo({ res: lower.res }); return true; }
         // that resolution's releases in turn, then smaller ones; none: it plays on as it was (closing the player and

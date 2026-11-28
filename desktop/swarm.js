@@ -11,7 +11,7 @@
 //     moment, up to 3 times. While the player is open that happens inside it (swap.js), with no tap and no question
 // Without the remux service (plain TorrServer) none of this runs.
 (function () {
-    var POLL_MS = 5000, ASK_MS = 2500, SLOW_STUCK_MS = 30000, START_STUCK_MS = 60000, MAX_SWITCHES = 3, SWAP_SECS = 12, SWAP_TRIES = 3, EARLY_MS = 10000;
+    var POLL_MS = 5000, ASK_MS = 2500, SLOW_STUCK_MS = 30000, START_STUCK_MS = 60000, MAX_SWITCHES = 3, SWAP_SECS = 12, SWAP_TRIES = 3, EARLY_MS = 10000, EARLY_START_MS = 30000;
     // no file list this long after a release is opened: TorrServer found nobody to get the torrent's file list
     // from (Lampa itself gives up after 90 s with "torrent_parser_timeout")
     var LIST_MS = 45000;
@@ -178,6 +178,13 @@
             'This release is too slow to play';
         console.log('Ruby swarm', why, c && c.hash, 'at', Math.round(at), 'next:', next && next.Title);
         if (c) report(c, why);
+        if (!next && Lampa.Player.opened() && c && window.rubySwap && rubySwap.stream()) {
+            // nothing to go to: it plays on as well as it can, watched again (a switch up may come, upgrade.js), the
+            // note once
+            if (!c.exhausted) Lampa.Noty.show(what + ', and there is no other release to switch to');
+            c.exhausted = true;
+            return begin({ url: rubySwap.stream() });
+        }
         if (!next) {
             // still in Lampa's window (loading, or its "Empty"): close it, or Lampa's own message stays (or comes
             // at 90 s, "Timeout expired")
@@ -205,13 +212,14 @@
     function swapTo(c, next, why, what, free) {
         Lampa.Noty.show(what + ': switching to ' + (rubyPick.describe(next.Title) || 'another release') + ' · ' + next.Seeders + ' seeders');
         var list = [next].concat(candidates(why).filter(function (r) { return r !== next; })).slice(0, SWAP_TRIES);
-        list.forEach(function (r) { c.tried = c.tried.concat(marks(r)); });
         if (c.hash) c.tried.push(c.hash);
         c.switches += free ? 0 : 1;
-        rubySwap.toAny(list, SWAP_SECS, why).catch(function (e) {
+        // tried when tried: one that opens and later stalls still has the others after it
+        rubySwap.toAny(list, SWAP_SECS, why, function (r) { c.tried = c.tried.concat(marks(r)); }).catch(function (e) {
             console.log('Ruby swarm', 'no release could be opened:', e.message);
             if (current !== c || !Lampa.Player.opened()) return;
             Lampa.Noty.show('No other release could be opened right now');
+            c.exhausted = true;
             begin({ url: rubySwap.stream() });
         });
     }
@@ -277,12 +285,12 @@
                 var held = !h.Swarm || h.Swarm.waiting == null || h.Swarm.waiting > 0;
                 if (h.Swarm && h.Swarm.dead && stuck > POLL_MS) return switchRelease('dead');
                 // falling behind: the next release is readied now, so the switch (if it comes) needn't open it cold
-                if (slow > EARLY_MS && held && need && mbps < need && !c.readied && Lampa.Player.opened()) {
+                if (slow > (played ? EARLY_MS : EARLY_START_MS) && held && need && mbps < need && !c.readied && !c.exhausted && Lampa.Player.opened()) {
                     c.readied = true;
                     var n = nextRelease('slow');
                     if (n) rubySwap.ready(n, SWAP_SECS);
                 }
-                if (slow > (played ? SLOW_STUCK_MS : START_STUCK_MS) && held && need && mbps < need) return switchRelease('slow');
+                if (slow > (played ? SLOW_STUCK_MS : START_STUCK_MS) && held && need && mbps < need && !c.exhausted) return switchRelease('slow');
             });
         }, POLL_MS);
         console.log('Ruby swarm', 'watching', c.hash, need ? need.toFixed(1) + ' Mbit/s needed' : '');
@@ -311,6 +319,13 @@
             if (e.type === 'swapping') return stop();
             if (e.type !== 'swapped' || !current) return;
             trail('swapped (' + e.why + ') to ' + (e.release.Title || '').slice(0, 80));
+            // moved up from a release that played fine: it is a way back if the better one stalls
+            if (e.why === 'better') {
+                var left = marks(current.release).concat([e.old]);
+                current.tried = current.tried.filter(function (m) { return left.indexOf(m) < 0; });
+            }
+            current.tried = current.tried.concat(marks(e.release), [e.hash]);
+            current.exhausted = false;
             current.release = e.release;
             current.at = 0;
             current.readied = false;
